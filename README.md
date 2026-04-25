@@ -24,6 +24,38 @@ skills/mission-center/
 
 Codex plugin hosts should read `.codex-plugin/plugin.json`, then load the bundled skill from `skills/mission-center/`.
 
+## Install As A Local Plugin
+
+Use this when you want Mission Center to appear in Codex's plugin list.
+
+### macOS / Linux
+
+```bash
+bash scripts/install-plugin-unix.sh
+```
+
+This installs the plugin to:
+
+```text
+~/plugins/mission-center
+~/.agents/plugins/marketplace.json
+```
+
+### Windows PowerShell
+
+```powershell
+.\scripts\install-plugin-windows.ps1
+```
+
+This installs the plugin to:
+
+```text
+%USERPROFILE%\plugins\mission-center
+%USERPROFILE%\.agents\plugins\marketplace.json
+```
+
+Restart Codex after installing so the plugin marketplace refreshes.
+
 ## Install The Skill Directly
 
 If your Codex build does not yet support installing this repo as a plugin, install the bundled skill directly.
