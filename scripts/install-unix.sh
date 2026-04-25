@@ -6,7 +6,7 @@ TARGET="${CODEX_HOME:-$HOME/.codex}/skills/mission-center"
 
 mkdir -p "$(dirname "$TARGET")"
 rm -rf "$TARGET"
-cp -R "$ROOT/mission-center" "$TARGET"
+cp -R "$ROOT/skills/mission-center" "$TARGET"
 
 echo "Installed mission-center skill to $TARGET"
 echo "Restart Codex to refresh the skill list."

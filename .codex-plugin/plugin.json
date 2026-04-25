@@ -1,0 +1,46 @@
+{
+  "name": "mission-center",
+  "version": "0.1.0",
+  "description": "Offline MissionCenter planning and task tracking for Codex workspaces.",
+  "author": {
+    "name": "Gale0418",
+    "email": "",
+    "url": "https://github.com/Gale0418"
+  },
+  "homepage": "https://github.com/Gale0418/Codex-Mission-Center-",
+  "repository": "https://github.com/Gale0418/Codex-Mission-Center-",
+  "license": "GPL-3.0-only",
+  "keywords": [
+    "codex",
+    "skills",
+    "planning",
+    "tasks",
+    "mission-center",
+    "linear-inspired",
+    "offline"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Mission Center",
+    "shortDescription": "Offline Linear-like task center for Codex",
+    "longDescription": "Mission Center turns vague goals into local Markdown task workspaces, asks intake questions before execution, tracks progress and smoke tests, and keeps global overviews separated from each workspace's task truth.",
+    "developerName": "Gale0418",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/Gale0418/Codex-Mission-Center-",
+    "privacyPolicyURL": "https://github.com/Gale0418/Codex-Mission-Center-/blob/main/NOTICE.md",
+    "termsOfServiceURL": "https://github.com/Gale0418/Codex-Mission-Center-/blob/main/LICENSE",
+    "defaultPrompt": [
+      "Use Mission Center to plan this goal first",
+      "Create a local MissionCenter task workspace",
+      "Review current MissionCenter progress"
+    ],
+    "brandColor": "#F59E0B",
+    "composerIcon": "./assets/mission-center.svg",
+    "logo": "./assets/mission-center.svg",
+    "screenshots": []
+  }
+}

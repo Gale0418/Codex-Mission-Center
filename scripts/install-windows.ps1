@@ -8,7 +8,7 @@ New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Nul
 if (Test-Path -LiteralPath $target) {
   Remove-Item -LiteralPath $target -Recurse -Force
 }
-Copy-Item -LiteralPath (Join-Path $root "mission-center") -Destination $target -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $root "skills\mission-center") -Destination $target -Recurse -Force
 
 Write-Output "Installed mission-center skill to $target"
 Write-Output "Restart Codex to refresh the skill list."

@@ -1,6 +1,6 @@
 # Codex Mission Center
 
-Mission Center is an offline, file-based Codex skill for turning vague goals into a local task workspace.
+Mission Center is an offline, file-based Codex plugin and skill for turning vague goals into a local task workspace.
 It is inspired by Linear-style project tracking and Superpowers-style execution discipline, but it does not connect to Linear or any external app.
 
 ## What It Does
@@ -11,14 +11,28 @@ It is inspired by Linear-style project tracking and Superpowers-style execution 
 - Tracks project summary, progress, tasks, decisions, notes, snapshots, and smoke tests.
 - Keeps task state local and readable as Markdown.
 - Supports a future global overview mode without mixing unrelated workspace tasks.
+
 ![Codex Mission Center](https://pbs.twimg.com/media/HGvWLdmbcAAckSd?format=jpg&name=900x900)
-## Install
+
+## Plugin Layout
+
+```text
+.codex-plugin/plugin.json
+assets/mission-center.svg
+skills/mission-center/
+```
+
+Codex plugin hosts should read `.codex-plugin/plugin.json`, then load the bundled skill from `skills/mission-center/`.
+
+## Install The Skill Directly
+
+If your Codex build does not yet support installing this repo as a plugin, install the bundled skill directly.
 
 ### macOS / Linux
 
 ```bash
 mkdir -p ~/.codex/skills
-cp -R mission-center ~/.codex/skills/mission-center
+cp -R skills/mission-center ~/.codex/skills/mission-center
 ```
 
 Or use the helper:
@@ -31,7 +45,7 @@ bash scripts/install-unix.sh
 
 ```powershell
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.codex\skills" | Out-Null
-Copy-Item -Recurse -Force .\mission-center "$env:USERPROFILE\.codex\skills\mission-center"
+Copy-Item -Recurse -Force .\skills\mission-center "$env:USERPROFILE\.codex\skills\mission-center"
 ```
 
 Or use the helper:
@@ -75,3 +89,17 @@ If you later build a global overview for multiple Codex workspaces, treat it as 
 - Every global card should include a workspace path or workspace ID.
 
 In short: global overview, not global task soup.
+
+## macOS Notes
+
+The bundled Python scripts use `pathlib` and should work on macOS, Linux, and Windows with Python 3.
+Shell examples use `~/.codex/skills` on macOS/Linux and `%USERPROFILE%\.codex\skills` on Windows.
+
+## Attribution
+
+This project is independently written and maintained.
+It is inspired by the workflow concepts of Linear and Superpowers, but it does not include their app integrations, trademarks, code, documentation, icons, or branding.
+
+## License
+
+GPL-3.0. See [LICENSE](LICENSE).

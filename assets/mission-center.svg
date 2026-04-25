@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Mission Center">
+  <defs>
+    <linearGradient id="bg" x1="18" x2="110" y1="16" y2="112" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF7AD"/>
+      <stop offset="0.55" stop-color="#F59E0B"/>
+      <stop offset="1" stop-color="#0F766E"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="36" x2="96" y1="34" y2="92" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E0F2FE"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="#111827"/>
+  <path d="M24 30c0-8 6-14 14-14h52c8 0 14 6 14 14v68c0 8-6 14-14 14H38c-8 0-14-6-14-14V30Z" fill="url(#bg)"/>
+  <path d="M36 35c0-4 3-7 7-7h42c4 0 7 3 7 7v35c0 4-3 7-7 7H43c-4 0-7-3-7-7V35Z" fill="#082F49" stroke="#F8FAFC" stroke-width="4"/>
+  <circle cx="64" cy="53" r="18" fill="url(#screen)"/>
+  <path d="M47 53h34M64 35c7 7 10 13 10 18s-3 11-10 18M64 35c-7 7-10 13-10 18s3 11 10 18" fill="none" stroke="#075985" stroke-width="3" stroke-linecap="round"/>
+  <path d="M42 91h44" stroke="#111827" stroke-width="8" stroke-linecap="round"/>
+  <path d="M48 91h32" stroke="#FEF3C7" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="42" cy="91" r="5" fill="#16A34A"/>
+  <circle cx="64" cy="91" r="5" fill="#38BDF8"/>
+  <circle cx="86" cy="91" r="5" fill="#EF4444"/>
+</svg>
