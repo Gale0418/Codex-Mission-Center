@@ -9,6 +9,7 @@ description: "Plan, scaffold, and maintain a local MissionCenter task workspace 
 
 Use this skill to turn a vague request into a local task workspace under `MissionCenter/`.
 Keep the workflow offline and file-based: no Linear app, no external project service, only structured files in the current workspace.
+All user-facing MissionCenter files should follow the user's conversation language. If the user writes in Traditional Chinese, create headings, table labels, notes, decisions, and task descriptions in Traditional Chinese. Keep only stable workflow tokens such as status values, IDs, and labels in English when consistency is useful.
 
 ## Core Workflow
 
@@ -27,7 +28,9 @@ Keep the workflow offline and file-based: no Linear app, no external project ser
    - Keep all task state inside that folder.
    - On first creation, seed the standard files from `references/task-workspace.md`.
    - Use `scripts/bootstrap_mission_center.py` for the initial scaffold.
+   - Pass `--language zh-TW` when the user is using Traditional Chinese; pass `--language en` for English users.
    - Use `scripts/seed_task_tree.py` when the goal is clear enough to seed the first task tree.
+   - When seeding a task tree, pass the same `--language` value used for bootstrap.
    - Prefer updating existing files over creating ad hoc notes elsewhere.
    - If the user resumes later, read the current project context first, then decide whether to update the same project or start a new one.
    - Use `project.md` as the canonical project summary, `progress.md` as the current dashboard, and `tasks.md` as the canonical task tree.
@@ -89,6 +92,7 @@ Use Superpowers-style decomposition and Game Studio-style team slicing.
 ## Output Rules
 
 - Keep task files concise and consistent.
+- Match the user's language for generated file headings, summaries, task titles, notes, decisions, and smoke-test descriptions.
 - Prefer plain Markdown tables and checklists for progress.
 - Make the current state obvious at a glance.
 - When the user asks for a change, update the relevant task file first, then summarize the impact.

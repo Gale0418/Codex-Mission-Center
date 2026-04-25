@@ -10,6 +10,7 @@ It is inspired by Linear-style project tracking and Superpowers-style execution 
 - Creates or reuses `MissionCenter/` in the current workspace.
 - Tracks project summary, progress, tasks, decisions, notes, snapshots, and smoke tests.
 - Keeps task state local and readable as Markdown.
+- Follows the user's language for generated workspace files, including Traditional Chinese.
 - Supports a future global overview mode without mixing unrelated workspace tasks.
 
 ![Codex Mission Center](https://pbs.twimg.com/media/HGvWLdmbcAAckSd?format=jpg&name=900x900)
@@ -94,6 +95,13 @@ Ask Codex to use Mission Center:
 
 ```text
 Use $mission-center to plan this goal, ask intake questions first, then create a MissionCenter workspace.
+```
+
+For Traditional Chinese workspaces, Mission Center should create the Markdown files in Traditional Chinese:
+
+```bash
+python ~/.codex/skills/mission-center/scripts/bootstrap_mission_center.py . --language zh-TW
+python ~/.codex/skills/mission-center/scripts/seed_task_tree.py . --goal "建立任務中心" --language zh-TW
 ```
 
 The skill will create files like:
