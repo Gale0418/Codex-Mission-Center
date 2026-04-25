@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mission Center"
+  short_description: "Create a MissionCenter task workspace, ask clarifying questions first, then track progress and smoke tests."
+  default_prompt: "Use $mission-center to ask clarifying questions, run the intake council until the goal is clear, then build and maintain a MissionCenter workspace."

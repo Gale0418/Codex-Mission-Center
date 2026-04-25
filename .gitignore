@@ -1,0 +1,9 @@
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+MYKEY.txt
+.env
+.env.*
+MissionCenter/
+output/
