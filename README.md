@@ -92,17 +92,10 @@ Restart Codex after installing so the skill list refreshes.
 
 ## Usage
 
-Ask Codex to use Mission Center:
+Tell your Codex:
 
 ```text
 Use $mission-center to plan this goal, ask intake questions first, then create a MissionCenter workspace.
-```
-
-For Traditional Chinese workspaces, Mission Center should create the Markdown files in Traditional Chinese:
-
-```bash
-python ~/.codex/skills/mission-center/scripts/bootstrap_mission_center.py . --language zh-TW
-python ~/.codex/skills/mission-center/scripts/seed_task_tree.py . --goal "整理任務中心" --language zh-TW
 ```
 
 The skill will create files like:
