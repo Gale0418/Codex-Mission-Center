@@ -26,77 +26,15 @@ skills/mission-center/
 
 Codex plugin hosts should read `.codex-plugin/plugin.json`, then load the bundled skill from `skills/mission-center/`.
 
-## Install As A Local Plugin
+## Read Here
 
-Use this when you want Mission Center to appear in Codex's plugin list.
-
-### macOS / Linux
-
-```bash
-bash scripts/install-plugin-unix.sh
-```
-
-This installs the plugin to:
-
-```text
-~/plugins/mission-center
-~/.agents/plugins/marketplace.json
-```
-
-### Windows PowerShell
-
-```powershell
-.\scripts\install-plugin-windows.ps1
-```
-
-This installs the plugin to:
-
-```text
-%USERPROFILE%\plugins\mission-center
-%USERPROFILE%\.agents\plugins\marketplace.json
-```
-
-Restart Codex after installing so the plugin marketplace refreshes.
-
-## Install The Skill Directly
-
-If your Codex build does not yet support installing this repo as a plugin, install the bundled skill directly.
-
-### macOS / Linux
-
-```bash
-mkdir -p ~/.codex/skills
-cp -R skills/mission-center ~/.codex/skills/mission-center
-```
-
-Or use the helper:
-
-```bash
-bash scripts/install-unix.sh
-```
-
-### Windows PowerShell
-
-```powershell
-New-Item -ItemType Directory -Force "$env:USERPROFILE\.codex\skills" | Out-Null
-Copy-Item -Recurse -Force .\skills\mission-center "$env:USERPROFILE\.codex\skills\mission-center"
-```
-
-Or use the helper:
-
-```powershell
-.\scripts\install-windows.ps1
-```
-
-Restart Codex after installing so the skill list refreshes.
-
-## Usage
-
-Tell your Codex:
+Call your Codex:
 
 ```text
 Use $mission-center to plan this goal, ask intake questions first, then create a MissionCenter workspace.
 ```
+
+Install helpers live in `scripts/` if you want the plugin or skill on disk.
 
 The skill will create files like:
 
