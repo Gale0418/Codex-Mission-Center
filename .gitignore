@@ -2,6 +2,8 @@
 Thumbs.db
 *.log
 *.tmp
+__pycache__/
+*.pyc
 MYKEY.txt
 .env
 .env.*

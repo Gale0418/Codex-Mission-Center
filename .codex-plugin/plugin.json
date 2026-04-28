@@ -7,8 +7,8 @@
     "email": "",
     "url": "https://github.com/Gale0418"
   },
-  "homepage": "https://github.com/Gale0418/Codex-Mission-Center-",
-  "repository": "https://github.com/Gale0418/Codex-Mission-Center-",
+  "homepage": "https://github.com/Gale0418/Codex-Mission-Center",
+  "repository": "https://github.com/Gale0418/Codex-Mission-Center",
   "license": "GPL-3.0-only",
   "keywords": [
     "codex",
@@ -30,9 +30,9 @@
       "Interactive",
       "Write"
     ],
-    "websiteURL": "https://github.com/Gale0418/Codex-Mission-Center-",
-    "privacyPolicyURL": "https://github.com/Gale0418/Codex-Mission-Center-/blob/main/NOTICE.md",
-    "termsOfServiceURL": "https://github.com/Gale0418/Codex-Mission-Center-/blob/main/LICENSE",
+    "websiteURL": "https://github.com/Gale0418/Codex-Mission-Center",
+    "privacyPolicyURL": "https://github.com/Gale0418/Codex-Mission-Center/blob/main/NOTICE.md",
+    "termsOfServiceURL": "https://github.com/Gale0418/Codex-Mission-Center/blob/main/LICENSE",
     "defaultPrompt": [
       "Use Mission Center to plan this goal first",
       "Create a local MissionCenter task workspace",

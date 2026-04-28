@@ -17,6 +17,18 @@ Keep it short and obvious:
 - Helper roster: auto-assigned by the visual panel
 ```
 
+`scripts/bootstrap_mission_center.py` should also copy the bundled HUD files into:
+
+```text
+output/mission-center-assets/
+  visual-summary.html
+  visual-state.json
+  update-visual-state.ps1
+  mission-base-main.png
+  mission-helper-roster-8-fixed.png
+  mission-helper-roster-8-girls-2.png
+```
+
 ## P0 Sequence
 
 When the user wants the workspace to start in a visible, animated state, seed these P0 items first:
@@ -29,4 +41,8 @@ When the user wants the workspace to start in a visible, animated state, seed th
 
 ## Helper Asset
 
-If the skill needs a visual placeholder for documentation or examples, keep a small helper avatar asset under `assets/` so the skill folder is not empty of imagery.
+Keep the full helper roster under `assets/visual-hub/` so a freshly installed skill can create the animated HUD without downloading extra assets.
+The current roster is split across two 8-character sheets:
+
+- `mission-helper-roster-8-fixed.png`
+- `mission-helper-roster-8-girls-2.png`

@@ -5,31 +5,143 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 from pathlib import Path
 
 
 FILES_EN = {
-    "project.md": """# Project\n\n- Goal:\n- Cycle:\n- Labels:\n- Activity log:\n- Open comments:\n""",
-    "progress.md": """# Progress\n\n- Project:\n- Objective:\n- Current status:\n- Milestone:\n- Progress bar: [----------] 0%\n- Active tasks:\n- Blocked by:\n- Next update:\n""",
-    "tasks.md": """# Tasks\n\n| ID | Title | Type | Parent | Priority | Status | Owner | Depends on | Next action | Verification | Estimate | Labels | Comments |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n""",
-    "smoke-tests.md": """# Smoke Tests\n\n| Date | Linked task ID | What was tested | How it was tested | Expected result | Observed result | Pass / fail | Run type |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n""",
-    "decisions.md": """# Decisions\n\n- \n""",
-    "notes.md": """# Notes\n\n- \n""",
-    "closeout.md": """# Closeout\n\n- Summary:\n- Completed:\n- Unfinished:\n- Risks:\n- Smoke tests:\n- Retro:\n""",
-    "snapshot.md": """# Snapshot\n\n- Captured at:\n- Project:\n- Cycle:\n- Goal:\n- Progress:\n- Active tasks:\n- Blocked tasks:\n- Recent decisions:\n- Open questions:\n""",
-    "visual-hub.md": """# Visual Hub\n\n- Open HUD: `output/mission-center-assets/visual-summary.html`\n- Current view: active helpers, task states, progress, and blockers\n- Helper roster: auto-assigned by the visual panel\n""",
+    "project.md": """# Project
+
+- Goal:
+- Cycle:
+- Labels:
+- Activity log:
+- Open comments:
+""",
+    "progress.md": """# Progress
+
+- Project:
+- Objective:
+- Current status:
+- Milestone:
+- Progress bar: [----------] 0%
+- Active tasks:
+- Blocked by:
+- Next update:
+""",
+    "tasks.md": """# Tasks
+
+| ID | Title | Type | Parent | Priority | Status | Owner | Depends on | Next action | Verification | Estimate | Labels | Comments |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+""",
+    "smoke-tests.md": """# Smoke Tests
+
+| Date | Linked task ID | What was tested | How it was tested | Expected result | Observed result | Pass / fail | Run type |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+""",
+    "decisions.md": """# Decisions
+
+-
+""",
+    "notes.md": """# Notes
+
+-
+""",
+    "closeout.md": """# Closeout
+
+- Summary:
+- Completed:
+- Unfinished:
+- Risks:
+- Smoke tests:
+- Retro:
+""",
+    "snapshot.md": """# Snapshot
+
+- Captured at:
+- Project:
+- Cycle:
+- Goal:
+- Progress:
+- Active tasks:
+- Blocked tasks:
+- Recent decisions:
+- Open questions:
+""",
+    "visual-hub.md": """# Visual Hub
+
+- Open HUD: `output/mission-center-assets/visual-summary.html`
+- Current view: active helpers, task states, progress, and blockers
+- Helper roster: auto-assigned by the visual panel
+""",
 }
 
+
 FILES_ZH_TW = {
-    "project.md": """# 專案\n\n- 目標：\n- 週期：\n- 標籤：\n- 活動紀錄：\n- 開放留言：\n""",
-    "progress.md": """# 進度\n\n- 專案：\n- 目前目標：\n- 目前狀態：\n- 里程碑：\n- 進度條：[----------] 0%\n- 進行中任務：\n- 阻塞原因：\n- 下次更新：\n""",
-    "tasks.md": """# 任務\n\n| ID | 標題 | 類型 | 上層 | 優先級 | 狀態 | 負責人 | 依賴 | 下一步 | 驗證方式 | 估算 | 標籤 | 備註 |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n""",
-    "smoke-tests.md": """# Smoke Tests\n\n| 日期 | 關聯任務 ID | 測試內容 | 測試方式 | 預期結果 | 實際結果 | 通過 / 失敗 | 執行類型 |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n""",
-    "decisions.md": """# 決策紀錄\n\n- \n""",
-    "notes.md": """# 筆記\n\n- \n""",
-    "closeout.md": """# 收尾\n\n- 摘要：\n- 已完成：\n- 未完成：\n- 風險：\n- Smoke tests：\n- 回顧：\n""",
-    "snapshot.md": """# 快照\n\n- 建立時間：\n- 專案：\n- 週期：\n- 目標：\n- 進度：\n- 進行中任務：\n- 阻塞任務：\n- 最近決策：\n- 開放問題：\n""",
-    "visual-hub.md": """# 視覺 HUB\n\n- 開啟 HUD：`output/mission-center-assets/visual-summary.html`\n- 目前視圖：進行中小人、任務狀態、進度與阻塞原因\n- 小人名冊：由視覺面板自動分配\n""",
+    "project.md": """# 專案
+
+- 目標：
+- 週期：
+- 標籤：
+- 活動紀錄：
+- 開放問題：
+""",
+    "progress.md": """# 進度
+
+- 專案：
+- 目標：
+- 目前狀態：
+- 里程碑：
+- 進度條：[----------] 0%
+- 進行中任務：
+- 阻塞原因：
+- 下次更新：
+""",
+    "tasks.md": """# 任務
+
+| ID | 標題 | 類型 | 父層 | 優先級 | 狀態 | 負責人 | 依賴 | 下一步 | 驗證方式 | 估時 | 標籤 | 備註 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+""",
+    "smoke-tests.md": """# Smoke Tests
+
+| 日期 | 對應任務 ID | 測試內容 | 測試方式 | 預期結果 | 實際結果 | 通過 / 失敗 | 類型 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+""",
+    "decisions.md": """# 決策
+
+-
+""",
+    "notes.md": """# 筆記
+
+-
+""",
+    "closeout.md": """# 收尾
+
+- 摘要：
+- 已完成：
+- 未完成：
+- 風險：
+- Smoke tests：
+- 回顧：
+""",
+    "snapshot.md": """# 快照
+
+- 建立時間：
+- 專案：
+- 週期：
+- 目標：
+- 進度：
+- 進行中任務：
+- 阻塞任務：
+- 最近決策：
+- 開放問題：
+""",
+    "visual-hub.md": """# 視覺 HUB
+
+- 開啟 HUD：`output/mission-center-assets/visual-summary.html`
+- 目前畫面：小人狀態、任務進度、阻塞項目與 active 清單
+- 小人名冊：由視覺面板自動分配
+""",
 }
 
 
@@ -40,6 +152,22 @@ def choose_language(value: str) -> str:
     if "zh" in locale or "tw" in locale or "taiwan" in locale:
         return "zh-TW"
     return "en"
+
+
+def copy_visual_assets(workspace_root: Path, force: bool) -> None:
+    source = Path(__file__).resolve().parents[1] / "assets" / "visual-hub"
+    if not source.exists():
+        return
+
+    target = workspace_root / "output" / "mission-center-assets"
+    target.mkdir(parents=True, exist_ok=True)
+    for item in source.iterdir():
+        if not item.is_file():
+            continue
+        destination = target / item.name
+        if destination.exists() and not force:
+            continue
+        shutil.copy2(item, destination)
 
 
 def main() -> int:
@@ -73,6 +201,8 @@ def main() -> int:
         if path.exists() and not args.force:
             continue
         path.write_text(content, encoding="utf-8")
+
+    copy_visual_assets(root, args.force)
 
     print(target)
     return 0

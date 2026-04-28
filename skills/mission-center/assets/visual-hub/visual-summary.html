@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MissionCenter Visual Summary</title>
+  <style>
+    :root {
+      --panel-w: min(420px, 92vw);
+      --ink: #102336;
+      --paper: rgba(248, 252, 255, 0.9);
+      --line: rgba(77, 222, 255, 0.22);
+      --floor: #12263a;
+      --floor-line: rgba(119, 219, 255, 0.12);
+      --blue: #4fd8ff;
+      --green: #86f0a4;
+      --orange: #ffba6b;
+      --violet: #bda4ff;
+      --gold: #ffe66d;
+      --glass: rgba(239, 252, 255, 0.74);
+      --neon: rgba(75, 220, 255, 0.72);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 20% 12%, rgba(255, 225, 137, 0.34), transparent 30%),
+        linear-gradient(135deg, #f4fbff 0%, #fdf7ed 48%, #eef8f4 100%);
+      color: var(--ink);
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+    }
+
+    .mission-panel {
+      position: relative;
+      width: var(--panel-w);
+      aspect-ratio: 941 / 1672;
+      overflow: hidden;
+      border: 4px solid #161616;
+      border-radius: 28px;
+      background: #08131f;
+      box-shadow: 0 24px 56px rgba(33, 37, 41, 0.24);
+      isolation: isolate;
+    }
+
+    .base-map {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      background: #06111d;
+    }
+
+    .base-map::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      border: 4px solid rgba(147, 232, 255, 0.3);
+      border-radius: 30px;
+      background:
+        linear-gradient(180deg, rgba(1, 11, 21, 0.08) 0%, transparent 18%, transparent 72%, rgba(1, 9, 18, 0.56) 100%),
+        radial-gradient(circle at 50% 42%, rgba(84, 224, 255, 0.08), transparent 32%);
+      box-shadow:
+        inset 0 0 0 8px rgba(255, 255, 255, 0.04),
+        inset 0 0 38px rgba(52, 214, 255, 0.18);
+      pointer-events: none;
+    }
+
+    .base-map::after {
+      content: none;
+    }
+
+    .stage-art {
+      position: absolute;
+      left: 0;
+      top: 2.2%;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center top;
+      image-rendering: auto;
+      filter:
+        saturate(1.04)
+        contrast(1.03)
+        drop-shadow(0 0 14px rgba(74, 220, 255, 0.18));
+      transition: filter 500ms ease;
+    }
+
+    .zone {
+      position: absolute;
+      border: 2px solid rgba(148, 238, 255, 0.42);
+      border-radius: 22px;
+      background:
+        radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.12), transparent 58%),
+        linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02)),
+        var(--zone-color);
+      box-shadow:
+        inset 0 0 0 5px rgba(255, 255, 255, 0.05),
+        inset 0 0 22px rgba(78, 224, 255, 0.1),
+        0 9px 20px rgba(0, 0, 0, 0.18);
+      opacity: 0.12;
+      z-index: 2;
+      pointer-events: none;
+      transition: opacity 450ms ease, box-shadow 450ms ease;
+    }
+
+    .zone::after {
+      content: none;
+    }
+
+    .zone::before {
+      content: "";
+      position: absolute;
+      inset: 14px;
+      border: 1px dashed rgba(219, 251, 255, 0.18);
+      border-radius: 16px;
+      pointer-events: none;
+    }
+
+    .zone-intake {
+      --zone-color: rgba(79, 216, 255, 0.16);
+      left: 9%;
+      top: 23%;
+      width: 31%;
+      height: 15%;
+    }
+
+    .tech-prop,
+    .construction-site {
+      display: none;
+    }
+
+    .zone-progress {
+      --zone-color: rgba(134, 240, 164, 0.15);
+      left: 59%;
+      top: 23%;
+      width: 31%;
+      height: 24%;
+    }
+
+    .zone-blocked {
+      --zone-color: rgba(255, 186, 107, 0.16);
+      left: 9%;
+      top: 52%;
+      width: 31%;
+      height: 16%;
+    }
+
+    .zone-review {
+      --zone-color: rgba(189, 164, 255, 0.16);
+      left: 61%;
+      top: 53%;
+      width: 28%;
+      height: 16%;
+    }
+
+    .zone-done {
+      --zone-color: rgba(255, 230, 109, 0.16);
+      left: 29%;
+      top: 72%;
+      width: 42%;
+      height: 10%;
+    }
+
+    .mission-panel[data-status="Intake"] .zone-intake,
+    .mission-panel[data-status="In Progress"] .zone-progress,
+    .mission-panel[data-status="Blocked"] .zone-blocked,
+    .mission-panel[data-status="Review"] .zone-review,
+    .mission-panel[data-status="Done"] .zone-done {
+      opacity: 0.32;
+      box-shadow:
+        inset 0 0 0 5px rgba(255, 255, 255, 0.06),
+        inset 0 0 26px rgba(78, 224, 255, 0.16),
+        0 0 18px rgba(78, 224, 255, 0.32);
+    }
+
+    .tech-prop {
+      position: absolute;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .dispatch-console {
+      left: 17%;
+      top: 29%;
+      width: 15%;
+      height: 7%;
+      border: 2px solid rgba(79, 216, 255, 0.78);
+      border-radius: 50% 50% 16px 16px;
+      background:
+        radial-gradient(circle at 50% 20%, rgba(239, 252, 255, 0.86), transparent 18%),
+        linear-gradient(180deg, rgba(42, 181, 255, 0.72), rgba(12, 52, 78, 0.86));
+      box-shadow: 0 0 18px rgba(79, 216, 255, 0.42);
+    }
+
+    .office-desks {
+      left: 64%;
+      top: 31%;
+      width: 20%;
+      height: 13%;
+      background:
+        linear-gradient(90deg, rgba(239, 252, 255, 0.72) 0 42%, transparent 42% 58%, rgba(239, 252, 255, 0.72) 58%),
+        linear-gradient(0deg, transparent 0 42%, rgba(79, 216, 255, 0.55) 42% 58%, transparent 58%);
+      border-radius: 12px;
+      filter: drop-shadow(0 0 10px rgba(79, 216, 255, 0.3));
+    }
+
+    .repair-bay {
+      left: 17%;
+      top: 64%;
+      width: 16%;
+      height: 7%;
+      border: 2px solid rgba(255, 186, 107, 0.72);
+      border-radius: 14px;
+      background:
+        repeating-linear-gradient(135deg, rgba(255, 186, 107, 0.72) 0 8px, rgba(33, 21, 9, 0.65) 8px 16px);
+      box-shadow: 0 0 14px rgba(255, 186, 107, 0.32);
+    }
+
+    .archive-racks {
+      left: 63%;
+      top: 63%;
+      width: 22%;
+      height: 8%;
+      background:
+        repeating-linear-gradient(90deg, rgba(239, 252, 255, 0.74) 0 8px, rgba(80, 65, 128, 0.64) 8px 16px);
+      border: 2px solid rgba(189, 164, 255, 0.7);
+      border-radius: 10px;
+      box-shadow: 0 0 14px rgba(189, 164, 255, 0.3);
+    }
+
+    .nap-pods {
+      left: 33%;
+      top: 76.8%;
+      width: 34%;
+      height: 4.7%;
+      background:
+        radial-gradient(ellipse at 22% 50%, rgba(255, 230, 109, 0.86), transparent 34%),
+        radial-gradient(ellipse at 50% 50%, rgba(255, 230, 109, 0.72), transparent 34%),
+        radial-gradient(ellipse at 78% 50%, rgba(255, 230, 109, 0.86), transparent 34%);
+      border: 1.5px solid rgba(255, 230, 109, 0.7);
+      border-radius: 999px;
+      box-shadow: 0 0 16px rgba(255, 230, 109, 0.28);
+    }
+
+    .construction-site {
+      position: absolute;
+      left: 50%;
+      top: 46.5%;
+      z-index: 1;
+      width: 38%;
+      height: 23%;
+      border: 3px solid rgba(255, 230, 109, 0.72);
+      border-radius: 999px;
+      background:
+        radial-gradient(circle at 50% 47%, rgba(255, 255, 255, 0.94), transparent 13%),
+        radial-gradient(circle at 50% 47%, rgba(255, 230, 109, 0.72), transparent 38%),
+        conic-gradient(from 0deg, rgba(79, 216, 255, 0.18), rgba(255, 230, 109, 0.36), rgba(134, 240, 164, 0.22), rgba(79, 216, 255, 0.18));
+      box-shadow:
+        inset 0 0 0 7px rgba(255, 255, 255, 0.08),
+        0 0 24px rgba(255, 230, 109, 0.26),
+        0 12px 22px rgba(0, 0, 0, 0.24);
+      transform: translate(-50%, -50%);
+    }
+
+    .construction-site::before {
+      content: "Progress Reactor";
+      position: absolute;
+      left: 50%;
+      top: 8px;
+      padding: 5px 10px;
+      border: 1.5px solid rgba(255, 230, 109, 0.86);
+      border-radius: 999px;
+      background: rgba(6, 18, 30, 0.78);
+      color: #fff8bd;
+      font-size: 10px;
+      font-weight: 900;
+      white-space: nowrap;
+      transform: translateX(-50%);
+    }
+
+    .monument {
+      position: absolute;
+      left: 50%;
+      bottom: 13%;
+      width: 78%;
+      height: 63%;
+      transform: translateX(-50%);
+    }
+
+    .monument-block {
+      position: absolute;
+      left: 50%;
+      bottom: calc(var(--level) * 11%);
+      width: calc(16% + var(--level) * 7%);
+      height: 10%;
+      border: 2px solid rgba(52, 42, 22, 0.7);
+      border-radius: 8px;
+      background: linear-gradient(180deg, #ffe88e, #d99b33);
+      box-shadow: inset 0 3px rgba(255, 255, 255, 0.38);
+      opacity: 0.18;
+      transform: translateX(-50%);
+      transition: opacity 700ms ease, filter 700ms ease, transform 700ms ease;
+    }
+
+    .monument-block.is-built {
+      opacity: 1;
+      filter: saturate(1.1);
+      transform: translateX(-50%) translateY(-2px);
+    }
+
+    .meme-face {
+      position: absolute;
+      left: 50%;
+      top: 23%;
+      width: 46%;
+      aspect-ratio: 1;
+      border: 3px solid rgba(52, 42, 22, 0.7);
+      border-radius: 50% 50% 45% 45%;
+      background: linear-gradient(180deg, #fff3b2, #f3be4e);
+      opacity: 0;
+      transform: translateX(-50%) scale(0.78);
+      transition: opacity 700ms ease, transform 700ms ease;
+    }
+
+    .meme-face::before,
+    .meme-face::after {
+      content: "";
+      position: absolute;
+      top: 34%;
+      width: 13%;
+      height: 18%;
+      border-radius: 50%;
+      background: #1c1f22;
+    }
+
+    .meme-face::before {
+      left: 28%;
+    }
+
+    .meme-face::after {
+      right: 28%;
+    }
+
+    .meme-mouth {
+      position: absolute;
+      left: 50%;
+      bottom: 25%;
+      width: 31%;
+      height: 12%;
+      border-bottom: 4px solid #1c1f22;
+      border-radius: 0 0 999px 999px;
+      transform: translateX(-50%);
+    }
+
+    .construction-site[data-stage="8"] .meme-face,
+    .construction-site[data-stage="9"] .meme-face,
+    .construction-site[data-stage="10"] .meme-face {
+      opacity: 1;
+      transform: translateX(-50%) scale(1);
+    }
+
+    .summary {
+      position: absolute;
+      left: 5.5%;
+      right: 5.5%;
+      top: 3.5%;
+      z-index: 4;
+      padding: 14px 16px;
+      border: 2px solid rgba(30, 33, 36, 0.22);
+      border-radius: 18px;
+      background: rgba(255, 252, 244, 0.82);
+      backdrop-filter: blur(5px);
+      box-shadow: 0 8px 18px rgba(51, 43, 32, 0.08);
+    }
+
+    .summary h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .goal,
+    .metric {
+      margin: 4px 0;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .bar {
+      height: 12px;
+      margin-top: 10px;
+      overflow: hidden;
+      border: 2px solid #1b1d20;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.82);
+    }
+
+    .bar span {
+      display: block;
+      width: 40%;
+      height: 100%;
+      background: linear-gradient(90deg, #50b6ff, #95d15b, #ffd64d);
+      transition: width 900ms ease;
+    }
+
+    .task-card {
+      position: absolute;
+      left: 5%;
+      right: 5%;
+      bottom: 1.1%;
+      z-index: 4;
+      width: auto;
+      min-height: 54px;
+      padding: 7px 12px 7px 76px;
+      border: 1.5px solid rgba(148, 238, 255, 0.48);
+      border-radius: 18px;
+      background:
+        linear-gradient(90deg, rgba(8, 22, 35, 0.94), rgba(19, 43, 60, 0.84)),
+        rgba(255, 252, 244, 0.86);
+      backdrop-filter: blur(6px);
+      color: #effcff;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.22;
+      box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.22), 0 0 18px rgba(78, 224, 255, 0.14);
+    }
+
+    .task-card::before {
+      content: "ACTIVE";
+      position: absolute;
+      left: 13px;
+      top: 50%;
+      width: 50px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1.5px solid rgba(134, 240, 164, 0.74);
+      border-radius: 12px;
+      background: rgba(134, 240, 164, 0.12);
+      color: #baffca;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      transform: translateY(-50%);
+    }
+
+    .task-card p {
+      margin: 0 0 4px;
+    }
+
+    .task-card ul {
+      margin: 0;
+      padding-left: 16px;
+      columns: 2;
+    }
+
+    .agents-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    .agent {
+      --row-y: 0%;
+      --sheet: url("mission-helper-roster-8-fixed.png");
+      --x: 20%;
+      --y: 34%;
+      --scale: 1;
+      position: absolute;
+      left: var(--x);
+      top: var(--y);
+      width: 13.5%;
+      aspect-ratio: 171 / 192;
+      filter: drop-shadow(0 7px 8px rgba(35, 30, 25, 0.24));
+      transform: translate(-50%, -100%) scale(var(--scale));
+      transition: left 5200ms ease-in-out, top 5200ms ease-in-out, transform 5200ms ease-in-out;
+    }
+
+    .agent[data-avatar="1"] { --row-y: 0%; }
+    .agent[data-avatar="2"] { --row-y: 14.286%; }
+    .agent[data-avatar="3"] { --row-y: 28.571%; }
+    .agent[data-avatar="4"] { --row-y: 42.857%; }
+    .agent[data-avatar="5"] { --row-y: 57.143%; }
+    .agent[data-avatar="6"] { --row-y: 71.429%; }
+    .agent[data-avatar="7"] { --row-y: 85.714%; }
+    .agent[data-avatar="8"] { --row-y: 100%; }
+
+    .sprite {
+      width: 100%;
+      height: 100%;
+      background-image: var(--sheet);
+      background-repeat: no-repeat;
+      background-size: 600% 800%;
+      background-position: 0% var(--row-y);
+      animation: calm-blink 8.5s steps(1, end) infinite;
+    }
+
+    .agent[data-status="In Progress"] .sprite {
+      animation: work-frames 7.5s steps(1, end) infinite;
+    }
+
+    .agent[data-status="Blocked"] .sprite {
+      animation: none;
+      background-position: 100% var(--row-y);
+    }
+
+    .agent[data-status="Done"] .sprite {
+      animation: none;
+      background-position: 20% var(--row-y);
+    }
+
+    .agent[data-status="Review"] .sprite {
+      animation: none;
+      background-position: 40% var(--row-y);
+    }
+
+    .nameplate {
+      position: absolute;
+      left: 50%;
+      top: calc(100% + 2px);
+      max-width: 170%;
+      padding: 3px 7px;
+      border: 1.5px solid rgba(28, 31, 34, 0.7);
+      border-radius: 999px;
+      background: rgba(255, 250, 241, 0.9);
+      color: #1c1f22;
+      font-size: 9px;
+      font-weight: 900;
+      line-height: 1.1;
+      text-align: center;
+      white-space: nowrap;
+      transform: translateX(-50%);
+      box-shadow: 0 4px 8px rgba(51, 43, 32, 0.08);
+    }
+
+    .status-pill {
+      position: absolute;
+      left: 6%;
+      bottom: 9.6%;
+      z-index: 4;
+      min-width: 120px;
+      padding: 8px 10px;
+      border: 2px solid #1c1f22;
+      border-radius: 999px;
+      background: rgba(8, 22, 35, 0.92);
+      color: #effcff;
+      font-size: 12px;
+      font-weight: 800;
+      text-align: center;
+      box-shadow: 0 7px 14px rgba(51, 43, 32, 0.1);
+    }
+
+    @keyframes calm-blink {
+      0%, 82% {
+        background-position: 0% var(--row-y);
+      }
+      83%, 89% {
+        background-position: 40% var(--row-y);
+      }
+      90%, 96% {
+        background-position: 20% var(--row-y);
+      }
+      97%, 100% {
+        background-position: 0% var(--row-y);
+      }
+    }
+
+    @keyframes work-frames {
+      0%, 42% {
+        background-position: 0% var(--row-y);
+      }
+      43%, 66% {
+        background-position: 60% var(--row-y);
+      }
+      67%, 90% {
+        background-position: 80% var(--row-y);
+      }
+      91%, 100% {
+        background-position: 0% var(--row-y);
+      }
+    }
+
+    @media (max-width: 430px) {
+      .summary h1 {
+        font-size: 20px;
+      }
+
+      .goal,
+      .metric,
+      .task-card,
+      .status-pill {
+        font-size: 11px;
+      }
+
+      .agent {
+        width: 16.5%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="mission-panel" data-status="Intake" aria-label="MissionCenter visual progress summary">
+    <div class="base-map" aria-hidden="true">
+      <img class="stage-art" id="stageArt" src="mission-base-main.png" alt="">
+      <div class="zone zone-intake" data-label="Intake Dispatch"></div>
+      <div class="zone zone-progress" data-label="In Progress Office"></div>
+      <div class="zone zone-blocked" data-label="Blocked Repair"></div>
+      <div class="zone zone-review" data-label="Review Archive"></div>
+      <div class="zone zone-done" data-label="Done Nap Dock"></div>
+      <div class="tech-prop dispatch-console"></div>
+      <div class="tech-prop office-desks"></div>
+      <div class="tech-prop repair-bay"></div>
+      <div class="tech-prop archive-racks"></div>
+      <div class="tech-prop nap-pods"></div>
+    </div>
+
+    <section class="summary" aria-label="MissionCenter status">
+      <h1>MissionCenter</h1>
+      <p class="goal">Goal: <span id="goal">Build task dashboard</span></p>
+      <p class="metric">Progress: <span id="progressText">40%</span> · Stage <span id="stageText">4/10</span></p>
+      <div class="bar" aria-label="Progress 40 percent"><span id="progressBar"></span></div>
+    </section>
+
+    <section class="construction-site" data-stage="4" aria-label="Progress construction">
+      <div class="monument" id="monument"></div>
+    </section>
+
+    <div class="agents-layer" aria-hidden="true"></div>
+
+    <div class="status-pill">Now: <span id="statusText">Intake</span></div>
+
+    <section class="task-card" aria-label="Current tasks">
+      <p>Active</p>
+      <ul>
+        <li>Workspace setup</li>
+        <li>Task tree</li>
+      </ul>
+      <p id="blockedText" style="margin-top: 8px;">Blocked: Smoke tests</p>
+    </section>
+  </main>
+  <script>
+    const panel = document.querySelector(".mission-panel");
+    const goal = document.querySelector("#goal");
+    const progressText = document.querySelector("#progressText");
+    const stageText = document.querySelector("#stageText");
+    const progressBar = document.querySelector("#progressBar");
+    const statusText = document.querySelector("#statusText");
+    const blockedText = document.querySelector("#blockedText");
+    const activeList = document.querySelector(".task-card ul");
+    const agentsLayer = document.querySelector(".agents-layer");
+    const constructionSite = document.querySelector(".construction-site");
+    const monument = document.querySelector("#monument");
+    const stageArt = document.querySelector("#stageArt");
+    const validStatuses = new Set(["Intake", "In Progress", "Blocked", "Review", "Done"]);
+    const maxVisibleAgents = 16;
+    const maxActiveItems = 6;
+    const avatarAssignments = new Map();
+    const helperAtlases = {
+      1: "mission-helper-roster-8-fixed.png",
+      2: "mission-helper-roster-8-girls-2.png"
+    };
+    const zoneBounds = {
+      "Intake": { minX: 15, maxX: 34, minY: 28, maxY: 37 },
+      "In Progress": { minX: 62, maxX: 85, minY: 28, maxY: 46 },
+      "Blocked": { minX: 15, maxX: 34, minY: 57, maxY: 66 },
+      "Review": { minX: 66, maxX: 84, minY: 58, maxY: 67 },
+      "Done": { minX: 35, maxX: 64, minY: 75, maxY: 81 }
+    };
+    let currentAgents = [];
+
+    function pickRandomAvatar(id, usedAvatars) {
+      if (avatarAssignments.has(id)) return avatarAssignments.get(id);
+
+      const available = Array.from({ length: maxVisibleAgents }, (_, index) => index + 1)
+        .filter((avatar) => !usedAvatars.has(avatar));
+      const pool = available.length ? available : Array.from({ length: maxVisibleAgents }, (_, index) => index + 1);
+      const avatar = pool[Math.floor(Math.random() * pool.length)];
+      avatarAssignments.set(id, avatar);
+      usedAvatars.add(avatar);
+      return avatar;
+    }
+
+    function spriteInfoForAvatar(avatar) {
+      const normalized = Math.max(1, Math.min(maxVisibleAgents, Number(avatar) || 1));
+      const atlas = normalized <= 8 ? helperAtlases[1] : helperAtlases[2];
+      const rowIndex = (normalized - 1) % 8;
+      return {
+        atlas,
+        rowY: `${(rowIndex / 7) * 100}%`
+      };
+    }
+
+    function normalizeAgent(agent, index, fallbackStatus, usedAvatars) {
+      const status = validStatuses.has(agent?.status) ? agent.status : fallbackStatus;
+      const id = agent?.id || `agent-${index + 1}`;
+      const explicitAvatar = Number(agent?.avatar);
+      const avatar = Number.isFinite(explicitAvatar) && explicitAvatar > 0
+        ? Math.max(1, Math.min(maxVisibleAgents, explicitAvatar))
+        : pickRandomAvatar(id, usedAvatars);
+      usedAvatars.add(avatar);
+      return {
+        id,
+        name: agent?.name || `工人${index + 1}`,
+        task: agent?.task || status,
+        name: agent?.name || `Agent ${index + 1}`,
+        status,
+        avatar
+      };
+    }
+
+    function renderMonument(progress) {
+      const stage = Math.max(0, Math.min(10, Math.ceil(progress / 10)));
+      stageArt.src = "mission-base-main.png";
+      stageArt.alt = "MissionCenter high-tech base";
+      constructionSite.dataset.stage = String(stage);
+      stageText.textContent = `${stage}/10`;
+      monument.innerHTML = Array.from({ length: 10 }, (_, index) => {
+        const level = 9 - index;
+        const built = index < stage ? " is-built" : "";
+        return `<div class="monument-block${built}" style="--level: ${level};"></div>`;
+      }).join("") + '<div class="meme-face"><div class="meme-mouth"></div></div>';
+    }
+
+    function renderAgents(state, fallbackStatus) {
+      const rawAgents = Array.isArray(state.agents) && state.agents.length
+        ? state.agents.slice(0, maxVisibleAgents)
+        : [{ id: "main", name: "MissionHelper", status: fallbackStatus, task: state.goal }];
+      const usedAvatars = new Set();
+      currentAgents = rawAgents.map((agent, index) => normalizeAgent(agent, index, fallbackStatus, usedAvatars));
+      const scale = currentAgents.length > 12 ? 0.72 : currentAgents.length > 6 ? 0.82 : 1;
+
+      agentsLayer.innerHTML = currentAgents.map((agent) => {
+        const pos = randomPointInZone(agent.status);
+        const label = `${agent.name}: ${agent.task}`;
+        const sprite = spriteInfoForAvatar(agent.avatar);
+
+        return `
+          <div class="agent" data-id="${escapeAttr(agent.id)}" data-status="${escapeAttr(agent.status)}" data-avatar="${agent.avatar}" style="--sheet: url('${sprite.atlas}'); --row-y: ${sprite.rowY}; --x: ${pos.x}%; --y: ${pos.y}%; --scale: ${scale};">
+            <div class="sprite"></div>
+            <div class="nameplate">${escapeHtml(label)}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function wanderAgents() {
+      currentAgents.forEach((agent) => {
+        const node = agentsLayer.querySelector(`[data-id="${cssEscape(agent.id)}"]`);
+        if (!node) return;
+        const pos = randomPointInZone(agent.status);
+        node.style.setProperty("--x", `${pos.x}%`);
+        node.style.setProperty("--y", `${pos.y}%`);
+      });
+    }
+
+    function randomPointInZone(status) {
+      const bounds = zoneBounds[status] || zoneBounds.Intake;
+      return {
+        x: round(bounds.minX + Math.random() * (bounds.maxX - bounds.minX)),
+        y: round(bounds.minY + Math.random() * (bounds.maxY - bounds.minY))
+      };
+    }
+
+    async function loadState() {
+      try {
+        const response = await fetch(`visual-state.json?ts=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) return;
+        const state = await response.json();
+        const status = validStatuses.has(state.status) ? state.status : "Intake";
+        const progress = Math.max(0, Math.min(100, Number(state.progress) || 0));
+
+        panel.dataset.status = status;
+        goal.textContent = state.goal || "MissionCenter task";
+        progressText.textContent = `${progress}%`;
+        progressBar.style.width = `${progress}%`;
+        statusText.textContent = status;
+        const activeItems = Array.isArray(state.active) ? state.active : [];
+        const visibleItems = activeItems.slice(0, maxActiveItems);
+        const hiddenCount = Math.max(0, activeItems.length - visibleItems.length);
+        activeList.innerHTML = visibleItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
+          + (hiddenCount ? `<li>+${hiddenCount} more</li>` : "");
+        blockedText.textContent = `Blocked: ${(state.blocked || []).join(", ") || "None"}`;
+        renderMonument(progress);
+        renderAgents(state, status);
+      } catch {
+        // File URLs and local browser cache can occasionally race during writes.
+      }
+    }
+
+    function round(value) {
+      return Math.round(value * 10) / 10;
+    }
+
+    function cssEscape(value) {
+      if (window.CSS?.escape) return CSS.escape(String(value));
+      return String(value).replace(/["\\]/g, "\\$&");
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      })[char]);
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#96;");
+    }
+
+    loadState();
+    setInterval(loadState, 10000);
+    setInterval(wanderAgents, 6500);
+  </script>
+</body>
+</html>

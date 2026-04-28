@@ -3,6 +3,8 @@
 Mission Center is an offline, file-based Codex plugin and skill for turning vague goals into a local task workspace.
 It is inspired by Linear-style project tracking and Superpowers-style execution discipline, but it does not connect to Linear or any external app.
 
+![Codex Mission Center](assets/mission-center.svg)
+
 ## What It Does
 
 - Asks focused intake questions before work starts.
@@ -11,9 +13,8 @@ It is inspired by Linear-style project tracking and Superpowers-style execution 
 - Tracks project summary, progress, tasks, decisions, notes, snapshots, and smoke tests.
 - Keeps task state local and readable as Markdown.
 - Follows the user's language for generated workspace files, including Traditional Chinese.
+- Bundles a local animated visual HUD with a 16-character helper roster.
 - Supports a future global overview mode without mixing unrelated workspace tasks.
-
-![Codex Mission Center](https://pbs.twimg.com/media/HGvWLdmbcAAckSd?format=jpg&name=900x900)
 
 ## Plugin Layout
 
@@ -101,7 +102,7 @@ For Traditional Chinese workspaces, Mission Center should create the Markdown fi
 
 ```bash
 python ~/.codex/skills/mission-center/scripts/bootstrap_mission_center.py . --language zh-TW
-python ~/.codex/skills/mission-center/scripts/seed_task_tree.py . --goal "建立任務中心" --language zh-TW
+python ~/.codex/skills/mission-center/scripts/seed_task_tree.py . --goal "整理任務中心" --language zh-TW
 ```
 
 The skill will create files like:
@@ -115,7 +116,28 @@ MissionCenter/
   smoke-tests.md
   notes.md
   snapshot.md
+  visual-hub.md
+output/
+  mission-center-assets/
+    visual-summary.html
+    visual-state.json
+    update-visual-state.ps1
+    mission-base-main.png
+    mission-helper-roster-8-fixed.png
+    mission-helper-roster-8-girls-2.png
 ```
+
+Open `output/mission-center-assets/visual-summary.html` to view the local visual HUD.
+
+## Visual Assets
+
+Mission Center bundles the HUD assets needed for offline use:
+
+- `skills/mission-center/assets/visual-hub/mission-base-main.png`
+- `skills/mission-center/assets/visual-hub/mission-helper-roster-8-fixed.png`
+- `skills/mission-center/assets/visual-hub/mission-helper-roster-8-girls-2.png`
+- `skills/mission-center/assets/visual-hub/visual-summary.html`
+- `skills/mission-center/assets/visual-hub/update-visual-state.ps1`
 
 ## Global Overview Safety
 
