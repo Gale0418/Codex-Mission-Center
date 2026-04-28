@@ -3,7 +3,7 @@
 Mission Center is an offline, file-based Codex plugin and skill for turning vague goals into a local task workspace.
 It is inspired by Linear-style project tracking and Superpowers-style execution discipline, but it does not connect to Linear or any external app.
 
-![skills/mission-center/assets/visual-hub/readme-hero.png](https://pbs.twimg.com/media/HGvWLdmbcAAckSd.jpg))
+![skills/mission-center/assets/visual-hub/readme-hero.png](https://pbs.twimg.com/media/HGvWLdmbcAAckSd.jpg)
 
 ## What It Does
 
