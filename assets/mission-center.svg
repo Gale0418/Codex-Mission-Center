@@ -1,23 +1,29 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Mission Center">
   <defs>
     <linearGradient id="bg" x1="18" x2="110" y1="16" y2="112" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFF7AD"/>
-      <stop offset="0.55" stop-color="#F59E0B"/>
-      <stop offset="1" stop-color="#0F766E"/>
+      <stop stop-color="#FFF7C7"/>
+      <stop offset="0.5" stop-color="#F59E0B"/>
+      <stop offset="1" stop-color="#14B8A6"/>
     </linearGradient>
-    <linearGradient id="screen" x1="36" x2="96" y1="34" y2="92" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#E0F2FE"/>
-      <stop offset="1" stop-color="#22D3EE"/>
+    <linearGradient id="hair" x1="36" x2="92" y1="22" y2="88" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F97316"/>
+      <stop offset="1" stop-color="#B45309"/>
+    </linearGradient>
+    <linearGradient id="coat" x1="34" x2="94" y1="72" y2="116" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FDE047"/>
+      <stop offset="1" stop-color="#EAB308"/>
     </linearGradient>
   </defs>
-  <rect width="128" height="128" rx="30" fill="#111827"/>
-  <path d="M24 30c0-8 6-14 14-14h52c8 0 14 6 14 14v68c0 8-6 14-14 14H38c-8 0-14-6-14-14V30Z" fill="url(#bg)"/>
-  <path d="M36 35c0-4 3-7 7-7h42c4 0 7 3 7 7v35c0 4-3 7-7 7H43c-4 0-7-3-7-7V35Z" fill="#082F49" stroke="#F8FAFC" stroke-width="4"/>
-  <circle cx="64" cy="53" r="18" fill="url(#screen)"/>
-  <path d="M47 53h34M64 35c7 7 10 13 10 18s-3 11-10 18M64 35c-7 7-10 13-10 18s3 11 10 18" fill="none" stroke="#075985" stroke-width="3" stroke-linecap="round"/>
-  <path d="M42 91h44" stroke="#111827" stroke-width="8" stroke-linecap="round"/>
-  <path d="M48 91h32" stroke="#FEF3C7" stroke-width="4" stroke-linecap="round"/>
-  <circle cx="42" cy="91" r="5" fill="#16A34A"/>
-  <circle cx="64" cy="91" r="5" fill="#38BDF8"/>
-  <circle cx="86" cy="91" r="5" fill="#EF4444"/>
+  <rect width="128" height="128" rx="30" fill="#0F172A"/>
+  <circle cx="64" cy="64" r="49" fill="url(#bg)"/>
+  <path d="M35 43c3-14 14-22 29-22 17 0 28 10 31 25 2 11-1 24-7 32-3 3-8 6-14 7H51c-6-1-11-4-14-8-6-9-9-22-2-34Z" fill="url(#hair)"/>
+  <circle cx="50" cy="60" r="5" fill="#111827"/>
+  <circle cx="78" cy="60" r="5" fill="#111827"/>
+  <path d="M45 73c5 5 8 7 19 7s14-2 19-7" fill="none" stroke="#111827" stroke-width="4" stroke-linecap="round"/>
+  <path d="M40 83c7-7 15-11 24-11s17 4 24 11c5 6 8 13 8 20v5H32v-5c0-7 3-14 8-20Z" fill="url(#coat)" stroke="#111827" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M47 74c4 4 9 6 17 6s13-2 17-6v10H47V74Z" fill="#FFFFFF" opacity="0.9"/>
+  <circle cx="56" cy="54" r="1.8" fill="#FFFFFF"/>
+  <circle cx="72" cy="54" r="1.8" fill="#FFFFFF"/>
+  <path d="M28 102h72" stroke="#111827" stroke-width="4" stroke-linecap="round" opacity="0.45"/>
+  <path d="M52 34c5-4 11-6 18-6" fill="none" stroke="#FDBA74" stroke-width="4" stroke-linecap="round"/>
 </svg>
