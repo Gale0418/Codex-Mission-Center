@@ -13,6 +13,7 @@ MissionCenter/
   smoke-tests.md
   notes.md
   snapshot.md
+  visual-hub.md
 ```
 
 Add extra files only when they clearly improve traceability.
@@ -139,6 +140,7 @@ When the workspace is created for a new goal, seed these starting files:
 - `decisions.md` with any assumptions made during intake
 - `notes.md` for open questions and loose observations
 - `snapshot.md` for the latest reopenable checkpoint
+- `visual-hub.md` for a short link to the animated MissionCenter HUD
 
 ## Sync Expectations
 

@@ -17,6 +17,7 @@ FILES_EN = {
     "notes.md": """# Notes\n\n- \n""",
     "closeout.md": """# Closeout\n\n- Summary:\n- Completed:\n- Unfinished:\n- Risks:\n- Smoke tests:\n- Retro:\n""",
     "snapshot.md": """# Snapshot\n\n- Captured at:\n- Project:\n- Cycle:\n- Goal:\n- Progress:\n- Active tasks:\n- Blocked tasks:\n- Recent decisions:\n- Open questions:\n""",
+    "visual-hub.md": """# Visual Hub\n\n- Open HUD: `output/mission-center-assets/visual-summary.html`\n- Current view: active helpers, task states, progress, and blockers\n- Helper roster: auto-assigned by the visual panel\n""",
 }
 
 FILES_ZH_TW = {
@@ -28,6 +29,7 @@ FILES_ZH_TW = {
     "notes.md": """# 筆記\n\n- \n""",
     "closeout.md": """# 收尾\n\n- 摘要：\n- 已完成：\n- 未完成：\n- 風險：\n- Smoke tests：\n- 回顧：\n""",
     "snapshot.md": """# 快照\n\n- 建立時間：\n- 專案：\n- 週期：\n- 目標：\n- 進度：\n- 進行中任務：\n- 阻塞任務：\n- 最近決策：\n- 開放問題：\n""",
+    "visual-hub.md": """# 視覺 HUB\n\n- 開啟 HUD：`output/mission-center-assets/visual-summary.html`\n- 目前視圖：進行中小人、任務狀態、進度與阻塞原因\n- 小人名冊：由視覺面板自動分配\n""",
 }
 
 
