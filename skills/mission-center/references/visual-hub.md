@@ -14,7 +14,8 @@ Keep it short and obvious:
 
 - Open HUD: `output/mission-center-assets/visual-summary.html`
 - Current view: active helpers, task states, progress, and blockers
-- Helper roster: auto-assigned by the visual panel
+- Sync mode: keep task state updated in real time as the workspace changes
+- Helper roster: one visible helper per active agent
 ```
 
 `scripts/bootstrap_mission_center.py` should also copy the bundled HUD files into:
@@ -46,3 +47,5 @@ The current roster is split across two 8-character sheets:
 
 - `mission-helper-roster-8-fixed.png`
 - `mission-helper-roster-8-girls-2.png`
+
+The helper count shown in the HUD should match the number of active agents whenever possible.

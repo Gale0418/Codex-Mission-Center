@@ -11,6 +11,7 @@ Use this skill to turn a vague request into a local task workspace under `Missio
 Keep the workflow offline and file-based: no Linear app, no external project service, only structured files in the current workspace.
 All user-facing MissionCenter files should follow the user's conversation language. If the user writes in Traditional Chinese, create headings, table labels, notes, decisions, and task descriptions in Traditional Chinese. Keep only stable workflow tokens such as status values, IDs, and labels in English when consistency is useful.
 If the workspace also has a visual MissionCenter HUD, create a visible hub link file during bootstrap so the user can jump to the animated summary that shows helpers moving through the task states.
+Keep the HUD synchronized with workspace changes, and make the visible helper count match the number of active agents whenever the workspace can support it.
 
 ## Core Workflow
 
