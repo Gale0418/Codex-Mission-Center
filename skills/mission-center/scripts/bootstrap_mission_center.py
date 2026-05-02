@@ -31,8 +31,8 @@ FILES_EN = {
 """,
     "tasks.md": """# Tasks
 
-| ID | Title | Type | Parent | Priority | Status | Owner | Depends on | Next action | Verification | Estimate | Labels | Comments |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ID | Title | Type | Parent | Priority | Status | Owner | Depends on | Next action | Verification | SmokeTest | Review | Estimate | Labels | Comments |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 """,
     "smoke-tests.md": """# Smoke Tests
 
@@ -71,7 +71,7 @@ FILES_EN = {
     "visual-hub.md": """# Visual Hub
 
 - Open HUD: `output/mission-center-assets/visual-summary.html`
-- Current view: active helpers, task states, progress, and blockers
+- Current view: active helpers, task states, progress, SmokeTest, and Review lanes
 - Helper roster: auto-assigned by the visual panel
 """,
 }
@@ -99,8 +99,8 @@ FILES_ZH_TW = {
 """,
     "tasks.md": """# 任務
 
-| ID | 標題 | 類型 | 父層 | 優先級 | 狀態 | 負責人 | 依賴 | 下一步 | 驗證方式 | 估時 | 標籤 | 備註 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ID | 標題 | 類型 | 父層 | 優先級 | 狀態 | 負責人 | 依賴 | 下一步 | 驗證方式 | SmokeTest | Review | 估時 | 標籤 | 備註 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 """,
     "smoke-tests.md": """# Smoke Tests
 
@@ -139,7 +139,7 @@ FILES_ZH_TW = {
     "visual-hub.md": """# 視覺 HUB
 
 - 開啟 HUD：`output/mission-center-assets/visual-summary.html`
-- 目前畫面：小人狀態、任務進度、阻塞項目與 active 清單
+- 目前畫面：小人狀態、任務進度、SmokeTest、Review 與 active 清單
 - 小人名冊：由視覺面板自動分配
 """,
 }

@@ -145,7 +145,7 @@
       height: 24%;
     }
 
-    .zone-blocked {
+    .zone-smoketest {
       --zone-color: rgba(255, 186, 107, 0.16);
       left: 9%;
       top: 52%;
@@ -171,7 +171,8 @@
 
     .mission-panel[data-status="Intake"] .zone-intake,
     .mission-panel[data-status="In Progress"] .zone-progress,
-    .mission-panel[data-status="Blocked"] .zone-blocked,
+    .mission-panel[data-status="SmokeTest"] .zone-smoketest,
+    .mission-panel[data-status="Blocked"] .zone-smoketest,
     .mission-panel[data-status="Review"] .zone-review,
     .mission-panel[data-status="Done"] .zone-done {
       opacity: 0.32;
@@ -507,6 +508,7 @@
       animation: work-frames 7.5s steps(1, end) infinite;
     }
 
+    .agent[data-status="SmokeTest"] .sprite,
     .agent[data-status="Blocked"] .sprite {
       animation: none;
       background-position: 100% var(--row-y);
@@ -612,7 +614,7 @@
       <img class="stage-art" id="stageArt" src="mission-base-main.png" alt="">
       <div class="zone zone-intake" data-label="Intake Dispatch"></div>
       <div class="zone zone-progress" data-label="In Progress Office"></div>
-      <div class="zone zone-blocked" data-label="Blocked Repair"></div>
+      <div class="zone zone-smoketest" data-label="SmokeTest Dock"></div>
       <div class="zone zone-review" data-label="Review Archive"></div>
       <div class="zone zone-done" data-label="Done Nap Dock"></div>
       <div class="tech-prop dispatch-console"></div>
@@ -643,7 +645,7 @@
         <li>Workspace setup</li>
         <li>Task tree</li>
       </ul>
-      <p id="blockedText" style="margin-top: 8px;">Blocked: Smoke tests</p>
+      <p id="blockedText" style="margin-top: 8px;">SmokeTest: Waiting ｜ Review: Waiting</p>
     </section>
   </main>
   <script>
@@ -659,7 +661,7 @@
     const constructionSite = document.querySelector(".construction-site");
     const monument = document.querySelector("#monument");
     const stageArt = document.querySelector("#stageArt");
-    const validStatuses = new Set(["Intake", "In Progress", "Blocked", "Review", "Done"]);
+    const validStatuses = new Set(["Intake", "In Progress", "SmokeTest", "Blocked", "Review", "Done"]);
     const maxVisibleAgents = 16;
     const maxActiveItems = 6;
     const avatarAssignments = new Map();
@@ -670,6 +672,7 @@
     const zoneBounds = {
       "Intake": { minX: 15, maxX: 34, minY: 28, maxY: 37 },
       "In Progress": { minX: 62, maxX: 85, minY: 28, maxY: 46 },
+      "SmokeTest": { minX: 15, maxX: 34, minY: 57, maxY: 66 },
       "Blocked": { minX: 15, maxX: 34, minY: 57, maxY: 66 },
       "Review": { minX: 66, maxX: 84, minY: 58, maxY: 67 },
       "Done": { minX: 35, maxX: 64, minY: 75, maxY: 81 }
@@ -787,7 +790,9 @@
         const hiddenCount = Math.max(0, activeItems.length - visibleItems.length);
         activeList.innerHTML = visibleItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
           + (hiddenCount ? `<li>+${hiddenCount} more</li>` : "");
-        blockedText.textContent = `Blocked: ${(state.blocked || []).join(", ") || "None"}`;
+        const smokeTestItems = Array.isArray(state.smokeTest) ? state.smokeTest : [];
+        const reviewItems = Array.isArray(state.review) ? state.review : [];
+        blockedText.textContent = `SmokeTest: ${smokeTestItems.join(", ") || "None"} ｜ Review: ${reviewItems.join(", ") || "None"} ｜ Blocked: ${(state.blocked || []).join(", ") || "None"}`;
         renderMonument(progress);
         renderAgents(state, status);
       } catch {

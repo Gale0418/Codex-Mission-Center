@@ -1,5 +1,5 @@
 ﻿{
-    "status":  "In Progress",
+    "status":  "SmokeTest",
     "goal":  "MissionCenter random helper roster",
     "progress":  55,
     "active":  [
@@ -7,14 +7,20 @@
                    "Task monitoring capacity check",
                    "Visual panel polish"
                ],
+    "smokeTest":  [
+                       "Random avatar assignment"
+                   ],
     "blocked":  [
                     "None"
                 ],
+    "review":  [
+                   "Visual panel polish"
+               ],
     "agents":  [
                    {
                        "id":  "agent-1",
                        "name":  "主控",
-                       "status":  "In Progress",
+                       "status":  "SmokeTest",
                        "task":  "整理任務"
                    },
                    {
