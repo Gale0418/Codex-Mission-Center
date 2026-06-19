@@ -91,6 +91,16 @@ Suggested statuses:
 
 Record major choices, assumptions, and reversals.
 
+### `notes.md`
+
+Keep open questions and a concise research log:
+
+```text
+Pre-search idea | Source | Adopted insight | License status
+```
+
+Do not paste full search results or long source summaries.
+
 ### `smoke-tests.md`
 
 Record verified checks only.
@@ -138,7 +148,7 @@ When the workspace is created for a new goal, seed these starting files:
 - `tasks.md` with one top-level epic and initial child tasks
 - `smoke-tests.md` with at least one placeholder row for the first verification
 - `decisions.md` with any assumptions made during intake
-- `notes.md` for open questions and loose observations
+- `notes.md` for open questions and the concise research log
 - `snapshot.md` for the latest reopenable checkpoint
 - `visual-hub.md` for a short link to the animated MissionCenter HUD
 
@@ -159,8 +169,9 @@ If a user-facing comment is needed, write it as a short entry in `project.md` or
 
 ## Related Protocols
 
-- `intake-protocol.md` defines the question order before work starts.
-- `intake-council.md` defines the pre-execution meeting gate.
+- `intake-protocol.md` defines mission completeness and one-question intake.
+- `intake-council.md` defines creative cross-domain divergence and convergence.
+- `research-protocol.md` defines Prior Art, Jina fallback, Clean-room, and licensing.
 - `execution-gates.md` defines when a project may move from intake to plan to execute to review.
 - `agent-orchestration.md` defines when to dispatch subagents.
 - `smoke-test-patterns.md` defines how to choose a verification check.

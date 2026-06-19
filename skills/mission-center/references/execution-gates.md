@@ -1,59 +1,33 @@
-﻿# Execution Gates
+# Execution Gates
 
 ## Gate 1: Intake
 
-Allowed:
+Ask one question at a time until the mission completeness checklist passes. Do not scaffold or publish tasks while the goal is unclear.
 
-- ask questions
-- summarize scope
-- capture assumptions
+## Gate 2: Research and Design
 
-Not allowed:
+Run relevant local research, Prior Art, and creative cross-domain work. Present two or three approaches, trade-offs, and a recommendation.
 
-- create implementation tasks too early
-- mark work as ready
+## Gate 3: Task Draft Approval
 
-## Gate 2: Plan
+Present the full Epic map and detailed first milestone as an approved task draft. Do not write `tasks.md` until the user approves that draft.
 
-Allowed:
+## Gate 4: Publish
 
-- create the project tree
-- split work into tasks and subtasks
-- assign estimates and dependencies
-- choose a smoke test
+Create or update the local workspace, assign stable IDs and dependencies, and select at least one verification path for each meaningful Task.
 
-Exit criteria:
+## Gate 5: Execute
 
-- task tree is understandable
-- blocker list is explicit
-- at least one verification path exists
+Implement one bounded slice. Keep changes small, update task state when facts change, and expose blockers rather than hiding them.
 
-## Gate 3: Execute
+## Gate 6: Review
 
-Allowed:
+Before `Done`, require recorded verification, resolved or documented blockers, and task state that matches reality.
 
-- implement one bounded slice
-- update progress
-- record decisions and comments
+## Gate 7: Closeout
 
-Rules:
+Summarize outcomes, preserve smoke-test evidence, record unfinished Backlog work, and capture the next reopenable checkpoint.
 
-- keep changes small
-- keep dependencies visible
-- update the workspace before moving on
+## Adaptive Depth
 
-## Gate 4: Review
-
-Required before `Done`:
-
-- verification recorded
-- blockers resolved or documented
-- task state matches reality
-
-## Gate 5: Close
-
-Before closing a project or cycle:
-
-- summarize outcomes
-- record unfinished work
-- preserve the smoke-test history
+Large or risky missions use the full flow. Small deterministic work may use concise artifacts, but still requires goal understanding, approval for meaningful scope, and verification.

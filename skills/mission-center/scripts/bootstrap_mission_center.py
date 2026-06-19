@@ -31,8 +31,8 @@ FILES_EN = {
 """,
     "tasks.md": """# Tasks
 
-| ID | Title | Type | Parent | Priority | Status | Owner | Depends on | Next action | Verification | SmokeTest | Review | Estimate | Labels | Comments |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ID | Title | Type | Parent | Priority | Status | Owner | Depends on | Next action | Verification | Estimate | Labels | Comments |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 """,
     "smoke-tests.md": """# Smoke Tests
 
@@ -45,7 +45,10 @@ FILES_EN = {
 """,
     "notes.md": """# Notes
 
--
+## Research Log
+
+| Pre-search idea | Source | Adopted insight | License status |
+| --- | --- | --- | --- |
 """,
     "closeout.md": """# Closeout
 
@@ -71,8 +74,8 @@ FILES_EN = {
     "visual-hub.md": """# Visual Hub
 
 - Open HUD: `output/mission-center-assets/visual-summary.html`
-- Current view: active helpers, task states, progress, SmokeTest, and Review lanes
-- Helper roster: auto-assigned by the visual panel
+- Current view: task states, progress, and blockers
+- Helper rule: one helper represents one task from `tasks.md`
 """,
 }
 
@@ -99,8 +102,8 @@ FILES_ZH_TW = {
 """,
     "tasks.md": """# 任務
 
-| ID | 標題 | 類型 | 父層 | 優先級 | 狀態 | 負責人 | 依賴 | 下一步 | 驗證方式 | SmokeTest | Review | 估時 | 標籤 | 備註 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ID | 標題 | 類型 | 父層 | 優先級 | 狀態 | 負責人 | 依賴 | 下一步 | 驗證方式 | 估時 | 標籤 | 備註 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 """,
     "smoke-tests.md": """# Smoke Tests
 
@@ -113,7 +116,10 @@ FILES_ZH_TW = {
 """,
     "notes.md": """# 筆記
 
--
+## 研究紀錄
+
+| 搜尋前構想 | 參考來源 | 採納內容 | 授權狀態 |
+| --- | --- | --- | --- |
 """,
     "closeout.md": """# 收尾
 
@@ -139,8 +145,8 @@ FILES_ZH_TW = {
     "visual-hub.md": """# 視覺 HUB
 
 - 開啟 HUD：`output/mission-center-assets/visual-summary.html`
-- 目前畫面：小人狀態、任務進度、SmokeTest、Review 與 active 清單
-- 小人名冊：由視覺面板自動分配
+- 目前畫面：任務狀態、進度與阻塞項目
+- 小人規則：`tasks.md` 中一個小人代表一個任務
 """,
 }
 

@@ -1,64 +1,40 @@
 # Linear Parity Map
 
-## Mirror These Concepts
+## Local Task Model
 
-- `Project`
-- `Cycle`
-- `Epic`
-- `Task`
-- `Subtask`
-- `Priority`
-- `Status`
-- `Priority taxonomy`
-- `Labels`
-- `Owner`
-- `Dependencies`
-- `Blocked`
-- `Comments`
-- `Activity`
-- `Estimate`
-- `Smoke test`
+Use one `Project` for the mission. Use `Cycle` for the current milestone or time box, `Epic` for a broad outcome, `Task` for a verifiable delivery slice, and `Subtask` for a small executable step.
 
-## Mirror These Behaviors
+Track stable IDs, parent links, priority, status, owner when useful, dependencies, next action, verification, estimate, labels, and concise comments. Keep blockers and decision history visible.
 
-- Read first, then update.
-- Keep scope and ownership explicit.
-- Make blockers visible.
-- Prefer batch updates for related changes.
-- Keep progress visible and current.
-- Use comments or activity notes to explain important changes.
-- Keep work small enough to review and validate.
+## Rolling Planning
 
-## Do Not Mirror
+- Build the full Epic map so the overall direction is visible.
+- Detail only the first verifiable milestone into Tasks and Subtasks.
+- Keep later work as a coarse Backlog until the current milestone produces evidence.
+- Revisit research, risks, dependencies, and scope before expanding the next milestone.
+- Split a task when it contains more than one independently verifiable outcome or crosses a risky boundary.
 
-- Any need for a Linear app or OAuth.
-- External workspaces or network dependencies.
-- Hidden state outside the MissionCenter folder.
+## Status and Priority
+
+Use `Backlog -> Ready -> In Progress -> Blocked -> Review -> Done`.
+
+- `P0`: urgent or blocking
+- `P1`: high value or high risk
+- `P2`: normal
+- `P3`: low priority or optional
+
+Use a small stable label set such as `intake`, `research`, `plan`, `execution`, `verification`, `blocked`, and `closeout`.
 
 ## Superpowers Alignment
 
-Use the Superpowers style for execution:
+Linear owns task structure and state. Superpowers owns decision and execution discipline:
 
-- clarify before acting
-- decompose before assigning
-- review before marking done
-- keep checkpoints explicit
-- use parallelism only for independent slices
+```text
+Brainstorm -> Spec -> Plan -> TDD -> Verify -> Closeout
+```
 
-## Priority Taxonomy
+Scale document depth with risk. Never skip mission understanding, task-draft approval, or final verification.
 
-- `P0` = urgent / blocking
-- `P1` = high value or high risk
-- `P2` = normal
-- `P3` = low priority / nice to have
+## Boundaries
 
-## Label Taxonomy
-
-Use small, stable labels only:
-
-- `intake`
-- `plan`
-- `execution`
-- `verification`
-- `blocked`
-- `closeout`
+Do not require a Linear app, OAuth, external workspace, or hidden task state. `MissionCenter/tasks.md` remains the local source of truth.

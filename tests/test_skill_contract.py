@@ -79,6 +79,25 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("explicit user approval", orchestration)
         self.assertIn("simulated expert perspectives", orchestration)
 
+    def test_linear_and_execution_references_enforce_rolling_approval(self):
+        linear = (SKILL_ROOT / "references" / "linear-parity.md").read_text(
+            encoding="utf-8"
+        )
+        gates = (SKILL_ROOT / "references" / "execution-gates.md").read_text(
+            encoding="utf-8"
+        )
+        workspace = (SKILL_ROOT / "references" / "task-workspace.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Rolling Planning", linear)
+        self.assertIn("full Epic map", linear)
+        self.assertIn("approved task draft", gates)
+        self.assertIn("Do not write `tasks.md`", gates)
+        self.assertIn(
+            "Pre-search idea | Source | Adopted insight | License status",
+            workspace,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

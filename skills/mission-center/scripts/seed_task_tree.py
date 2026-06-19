@@ -30,8 +30,6 @@ TASK_LABELS = {
             "Depends on",
             "Next action",
             "Verification",
-            "SmokeTest",
-            "Review",
             "Estimate",
             "Labels",
             "Comments",
@@ -45,6 +43,14 @@ TASK_LABELS = {
         "workspace": "Workspace setup",
         "slices": "Execution slices",
         "closeout": "Closeout and retro",
+        "research": "Research and scope",
+        "milestone": "First verifiable milestone",
+        "verification_closeout": "Verification and closeout",
+        "research_next": "Research prior art and clarify scope",
+        "research_done": "intake and research decisions approved",
+        "milestone_next": "Detail the approved first milestone",
+        "milestone_done": "milestone acceptance check passes",
+        "verification_next": "Run verification and summarize outcomes",
         "clarify": "Clarify scope",
         "acceptance": "define acceptance",
         "ask": "Ask questions until scope is clear",
@@ -92,8 +98,6 @@ TASK_LABELS = {
             "依賴",
             "下一步",
             "驗證方式",
-            "SmokeTest",
-            "Review",
             "估時",
             "標籤",
             "備註",
@@ -107,6 +111,14 @@ TASK_LABELS = {
         "workspace": "任務中心初始化",
         "slices": "執行切片",
         "closeout": "收尾與回顧",
+        "research": "研究與範圍釐清",
+        "milestone": "第一個可驗證里程碑",
+        "verification_closeout": "驗證與收尾",
+        "research_next": "研究既有方案並釐清範圍",
+        "research_done": "需求與研究決策已核准",
+        "milestone_next": "詳細拆解已核准的第一個里程碑",
+        "milestone_done": "里程碑驗收檢查通過",
+        "verification_next": "執行驗證並整理成果",
         "clarify": "釐清範圍",
         "acceptance": "定義驗收標準",
         "ask": "持續提問直到範圍清楚",
@@ -142,6 +154,18 @@ def table_header(columns: list[str]) -> list[str]:
     ]
 
 
+def project_goal_is_blank(path: Path) -> bool:
+    if not path.exists():
+        return True
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- Goal:"):
+            return not stripped.removeprefix("- Goal:").strip()
+        if stripped.startswith("- 目標："):
+            return not stripped.removeprefix("- 目標：").strip()
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("workspace", nargs="?", default=".")
@@ -157,7 +181,7 @@ def main() -> int:
     root.mkdir(parents=True, exist_ok=True)
 
     project = root / "project.md"
-    if not project.exists():
+    if project_goal_is_blank(project):
         project.write_text(
             f"# {labels['project_title']}\n\n"
             f"- {labels['goal']}: {args.goal}\n"
@@ -175,18 +199,10 @@ def main() -> int:
         f"# {labels['tasks_title']}",
         "",
         *table_header(labels["columns"]),
-        f"| {args.prefix}-E1 | {args.goal} | Epic |  | P0 | Backlog |  |  | {labels['clarify']} | {labels['acceptance']} | NO | NO | 8 | intake, plan |  |",
-        f"| {args.prefix}-P0-1 | {labels['folder_check']} | Task | {args.prefix}-E1 | P0 | Ready |  |  | {labels['create']} | bootstrap script run | NO | NO | 1 | intake |  |",
-        f"| {args.prefix}-P0-2 | {labels['hub']} | Task | {args.prefix}-E1 | P0 | Ready |  | {args.prefix}-P0-1 | {labels['create']} | hub file visible | NO | NO | 1 | plan |  |",
-        f"| {args.prefix}-P0-3 | {labels['tree']} | Task | {args.prefix}-E1 | P0 | Ready |  | {args.prefix}-P0-2 | {labels['seed']} | task tree visible | NO | NO | 2 | plan |  |",
-        f"| {args.prefix}-P0-4 | {labels['bugloop']} | Task | {args.prefix}-E1 | P0 | Ready |  | {args.prefix}-P0-3 | {labels['split']} | fixed after review | NO | NO | 2 | execution |  |",
-        f"| {args.prefix}-P0-5 | {labels['smoke']} | Task | {args.prefix}-E1 | P0 | Ready |  | {args.prefix}-P0-4 | {labels['add']} | smoke tests recorded | NO | NO | 2 | verification |  |",
-        f"| {args.prefix}-T1 | {labels['intake']} | Task | {args.prefix}-E1 | P1 | Backlog |  | {args.prefix}-P0-5 | {labels['ask']} | {labels['checklist']} | NO | NO | 2 | intake |  |",
-        f"| {args.prefix}-T2 | {labels['workspace']} | Task | {args.prefix}-E1 | P2 | Backlog |  | {args.prefix}-T1 | {labels['create']} | {labels['bootstrap']} | NO | NO | 2 | plan |  |",
-        f"| {args.prefix}-T3 | {labels['tree']} | Task | {args.prefix}-E1 | P2 | Backlog |  | {args.prefix}-T2 | {labels['seed']} | {labels['visible']} | NO | NO | 3 | plan |  |",
-        f"| {args.prefix}-T4 | {labels['slices']} | Task | {args.prefix}-E1 | P1 | Backlog |  | {args.prefix}-T3 | {labels['split']} | {labels['each']} | NO | NO | 5 | execution |  |",
-        f"| {args.prefix}-T5 | {labels['smoke']} | Task | {args.prefix}-E1 | P1 | Backlog |  | {args.prefix}-T4 | {labels['add']} | {labels['recorded']} | NO | NO | 3 | verification |  |",
-        f"| {args.prefix}-T6 | {labels['closeout']} | Task | {args.prefix}-E1 | P2 | Backlog |  | {args.prefix}-T5 | {labels['summarize']} | {labels['written']} | NO | NO | 2 | closeout |  |",
+        f"| {args.prefix}-E1 | {args.goal} | Epic |  | P0 | Backlog |  |  | {labels['clarify']} | {labels['acceptance']} | 8 | intake, plan |  |",
+        f"| {args.prefix}-R1 | {labels['research']} | Task | {args.prefix}-E1 | P0 | Ready |  |  | {labels['research_next']} | {labels['research_done']} | 2 | intake, research |  |",
+        f"| {args.prefix}-M1 | {labels['milestone']} | Task | {args.prefix}-E1 | P1 | Backlog |  | {args.prefix}-R1 | {labels['milestone_next']} | {labels['milestone_done']} | 5 | plan, execution |  |",
+        f"| {args.prefix}-V1 | {labels['verification_closeout']} | Task | {args.prefix}-E1 | P1 | Backlog |  | {args.prefix}-M1 | {labels['verification_next']} | {labels['recorded']} | 3 | verification, closeout |  |",
     ]
     tasks.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
