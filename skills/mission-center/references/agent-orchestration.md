@@ -1,51 +1,31 @@
 # Agent Orchestration
 
-## When to Use Subagents
+## Default: Simulated Perspectives
 
-Use subagents when a task is:
+Creative Council experts are simulated expert perspectives used by the main agent to transfer principles and expose trade-offs. They do not imply real subagent processes, and they never control HUD helper count.
 
-- independent from the current slice
-- small enough to describe clearly
-- useful to validate in parallel
-- not blocked by shared state
+## Real Subagent Gate
 
-Do not use subagents when the next step depends on their answer immediately.
+Use real subagents only when all conditions hold:
 
-If the session has already used subagents, close completed ones before opening a new wave. Rotate new subagents deliberately instead of spawning a pile at once. Before calling the next expert, review the current Git diff and compare against previous Git history when you need to verify whether a change is new or already solved.
+- the work is independent from the current slice
+- it can be described with a bounded file or research scope
+- independent validation adds material value
+- it does not depend on shared mutable state
+- explicit user approval has been given
+
+## Wave Discipline
+
+Before opening a new wave:
+
+1. Close completed subagents.
+2. Review their evidence against the mission, task tree, blockers, and verification plan.
+3. Inspect the current Git diff.
+4. Update MissionCenter task state.
+5. Decide whether another wave is still necessary.
+
+Keep the active set small. Do not dispatch a pile of overlapping experts or use subagents merely to make the process look busy.
 
 ## Task Packet
 
-Give each subagent:
-
-- the exact file or scope
-- the goal
-- constraints
-- expected output
-- acceptance criteria
-
-## Parallelism Rule
-
-Parallelize only when tasks do not overlap in file ownership or decision making.
-
-## Review Rule
-
-Each subagent result must be checked against:
-
-- the current project goal
-- the task tree
-- the smoke-test plan
-- the active blockers
-
-## Handoff Rule
-
-When a subagent finishes, update `project.md`, `progress.md`, and `tasks.md` before dispatching the next one.
-
-## Anti-Queue Rule
-
-If Codex agent slots feel crowded:
-
-- close finished subagents first
-- wait for the current wave to settle
-- then spawn the next wave
-- keep the active set small enough to reason about
-- inspect the Git diff before launching another expert wave
+Every dispatched subagent receives exact scope, goal, constraints, expected evidence, and acceptance criteria. The main agent remains responsible for integration and verification.
