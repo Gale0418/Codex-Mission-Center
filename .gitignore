@@ -9,3 +9,4 @@ MYKEY.txt
 .env.*
 MissionCenter/
 output/
+.worktrees/
