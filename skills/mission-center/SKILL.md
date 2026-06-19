@@ -54,6 +54,10 @@ Use Superpowers-style gates: `Brainstorm -> Spec -> Plan -> TDD -> Verify -> Clo
 
 Follow [visual-hub.md](references/visual-hub.md). One helper represents one task. The helper name, order, zone, and count come from `tasks.md`, never owners, processes, active agents, or execution parallelism. Run `scripts/sync_mission_center.py` after task-state changes.
 
+### 9. Optional Final CodeRabbit Review
+
+After implementation and local verification, use [coderabbit-review-gate.md](references/coderabbit-review-gate.md) when the user requests independent review or the change is large or high risk. CodeRabbit is advisory: obtain upload consent, scope out irrelevant large files, verify every issue, and never report a failed or rate-limited review as passed.
+
 ## Task Lifecycle
 
 Use `Backlog -> Ready -> In Progress -> Blocked -> Review -> Done`. `Blocked` means a real impediment. Smoke tests are completion evidence, not a separate task status. Keep dependencies and next actions explicit.
@@ -84,6 +88,7 @@ Use `Backlog -> Ready -> In Progress -> Blocked -> Review -> Done`. `Blocked` me
 - [execution-gates.md](references/execution-gates.md): approval and execution gates.
 - [agent-orchestration.md](references/agent-orchestration.md): simulated perspectives and real subagents.
 - [visual-hub.md](references/visual-hub.md): task-driven HUD contract.
+- [coderabbit-review-gate.md](references/coderabbit-review-gate.md): risk-based final independent review.
 - [smoke-test-patterns.md](references/smoke-test-patterns.md): verification selection.
 - [project-lifecycle.md](references/project-lifecycle.md): lifecycle and closeout.
 - [global-overview.md](references/global-overview.md): safe global summaries.

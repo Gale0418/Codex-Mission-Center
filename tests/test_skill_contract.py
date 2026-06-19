@@ -159,6 +159,36 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("timeout=", workspace_tests)
 
 
+    def test_coderabbit_gate_is_final_risk_based_and_quota_aware(self):
+        skill = SKILL_PATH.read_text(encoding="utf-8")
+        gate_path = SKILL_ROOT / "references" / "coderabbit-review-gate.md"
+        self.assertIn("references/coderabbit-review-gate.md", skill)
+        self.assertTrue(gate_path.is_file())
+
+        gate = gate_path.read_text(encoding="utf-8")
+        normalized = gate.casefold()
+        for phrase in (
+            "after implementation and local verification",
+            "explicit consent",
+            "risk-based",
+            "--dir",
+            "--base-commit",
+            "-t uncommitted",
+            "binary",
+            "generated",
+            "one full scoped review",
+            "one focused re-review",
+            "regression test",
+            "rate limit",
+            "do not claim coderabbit passed",
+            "codex-managed plugin cache",
+            "completed",
+            "skipped",
+            "unavailable",
+        ):
+            self.assertIn(phrase, normalized)
+
+
 
 if __name__ == "__main__":
     unittest.main()
