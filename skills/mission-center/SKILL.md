@@ -12,6 +12,7 @@ Keep the workflow offline and file-based: no Linear app, no external project ser
 All user-facing MissionCenter files should follow the user's conversation language. If the user writes in Traditional Chinese, create headings, table labels, notes, decisions, and task descriptions in Traditional Chinese. Keep only stable workflow tokens such as status values, IDs, and labels in English when consistency is useful.
 If the workspace also has a visual MissionCenter HUD, create a visible hub link file during bootstrap so the user can jump to the animated summary that shows helpers moving through the task states.
 Keep the HUD synchronized with workspace changes, and make the visible helper count match the number of active agents whenever the workspace can support it.
+When a HUD is present, keep the task workspace compatible with `SmokeTest` and `Review` check columns using `YES / NO`, so helpers can visibly move into the matching lanes instead of only sharing a generic blocked state.
 
 ## Core Workflow
 
@@ -49,6 +50,7 @@ Keep the HUD synchronized with workspace changes, and make the visible helper co
    - Use `Task` for a deliverable slice.
    - Use `Subtask` for a small executable step.
    - Track `Priority`, `Status`, `Owner`, `Blocked by`, `Next action`, `Due`, `Estimate`, `Labels`, and `Comments` when relevant.
+   - When the visual HUD is enabled, add `SmokeTest` and `Review` columns with `YES / NO` values so the summary can move helpers into smoke-test and review lanes.
    - Treat `Status` as a workflow: `Backlog` -> `Ready` -> `In Progress` -> `Blocked` -> `Review` -> `Done`.
    - Keep dependencies explicit so blocked work is visible.
    - When a task is too large or too risky, split it before execution and assign a parent/child relationship.

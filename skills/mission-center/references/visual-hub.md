@@ -3,6 +3,7 @@
 ## Purpose
 
 Use this pattern when the workspace should include a clickable visual MissionCenter HUD alongside the markdown task workspace.
+The HUD should expose separate `SmokeTest` and `Review` lanes when the workspace tracks those check columns, and the task rows should use `YES / NO` so the helpers visibly travel through the workflow.
 
 ## Bootstrap Output
 
@@ -14,6 +15,7 @@ Keep it short and obvious:
 
 - Open HUD: `output/mission-center-assets/visual-summary.html`
 - Current view: active helpers, task states, progress, and blockers
+- Current view: active helpers, task states, progress, SmokeTest, and Review lanes
 - Sync mode: keep task state updated in real time as the workspace changes
 - Helper roster: one visible helper per active agent
 ```

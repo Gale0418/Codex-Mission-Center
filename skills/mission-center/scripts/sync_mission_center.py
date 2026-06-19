@@ -55,7 +55,7 @@ def compute_progress(tasks: list[dict[str, str]]) -> tuple[int, str, list[str], 
                 total_est += estimate
                 if status == "done":
                     done_est += estimate
-            if status in {"backlog", "ready", "in progress", "review"} and len(active) < 5:
+            if status in {"backlog", "ready", "in progress", "smoketest", "review"} and len(active) < 5:
                 active.append(f"{task.get('ID', '').strip()} {title} ({task.get('Status', '').strip()})")
             if status == "blocked" and len(blocked) < 5:
                 blocked.append(f"{task.get('ID', '').strip()} {title}")
