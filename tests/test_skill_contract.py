@@ -133,6 +133,32 @@ class SkillContractTests(unittest.TestCase):
                 self.assertNotIn("remove-item", normalized)
                 self.assertNotIn("rm -rf", normalized)
 
+    def test_install_wrappers_report_each_publish_mode_accurately(self):
+        wrappers = (
+            "install-windows.ps1",
+            "install-unix.sh",
+            "install-plugin-windows.ps1",
+            "install-plugin-unix.sh",
+        )
+        for name in wrappers:
+            text = (ROOT / "scripts" / name).read_text(encoding="utf-8").casefold()
+            with self.subTest(name=name):
+                self.assertIn("dry-run completed", text)
+                self.assertIn("verification completed", text)
+                self.assertIn("published mission center", text)
+
+    def test_tests_use_portable_temp_directories_and_subprocess_timeouts(self):
+        publish_tests = (ROOT / "tests" / "test_publish_local.py").read_text(
+            encoding="utf-8"
+        )
+        workspace_tests = (
+            ROOT / "tests" / "test_workspace_templates.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn('dir="C:/tmp"', publish_tests)
+        self.assertNotIn('dir="C:/tmp"', workspace_tests)
+        self.assertIn("timeout=", workspace_tests)
+
+
 
 if __name__ == "__main__":
     unittest.main()

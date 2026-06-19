@@ -195,6 +195,9 @@ def main(argv: list[str] | None = None) -> int:
             args.cache_skill, ("skills", "mission-center")
         )
 
+    if args.write and cache_skill is not None:
+        raise ValueError("--cache-skill is verify-only; cache is Codex-managed")
+
     if args.dry_run:
         print_changes("personal", map_diff(file_map(canonical), file_map(personal)))
         print_changes(

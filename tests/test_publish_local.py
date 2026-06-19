@@ -37,7 +37,7 @@ def make_fake_repo(root: Path) -> Path:
 
 class PublishLocalTests(unittest.TestCase):
     def test_dry_run_does_not_create_targets(self):
-        with tempfile.TemporaryDirectory(dir="C:/tmp") as temporary:
+        with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo = make_fake_repo(root)
             personal = root / "personal" / "skills" / "mission-center"
@@ -58,7 +58,7 @@ class PublishLocalTests(unittest.TestCase):
             self.assertFalse(marketplace.exists())
 
     def test_write_syncs_skill_and_plugin_without_generated_files(self):
-        with tempfile.TemporaryDirectory(dir="C:/tmp") as temporary:
+        with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo = make_fake_repo(root)
             personal = root / "personal" / "skills" / "mission-center"
@@ -99,7 +99,7 @@ class PublishLocalTests(unittest.TestCase):
             )
 
     def test_verify_reports_drift(self):
-        with tempfile.TemporaryDirectory(dir="C:/tmp") as temporary:
+        with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo = make_fake_repo(root)
             personal = root / "personal" / "skills" / "mission-center"
@@ -131,8 +131,30 @@ class PublishLocalTests(unittest.TestCase):
                 1,
             )
 
+    def test_write_rejects_codex_managed_cache_target(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = make_fake_repo(root)
+            personal = root / "personal" / "skills" / "mission-center"
+            marketplace = root / "marketplace" / "plugins" / "mission-center"
+            cache = root / "cache" / "skills" / "mission-center"
+            with self.assertRaisesRegex(ValueError, "Codex-managed"):
+                main(
+                    [
+                        "--repo",
+                        str(repo),
+                        "--personal-skill",
+                        str(personal),
+                        "--marketplace-plugin",
+                        str(marketplace),
+                        "--cache-skill",
+                        str(cache),
+                        "--write",
+                    ]
+                )
+
     def test_rejects_targets_outside_expected_tail(self):
-        with tempfile.TemporaryDirectory(dir="C:/tmp") as temporary:
+        with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             with self.assertRaisesRegex(ValueError, "skills/mission-center"):
                 validate_target(root / "mission-center", ("skills", "mission-center"))

@@ -26,4 +26,8 @@ if ($LASTEXITCODE -ne 0) {
   exit $LASTEXITCODE
 }
 
-Write-Output "Published Mission Center to personal Skill and local marketplace plugin."
+switch ($mode) {
+  "--dry-run" { Write-Output "Dry-run completed. No files were modified." }
+  "--write" { Write-Output "Published Mission Center to personal Skill and local marketplace plugin." }
+  "--verify" { Write-Output "Verification completed successfully." }
+}

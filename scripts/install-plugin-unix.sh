@@ -18,4 +18,8 @@ python3 "$ROOT/scripts/publish_local.py" \
   --marketplace-plugin "$MARKETPLACE_PLUGIN" \
   "$MODE"
 
-echo "Published Mission Center to personal Skill and local marketplace plugin."
+case "$MODE" in
+  --dry-run) echo "Dry-run completed. No files were modified." ;;
+  --write) echo "Published Mission Center to personal Skill and local marketplace plugin." ;;
+  --verify) echo "Verification completed successfully." ;;
+esac

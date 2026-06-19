@@ -163,7 +163,7 @@ def project_goal_is_blank(path: Path) -> bool:
             return not stripped.removeprefix("- Goal:").strip()
         if stripped.startswith("- 目標："):
             return not stripped.removeprefix("- 目標：").strip()
-    return False
+    return True
 
 
 def main() -> int:

@@ -23,6 +23,7 @@ def run_script(script: Path, *args: str) -> None:
         text=True,
         encoding="utf-8",
         env=environment,
+        timeout=30,
     )
     if result.returncode != 0:
         raise AssertionError(
@@ -33,7 +34,7 @@ def run_script(script: Path, *args: str) -> None:
 
 class WorkspaceTemplateTests(unittest.TestCase):
     def test_bootstrap_creates_concise_research_log_in_both_languages(self):
-        with tempfile.TemporaryDirectory(dir="C:/tmp") as temporary:
+        with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             english = root / "english"
             chinese = root / "chinese"
@@ -67,7 +68,7 @@ class WorkspaceTemplateTests(unittest.TestCase):
             self.assertNotIn("active agent", chinese_hub.lower())
 
     def test_seed_creates_a_small_rolling_plan_with_canonical_statuses(self):
-        with tempfile.TemporaryDirectory(dir="C:/tmp") as temporary:
+        with tempfile.TemporaryDirectory() as temporary:
             workspace = Path(temporary) / "workspace"
             run_script(BOOTSTRAP, workspace, "--language", "en")
             run_script(
@@ -102,12 +103,14 @@ class WorkspaceTemplateTests(unittest.TestCase):
             self.assertIn("| Ready |", rows[1])
             self.assertIn("| Backlog |", rows[2])
             self.assertNotIn("SmokeTest", tasks)
-            self.assertNotIn("| Review |", tasks.splitlines()[2])
+            task_lines = tasks.splitlines()
+            self.assertGreater(len(task_lines), 2, "tasks.md should have a header")
+            self.assertNotIn("| Review |", task_lines[2])
             self.assertIn("Create a better hair dryer", project)
             self.assertIn("First experiment", project)
 
     def test_bootstrap_without_force_preserves_existing_files(self):
-        with tempfile.TemporaryDirectory(dir="C:/tmp") as temporary:
+        with tempfile.TemporaryDirectory() as temporary:
             workspace = Path(temporary) / "workspace"
             run_script(BOOTSTRAP, workspace, "--language", "en")
             notes = workspace / "MissionCenter" / "notes.md"
@@ -116,7 +119,7 @@ class WorkspaceTemplateTests(unittest.TestCase):
             self.assertEqual(notes.read_text(encoding="utf-8"), "keep me\n")
 
     def test_seed_preserves_an_existing_project_summary(self):
-        with tempfile.TemporaryDirectory(dir="C:/tmp") as temporary:
+        with tempfile.TemporaryDirectory() as temporary:
             workspace = Path(temporary) / "workspace"
             run_script(BOOTSTRAP, workspace, "--language", "en")
             project = workspace / "MissionCenter" / "project.md"
@@ -133,6 +136,29 @@ class WorkspaceTemplateTests(unittest.TestCase):
                 project.read_text(encoding="utf-8"),
                 "# Project\n\n- Goal: Keep this goal\n",
             )
+
+    def test_seed_fills_summary_when_goal_field_is_missing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = Path(temporary) / "workspace"
+            project = workspace / "MissionCenter" / "project.md"
+            project.parent.mkdir(parents=True)
+            project.write_text("# Project\n\nNo summary fields yet.\n", encoding="utf-8")
+            run_script(
+                SEED,
+                workspace,
+                "--goal",
+                "Recovered goal",
+                "--project",
+                "Recovered project",
+                "--cycle",
+                "Recovered cycle",
+                "--language",
+                "en",
+            )
+            content = project.read_text(encoding="utf-8")
+            self.assertIn("- Goal: Recovered goal", content)
+            self.assertIn("- Cycle: Recovered cycle", content)
+
 
 
 if __name__ == "__main__":
