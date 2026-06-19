@@ -2,52 +2,30 @@
 
 ## Purpose
 
-Use this pattern when the workspace should include a clickable visual MissionCenter HUD alongside the markdown task workspace.
-The HUD should expose separate `SmokeTest` and `Review` lanes when the workspace tracks those check columns, and the task rows should use `YES / NO` so the helpers visibly travel through the workflow.
+Use the HUD as a task-lifecycle board. `MissionCenter/tasks.md` is the only source for helper count, order, names, and zones.
+
+## Task Mapping
+
+- Create exactly one helper for each selected task row.
+- Use the task ID as the helper ID and the task short title as its name.
+- Keep task order aligned with `tasks.md`.
+- Never derive helper count from owners, active agents, processes, or parallel work.
+- Do not create a placeholder helper when no valid task exists.
+
+Map task statuses to HUD zones:
+
+| Task status | HUD zone |
+| --- | --- |
+| `Backlog`, `Ready` | `Intake` |
+| `In Progress` | `In Progress` |
+| `Blocked` | `Blocked` |
+| `Review` | `Review` |
+| `Done` | Rest area |
+
+Show the first 10 unfinished tasks. Completed tasks do not consume those slots. Keep at most 15 helpers total and retire the oldest completed tasks first.
 
 ## Bootstrap Output
 
-Create a file such as `visual-hub.md` during workspace bootstrap.
-Keep it short and obvious:
+Copy the bundled HUD into `output/mission-center-assets/` and create `MissionCenter/visual-hub.md` with a direct link to `visual-summary.html`. Run `scripts/sync_mission_center.py` after task changes so the JSON state and Markdown summaries stay aligned.
 
-```md
-# Visual Hub
-
-- Open HUD: `output/mission-center-assets/visual-summary.html`
-- Current view: active helpers, task states, progress, and blockers
-- Current view: active helpers, task states, progress, SmokeTest, and Review lanes
-- Sync mode: keep task state updated in real time as the workspace changes
-- Helper roster: one visible helper per active agent
-```
-
-`scripts/bootstrap_mission_center.py` should also copy the bundled HUD files into:
-
-```text
-output/mission-center-assets/
-  visual-summary.html
-  visual-state.json
-  update-visual-state.ps1
-  mission-base-main.png
-  mission-helper-roster-8-fixed.png
-  mission-helper-roster-8-girls-2.png
-```
-
-## P0 Sequence
-
-When the user wants the workspace to start in a visible, animated state, seed these P0 items first:
-
-1. Create the `MissionCenter/` folder.
-1. Create the task flow scaffold.
-1. Add the repair / bug-fix loop.
-1. Add smoke tests and verification steps.
-1. Link the visual HUD so helpers can be watched while tasks move.
-
-## Helper Asset
-
-Keep the full helper roster under `assets/visual-hub/` so a freshly installed skill can create the animated HUD without downloading extra assets.
-The current roster is split across two 8-character sheets:
-
-- `mission-helper-roster-8-fixed.png`
-- `mission-helper-roster-8-girls-2.png`
-
-The helper count shown in the HUD should match the number of active agents whenever possible.
+If task parsing fails, report the exact error and keep the previous state file. Do not invent tasks to make the HUD look populated.

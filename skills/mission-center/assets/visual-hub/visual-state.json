@@ -1,33 +1,8 @@
-﻿{
-    "status":  "SmokeTest",
-    "goal":  "MissionCenter random helper roster",
-    "progress":  55,
-    "active":  [
-                   "Random avatar assignment",
-                   "Task monitoring capacity check",
-                   "Visual panel polish"
-               ],
-    "smokeTest":  [
-                       "Random avatar assignment"
-                   ],
-    "blocked":  [
-                    "None"
-                ],
-    "review":  [
-                   "Visual panel polish"
-               ],
-    "agents":  [
-                   {
-                       "id":  "agent-1",
-                       "name":  "主控",
-                       "status":  "SmokeTest",
-                       "task":  "整理任務"
-                   },
-                   {
-                       "id":  "agent-2",
-                       "name":  "測試",
-                       "status":  "Review",
-                       "task":  "檢查行為"
-                   }
-               ]
+{
+  "status": "Intake",
+  "goal": "MissionCenter task",
+  "progress": 0,
+  "active": [],
+  "blocked": [],
+  "agents": []
 }
