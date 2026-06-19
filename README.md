@@ -7,13 +7,15 @@ It is inspired by Linear-style project tracking and Superpowers-style execution 
 
 ## What It Does
 
-- Asks focused intake questions before work starts.
-- Runs a lightweight multi-angle intake council.
+- Asks exactly one focused intake question per turn until the goal is clear.
+- Runs a creative cross-domain council when analogy can produce feasible ideas.
+- Searches prior art before implementation, with Jina fallback and license checks.
+- Presents approaches and writes only the user-approved rolling task draft.
 - Creates or reuses `MissionCenter/` in the current workspace.
 - Tracks project summary, progress, tasks, decisions, notes, snapshots, and smoke tests.
 - Keeps task state local and readable as Markdown.
 - Follows the user's language for generated workspace files, including Traditional Chinese.
-- Bundles a local animated visual HUD with a 16-character helper roster.
+- Shows one animated HUD helper per task and moves it with the task lifecycle.
 - Supports a future global overview mode without mixing unrelated workspace tasks.
 
 ## Plugin Layout
@@ -34,7 +36,8 @@ Call your Codex:
 Use $mission-center to plan this goal, ask intake questions first, then create a MissionCenter workspace.
 ```
 
-Install helpers live in `scripts/` if you want the plugin or skill on disk.
+Install helpers live in `scripts/`. They delegate to one deterministic publisher so
+the personal Skill and local marketplace plugin cannot silently drift apart.
 
 The skill will create files like:
 
@@ -59,6 +62,18 @@ output/
 ```
 
 Open `output/mission-center-assets/visual-summary.html` to view the local visual HUD.
+
+## Local Publishing
+
+The repository is the only authoring source. Preview changes before publishing:
+
+```text
+python scripts/publish_local.py --repo . --personal-skill ~/.codex/skills/mission-center --marketplace-plugin ~/.codex/local-marketplaces/mission-center/plugins/mission-center --dry-run
+```
+
+Use `--write` to replace both derived copies through staging directories, then use
+`--verify` to detect drift. Codex owns its installed plugin cache; refresh that copy
+through the normal plugin install command rather than editing cache files directly.
 
 ## Visual Assets
 

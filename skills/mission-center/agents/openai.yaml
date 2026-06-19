@@ -1,4 +1,4 @@
 interface:
   display_name: "Mission Center"
-  short_description: "Create a MissionCenter task workspace, ask clarifying questions first, then track progress and smoke tests."
-  default_prompt: "Use $mission-center to ask clarifying questions, run the intake council until the goal is clear, then build and maintain a MissionCenter workspace."
+  short_description: "Clarify, research, approve, and track local missions."
+  default_prompt: "Use $mission-center to ask exactly one question per turn until the North Star is clear, run creative council and Prior Art research, present approaches, then publish only the approved task draft and keep one HUD helper per task."

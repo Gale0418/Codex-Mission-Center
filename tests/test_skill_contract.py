@@ -1,9 +1,11 @@
+import json
 import re
 import unittest
 from pathlib import Path
 
 
-SKILL_ROOT = Path(__file__).parents[1] / "skills" / "mission-center"
+ROOT = Path(__file__).parents[1]
+SKILL_ROOT = ROOT / "skills" / "mission-center"
 SKILL_PATH = SKILL_ROOT / "SKILL.md"
 
 
@@ -97,6 +99,39 @@ class SkillContractTests(unittest.TestCase):
             "Pre-search idea | Source | Adopted insight | License status",
             workspace,
         )
+
+    def test_plugin_metadata_uses_current_license_and_repository(self):
+        manifest = json.loads(
+            (ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
+        )
+        repository = "https://github.com/Gale0418/Codex-Mission-Center"
+        self.assertEqual(manifest["license"], "Apache-2.0")
+        self.assertEqual(manifest["homepage"], repository)
+        self.assertEqual(manifest["repository"], repository)
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertNotIn("GPL-3.0", readme)
+
+    def test_agent_prompt_covers_intake_research_and_approved_publish(self):
+        agent = (SKILL_ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
+        normalized = agent.casefold()
+        for phrase in ("one question", "prior art", "approved task"):
+            self.assertIn(phrase, normalized)
+
+    def test_install_wrappers_delegate_without_mutating_marketplace_metadata(self):
+        wrappers = (
+            "install-windows.ps1",
+            "install-unix.sh",
+            "install-plugin-windows.ps1",
+            "install-plugin-unix.sh",
+        )
+        for name in wrappers:
+            text = (ROOT / "scripts" / name).read_text(encoding="utf-8")
+            normalized = text.casefold()
+            with self.subTest(name=name):
+                self.assertIn("publish_local.py", normalized)
+                self.assertNotIn("marketplace.json", normalized)
+                self.assertNotIn("remove-item", normalized)
+                self.assertNotIn("rm -rf", normalized)
 
 
 if __name__ == "__main__":
