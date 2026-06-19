@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
-from dataclasses import dataclass
 from pathlib import Path
+
+from visual_state import build_visual_state, normalize_tasks
 
 
 def parse_table(path: Path) -> list[dict[str, str]]:
@@ -105,6 +107,18 @@ def update_project(path: Path, project: str, cycle: str, goal: str, labels: str,
     path.write_text(content, encoding="utf-8")
 
 
+def update_visual_state(workspace_root: Path, state: dict[str, object]) -> None:
+    """Atomically write validated task state for the visual HUD."""
+    target = workspace_root / "output" / "mission-center-assets" / "visual-state.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(".json.tmp")
+    temporary.write_text(
+        json.dumps(state, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(target)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("workspace", nargs="?", default=".")
@@ -117,7 +131,8 @@ def main() -> int:
     args = parser.parse_args()
 
     root = Path(args.workspace).resolve() / "MissionCenter"
-    tasks = parse_table(root / "tasks.md")
+    raw_tasks = parse_table(root / "tasks.md")
+    tasks = normalize_tasks(raw_tasks)
     smoke_tests = parse_table(root / "smoke-tests.md")
     percent, mode, active, blocked = compute_progress(tasks)
     if smoke_tests:
@@ -126,6 +141,7 @@ def main() -> int:
         activity = args.activity
     update_project(root / "project.md", args.project, args.cycle, args.goal, args.labels, activity)
     update_progress(root / "progress.md", args.project, args.goal, args.milestone, percent, mode, active, blocked)
+    update_visual_state(root.parent, build_visual_state(tasks, args.goal, percent))
     print(root)
     return 0
 
