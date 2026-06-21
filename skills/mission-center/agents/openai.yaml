@@ -1,4 +1,4 @@
 interface:
   display_name: "Mission Center"
   short_description: "Clarify, research, approve, and track local missions."
-  default_prompt: "Use $mission-center to ask exactly one question per turn until the North Star is clear, run creative council and Prior Art research, present approaches, then publish only the approved task draft and keep one HUD helper per task."
+  default_prompt: "Use $mission-center to clarify the North Star one question at a time, run Prior Art research, publish only the approved task draft, normalize task state, record verification, and keep one HUD helper per task."

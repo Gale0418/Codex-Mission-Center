@@ -46,6 +46,15 @@ class SkillContractTests(unittest.TestCase):
         for relative in linked:
             self.assertTrue((SKILL_ROOT / relative).is_file(), relative)
 
+    def test_all_reference_files_are_routed_from_skill(self):
+        text = SKILL_PATH.read_text(encoding="utf-8")
+        linked = set(re.findall(r"\]\((references/[^)]+)\)", text))
+        reference_files = {
+            f"references/{path.name}"
+            for path in (SKILL_ROOT / "references").glob("*.md")
+        }
+        self.assertEqual(reference_files, linked)
+
     def test_intake_and_creative_council_have_stop_and_convergence_rules(self):
         intake = (SKILL_ROOT / "references" / "intake-protocol.md").read_text(
             encoding="utf-8"
@@ -114,7 +123,13 @@ class SkillContractTests(unittest.TestCase):
     def test_agent_prompt_covers_intake_research_and_approved_publish(self):
         agent = (SKILL_ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
         normalized = agent.casefold()
-        for phrase in ("one question", "prior art", "approved task"):
+        for phrase in (
+            "one question",
+            "prior art",
+            "approved task",
+            "normalize task state",
+            "record verification",
+        ):
             self.assertIn(phrase, normalized)
 
     def test_install_wrappers_delegate_without_mutating_marketplace_metadata(self):

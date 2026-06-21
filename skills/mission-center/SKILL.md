@@ -44,11 +44,11 @@ Do not write `tasks.md` until the user accepts the approved task draft. Follow [
 
 ### 6. Publish the Workspace
 
-Create or reuse `MissionCenter/`. Use `scripts/bootstrap_mission_center.py` for first-run files and `scripts/seed_task_tree.py` only after task-draft approval. Use the user's language consistently. Keep research notes concise and decisions traceable.
+Create or reuse `MissionCenter/`. Use `scripts/bootstrap_mission_center.py` for first-run files and `scripts/seed_task_tree.py` only after task-draft approval. Follow [task-seeding.md](references/task-seeding.md), then run `scripts/normalize_mission_center.py` after table edits that may contain loose statuses, priorities, labels, parents, or dependencies. Use the user's language consistently. Keep research notes concise and decisions traceable.
 
 ### 7. Execute and Maintain
 
-Use Superpowers-style gates: `Brainstorm -> Spec -> Plan -> TDD -> Verify -> Closeout`. Scale document depth with risk, but never skip goal understanding or final verification. Update project, progress, task, decision, and smoke-test files when facts change. Follow [agent-orchestration.md](references/agent-orchestration.md) before using real subagents.
+Use Superpowers-style gates: `Brainstorm -> Spec -> Plan -> TDD -> Verify -> Closeout`. Scale document depth with risk, but never skip goal understanding or final verification. Update project, progress, task, decision, and smoke-test files when facts change. Use [activity-log-format.md](references/activity-log-format.md) and `scripts/log_mission_center_change.py` for meaningful scope, blocker, reopen, or closeout updates. Follow [agent-orchestration.md](references/agent-orchestration.md) before using real subagents.
 
 ### 8. Sync the HUD
 
@@ -60,15 +60,16 @@ After implementation and local verification, use [coderabbit-review-gate.md](ref
 
 ## Task Lifecycle
 
-Use `Backlog -> Ready -> In Progress -> Blocked -> Review -> Done`. `Blocked` means a real impediment. Smoke tests are completion evidence, not a separate task status. Keep dependencies and next actions explicit.
+Use `Backlog -> Ready -> In Progress -> Blocked -> Review -> Done`. `Blocked` means a real impediment. Smoke tests are completion evidence, not a separate task status. Keep dependencies and next actions explicit. Follow [normalization-rules.md](references/normalization-rules.md) whenever imported, hand-written, or generated task rows use non-canonical values.
 
 ## Validation
 
 - Give every meaningful task a low-cost, repeatable verification.
 - Record command or action, expected result, observed result, outcome, date, and linked task ID.
 - Keep invalid task data from overwriting the last valid HUD state.
-- Use [smoke-test-patterns.md](references/smoke-test-patterns.md) to choose checks.
-- Use `scripts/snapshot_mission_center.py` before closeout and `scripts/closeout_mission_center_cycle.py` at project or cycle completion.
+- Use [smoke-test-patterns.md](references/smoke-test-patterns.md) and [smoke-test-catalog.md](references/smoke-test-catalog.md) to choose checks.
+- Use `scripts/snapshot_mission_center.py` with [snapshot-format.md](references/snapshot-format.md) before closeout.
+- Use `scripts/closeout_mission_center_cycle.py` with [closeout-format.md](references/closeout-format.md) at project or cycle completion.
 
 ## Output Rules
 
@@ -86,10 +87,16 @@ Use `Backlog -> Ready -> In Progress -> Blocked -> Review -> Done`. `Blocked` me
 - [research-protocol.md](references/research-protocol.md): Prior Art, Jina, Clean-room, and licensing.
 - [linear-parity.md](references/linear-parity.md): Linear task model and rolling planning.
 - [execution-gates.md](references/execution-gates.md): approval and execution gates.
+- [task-seeding.md](references/task-seeding.md): initial task-tree scope and expansion rules.
+- [normalization-rules.md](references/normalization-rules.md): canonical statuses, priorities, labels, parents, and dependencies.
+- [activity-log-format.md](references/activity-log-format.md): concise change-reason records.
 - [agent-orchestration.md](references/agent-orchestration.md): simulated perspectives and real subagents.
 - [visual-hub.md](references/visual-hub.md): task-driven HUD contract.
 - [coderabbit-review-gate.md](references/coderabbit-review-gate.md): risk-based final independent review.
 - [smoke-test-patterns.md](references/smoke-test-patterns.md): verification selection.
+- [smoke-test-catalog.md](references/smoke-test-catalog.md): default smoke-test ideas by task kind.
+- [snapshot-format.md](references/snapshot-format.md): reopenable checkpoint fields.
+- [closeout-format.md](references/closeout-format.md): project and cycle closeout sections.
 - [project-lifecycle.md](references/project-lifecycle.md): lifecycle and closeout.
 - [global-overview.md](references/global-overview.md): safe global summaries.
 - [platform-support.md](references/platform-support.md): installation and platform notes.
