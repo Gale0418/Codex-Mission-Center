@@ -14,6 +14,8 @@ SEED = SCRIPT_ROOT / "seed_task_tree.py"
 NORMALIZE = SCRIPT_ROOT / "normalize_mission_center.py"
 SYNC = SCRIPT_ROOT / "sync_mission_center.py"
 LOG = SCRIPT_ROOT / "log_mission_center_change.py"
+SNAPSHOT = SCRIPT_ROOT / "snapshot_mission_center.py"
+CLOSEOUT = SCRIPT_ROOT / "closeout_mission_center_cycle.py"
 
 
 def run_script(script: Path, *args: str) -> None:
@@ -110,6 +112,7 @@ class WorkspaceTemplateTests(unittest.TestCase):
             task_lines = tasks.splitlines()
             self.assertGreater(len(task_lines), 2, "tasks.md should have a header")
             self.assertNotIn("| Review |", task_lines[2])
+            self.assertIn("Hair Dryer", project)
             self.assertIn("Create a better hair dryer", project)
             self.assertIn("First experiment", project)
 
@@ -160,6 +163,7 @@ class WorkspaceTemplateTests(unittest.TestCase):
                 "en",
             )
             content = project.read_text(encoding="utf-8")
+            self.assertIn("- Project: Recovered project", content)
             self.assertIn("- Goal: Recovered goal", content)
             self.assertIn("- Cycle: Recovered cycle", content)
 
@@ -187,6 +191,10 @@ class WorkspaceTemplateTests(unittest.TestCase):
             self.assertIn("# 進度", progress)
             self.assertIn("- 專案: 照護專案", progress)
             self.assertIn("- 進度條:", progress)
+            smoke_tests = (workspace / "MissionCenter" / "smoke-tests.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("# 冒煙測試", smoke_tests)
 
     def test_normalize_and_log_scripts_support_traditional_chinese_headers(self):
         with workspace_tempdir("workspace-templates-") as temporary:
@@ -209,6 +217,110 @@ class WorkspaceTemplateTests(unittest.TestCase):
             self.assertIn("alpha, beta", normalized)
             self.assertIn("- 活動紀錄:", project)
 
+
+    def test_sync_preserves_existing_activity_log_and_open_comments(self):
+        with workspace_tempdir("workspace-templates-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            run_script(BOOTSTRAP, workspace, "--language", "en")
+            run_script(
+                SEED,
+                workspace,
+                "--goal",
+                "Keep the paper trail",
+                "--project",
+                "Mission Archive",
+                "--cycle",
+                "Cycle 7",
+                "--language",
+                "en",
+                "--force",
+            )
+            project = workspace / "MissionCenter" / "project.md"
+            project.write_text(
+                "# Project\n\n"
+                "- Project: Mission Archive\n"
+                "- Goal: Keep the paper trail\n"
+                "- Cycle: Cycle 7\n"
+                "- Labels: archive, verification\n"
+                "- Activity log:\n"
+                "  - Existing note\n"
+                "- Open comments:\n"
+                "  - Existing question\n",
+                encoding="utf-8",
+            )
+            run_script(
+                SYNC,
+                workspace,
+                "--project",
+                "Mission Archive",
+                "--cycle",
+                "Cycle 7",
+                "--goal",
+                "Keep the paper trail",
+                "--labels",
+                "archive, verification",
+                "--activity",
+                "Fresh sync note.",
+            )
+
+            content = project.read_text(encoding="utf-8")
+            self.assertIn("  - Existing note", content)
+            self.assertIn("  - Existing question", content)
+            self.assertIn("  - Fresh sync note.", content)
+
+    def test_snapshot_and_closeout_support_traditional_chinese(self):
+        with workspace_tempdir("workspace-templates-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            run_script(BOOTSTRAP, workspace, "--language", "zh-TW")
+            run_script(
+                SNAPSHOT,
+                workspace,
+                "--project",
+                "照護專案",
+                "--cycle",
+                "本週",
+                "--goal",
+                "照護計畫",
+                "--progress",
+                "2/3 tasks",
+                "--active",
+                "MC-T1 修正同步",
+                "--blocked",
+                "無",
+                "--decisions",
+                "改用保留式同步",
+                "--questions",
+                "是否需要第二輪驗證",
+            )
+            run_script(
+                CLOSEOUT,
+                workspace,
+                "--summary",
+                "本輪完成同步與驗證",
+                "--completed",
+                "修正 summary 與 sync",
+                "--unfinished",
+                "整理文件",
+                "--risks",
+                "仍需真機驗證",
+                "--smoke-tests",
+                "2 項通過",
+                "--retro",
+                "下次先補回歸測試",
+            )
+
+            snapshot = (workspace / "MissionCenter" / "snapshot.md").read_text(
+                encoding="utf-8"
+            )
+            closeout = (workspace / "MissionCenter" / "closeout.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("# 快照", snapshot)
+            self.assertIn("- 專案: 照護專案", snapshot)
+            self.assertIn("- 近期決策:", snapshot)
+            self.assertIn("# 收尾", closeout)
+            self.assertIn("- 摘要: 本輪完成同步與驗證", closeout)
+            self.assertIn("- 冒煙測試: 2 項通過", closeout)
 
 
 if __name__ == "__main__":

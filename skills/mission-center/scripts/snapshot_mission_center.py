@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Create a reopenable MissionCenter snapshot."""
 
 from __future__ import annotations
@@ -6,6 +6,47 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 from pathlib import Path
+
+
+TEXT = {
+    "en": {
+        "title": "Snapshot",
+        "captured_at": "Captured at",
+        "project": "Project",
+        "cycle": "Cycle",
+        "goal": "Goal",
+        "progress": "Progress",
+        "active": "Active tasks",
+        "blocked": "Blocked tasks",
+        "decisions": "Recent decisions",
+        "questions": "Open questions",
+        "none": "None",
+    },
+    "zh-TW": {
+        "title": "快照",
+        "captured_at": "建立時間",
+        "project": "專案",
+        "cycle": "週期",
+        "goal": "目標",
+        "progress": "進度",
+        "active": "進行中任務",
+        "blocked": "阻塞任務",
+        "decisions": "近期決策",
+        "questions": "開放問題",
+        "none": "無",
+    },
+}
+
+
+def detect_language(root: Path) -> str:
+    markers = ("# 專案", "# 進度", "# 任務", "- 目標:", "- 目標：")
+    for name in ("project.md", "progress.md", "tasks.md"):
+        path = root / name
+        if path.exists():
+            text = path.read_text(encoding="utf-8")
+            if any(marker in text for marker in markers):
+                return "zh-TW"
+    return "en"
 
 
 def main() -> int:
@@ -23,23 +64,24 @@ def main() -> int:
 
     root = Path(args.workspace).resolve() / "MissionCenter"
     root.mkdir(parents=True, exist_ok=True)
+    labels = TEXT[detect_language(root)]
     snapshot = root / "snapshot.md"
     now = datetime.now().isoformat(timespec="seconds")
-    content = f"""# Snapshot
+    content = f"""# {labels['title']}
 
-- Captured at: {now}
-- Project: {args.project}
-- Cycle: {args.cycle}
-- Goal: {args.goal}
-- Progress: {args.progress}
-- Active tasks:
-  - {args.active or 'None'}
-- Blocked tasks:
-  - {args.blocked or 'None'}
-- Recent decisions:
-  - {args.decisions or 'None'}
-- Open questions:
-  - {args.questions or 'None'}
+- {labels['captured_at']}: {now}
+- {labels['project']}: {args.project}
+- {labels['cycle']}: {args.cycle}
+- {labels['goal']}: {args.goal}
+- {labels['progress']}: {args.progress}
+- {labels['active']}:
+  - {args.active or labels['none']}
+- {labels['blocked']}:
+  - {args.blocked or labels['none']}
+- {labels['decisions']}:
+  - {args.decisions or labels['none']}
+- {labels['questions']}:
+  - {args.questions or labels['none']}
 """
     snapshot.write_text(content, encoding="utf-8")
     print(snapshot)

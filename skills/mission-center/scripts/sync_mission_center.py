@@ -99,7 +99,7 @@ def compute_progress(tasks: list[dict[str, str]]) -> tuple[int, str, list[str], 
                 total_est += estimate
                 if status == "done":
                     done_est += estimate
-            if status in {"backlog", "ready", "in progress", "smoketest", "review"} and len(active) < 5:
+            if status in {"backlog", "ready", "in progress", "review"} and len(active) < 5:
                 active.append(f"{task.get('ID', '').strip()} {title} ({task.get('Status', '').strip()})")
             if status == "blocked" and len(blocked) < 5:
                 blocked.append(f"{task.get('ID', '').strip()} {title}")
@@ -131,6 +131,47 @@ def detect_language(root: Path) -> str:
             if any(marker in text for marker in markers):
                 return "zh-TW"
     return "en"
+
+
+def _extract_summary_value(line: str, label: str) -> str | None:
+    stripped = line.strip()
+    for marker in (f"- {label}:", f"- {label}："):
+        if stripped.startswith(marker):
+            return stripped.removeprefix(marker).strip()
+    return None
+
+
+def _extract_list_items(text: str, labels: list[str]) -> list[str]:
+    lines = text.splitlines()
+    for label in labels:
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith(f"- {label}:") or stripped.startswith(f"- {label}："):
+                items: list[str] = []
+                cursor = index + 1
+                while cursor < len(lines):
+                    candidate = lines[cursor]
+                    stripped_candidate = candidate.strip()
+                    if candidate.startswith("  - "):
+                        value = candidate[4:].strip()
+                        if value:
+                            items.append(value)
+                        cursor += 1
+                        continue
+                    if not stripped_candidate:
+                        cursor += 1
+                        continue
+                    break
+                return items
+    return []
+
+
+def _merge_items(existing: list[str], new_item: str) -> list[str]:
+    merged = list(existing)
+    candidate = new_item.strip()
+    if candidate and candidate not in merged:
+        merged.append(candidate)
+    return merged
 
 
 def update_progress(
@@ -173,15 +214,31 @@ def update_project(
     language: str,
 ) -> None:
     labels = TEXT[language]
+    existing_text = path.read_text(encoding="utf-8") if path.exists() else ""
+    activity_labels = [
+        labels["activity_log_label"],
+        TEXT["en"]["activity_log_label"],
+        TEXT["zh-TW"]["activity_log_label"],
+    ]
+    open_comment_labels = [
+        labels["open_comments_label"],
+        TEXT["en"]["open_comments_label"],
+        TEXT["zh-TW"]["open_comments_label"],
+    ]
+    activity_items = _merge_items(_extract_list_items(existing_text, activity_labels), activity_note)
+    open_comment_items = _extract_list_items(existing_text, open_comment_labels) or [labels["none"]]
+    activity_lines = "".join(f"  - {item}\n" for item in activity_items)
+    open_comment_lines = "".join(f"  - {item}\n" for item in open_comment_items)
     content = (
         f"# {labels['project_title']}\n\n"
+        f"- {labels['project_label']}: {project}\n"
         f"- {labels['goal_label']}: {goal}\n"
         f"- {labels['cycle_label']}: {cycle}\n"
         f"- {labels['labels_label']}: {labels_text}\n"
         f"- {labels['activity_log_label']}:\n"
-        f"  - {activity_note}\n"
+        f"{activity_lines}"
         f"- {labels['open_comments_label']}:\n"
-        f"  - {labels['none']}\n"
+        f"{open_comment_lines}"
     )
     path.write_text(content, encoding="utf-8")
 

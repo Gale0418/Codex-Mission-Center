@@ -12,6 +12,7 @@ TASK_LABELS = {
         "project_title": "Project",
         "tasks_title": "Tasks",
         "smoke_title": "Smoke Tests",
+        "project": "Project",
         "goal": "Goal",
         "cycle": "Cycle",
         "labels": "Labels",
@@ -59,7 +60,8 @@ TASK_LABELS = {
     "zh-TW": {
         "project_title": "專案",
         "tasks_title": "任務",
-        "smoke_title": "Smoke Tests",
+        "smoke_title": "冒煙測試",
+        "project": "專案",
         "goal": "目標",
         "cycle": "週期",
         "labels": "標籤",
@@ -164,6 +166,7 @@ def main() -> int:
     if args.force or project_goal_is_blank(project):
         project.write_text(
             f"# {labels['project_title']}\n\n"
+            f"- {labels['project']}: {args.project}\n"
             f"- {labels['goal']}: {args.goal}\n"
             f"- {labels['cycle']}: {args.cycle}\n"
             f"- {labels['labels']}: intake, plan, execution, verification\n"
