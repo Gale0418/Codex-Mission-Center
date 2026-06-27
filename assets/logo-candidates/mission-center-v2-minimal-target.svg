@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Mission Center Minimal Target Candidate">
+  <rect width="128" height="128" rx="28" fill="#0F172A"/>
+  <circle cx="64" cy="64" r="34" fill="none" stroke="#F59E0B" stroke-width="10"/>
+  <circle cx="64" cy="64" r="18" fill="none" stroke="#FBBF24" stroke-width="8"/>
+  <circle cx="64" cy="64" r="6" fill="#FDE68A"/>
+  <path d="M84 32A36 36 0 0 1 98 46" fill="none" stroke="#FDE68A" stroke-width="8" stroke-linecap="round"/>
+</svg>

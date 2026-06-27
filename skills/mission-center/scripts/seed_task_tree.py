@@ -34,15 +34,6 @@ TASK_LABELS = {
             "Labels",
             "Comments",
         ],
-        "folder_check": "MissionCenter folder created",
-        "hub": "Visual hub link",
-        "tree": "Task tree and dependencies",
-        "bugloop": "Repeat bug-fix loop",
-        "smoke": "Smoke tests",
-        "intake": "Intake and clarification",
-        "workspace": "Workspace setup",
-        "slices": "Execution slices",
-        "closeout": "Closeout and retro",
         "research": "Research and scope",
         "milestone": "First verifiable milestone",
         "verification_closeout": "Verification and closeout",
@@ -53,18 +44,7 @@ TASK_LABELS = {
         "verification_next": "Run verification and summarize outcomes",
         "clarify": "Clarify scope",
         "acceptance": "define acceptance",
-        "ask": "Ask questions until scope is clear",
-        "checklist": "intake checklist complete",
-        "create": "Create MissionCenter files",
-        "bootstrap": "bootstrap script run",
-        "seed": "Seed initial child tasks",
-        "visible": "task tree visible",
-        "split": "Split into bounded slices",
-        "each": "each slice has smoke test",
-        "add": "Add reproducible verifications",
         "recorded": "smoke tests recorded",
-        "summarize": "Summarize outcomes",
-        "written": "closeout written",
         "smoke_columns": [
             "Date",
             "Linked task ID",
@@ -102,15 +82,6 @@ TASK_LABELS = {
             "標籤",
             "備註",
         ],
-        "folder_check": "MissionCenter 資料夾建立",
-        "hub": "視覺 HUB 連結",
-        "tree": "任務樹與依賴關係",
-        "bugloop": "重複除 BUG 流程",
-        "smoke": "Smoke tests",
-        "intake": "需求訪談與釐清",
-        "workspace": "任務中心初始化",
-        "slices": "執行切片",
-        "closeout": "收尾與回顧",
         "research": "研究與範圍釐清",
         "milestone": "第一個可驗證里程碑",
         "verification_closeout": "驗證與收尾",
@@ -121,18 +92,7 @@ TASK_LABELS = {
         "verification_next": "執行驗證並整理成果",
         "clarify": "釐清範圍",
         "acceptance": "定義驗收標準",
-        "ask": "持續提問直到範圍清楚",
-        "checklist": "需求訪談清單完成",
-        "create": "建立 MissionCenter 檔案",
-        "bootstrap": "bootstrap 腳本已執行",
-        "seed": "建立初始子任務",
-        "visible": "任務樹可讀且可追蹤",
-        "split": "拆成可執行的小切片",
-        "each": "每個切片都有 smoke test",
-        "add": "加入可重複驗證方式",
         "recorded": "smoke tests 已記錄",
-        "summarize": "整理成果與剩餘風險",
-        "written": "收尾文件已完成",
         "smoke_columns": [
             "日期",
             "對應任務 ID",
@@ -154,16 +114,35 @@ def table_header(columns: list[str]) -> list[str]:
     ]
 
 
+def _extract_summary_value(line: str, label: str) -> str | None:
+    stripped = line.strip()
+    for marker in (f"- {label}:", f"- {label}："):
+        if stripped.startswith(marker):
+            return stripped.removeprefix(marker).strip()
+    return None
+
+
 def project_goal_is_blank(path: Path) -> bool:
     if not path.exists():
         return True
     for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if stripped.startswith("- Goal:"):
-            return not stripped.removeprefix("- Goal:").strip()
-        if stripped.startswith("- 目標："):
-            return not stripped.removeprefix("- 目標：").strip()
+        value = _extract_summary_value(line, "Goal")
+        if value is not None:
+            return not value
+        value = _extract_summary_value(line, "目標")
+        if value is not None:
+            return not value
     return True
+
+
+def tasks_file_is_placeholder(path: Path) -> bool:
+    if not path.exists():
+        return True
+    non_empty = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if len(non_empty) != 3:
+        return False
+    titles = {f"# {TASK_LABELS['en']['tasks_title']}", f"# {TASK_LABELS['zh-TW']['tasks_title']}"}
+    return non_empty[0] in titles and non_empty[1].startswith("|") and non_empty[2].startswith("|")
 
 
 def main() -> int:
@@ -174,6 +153,7 @@ def main() -> int:
     parser.add_argument("--cycle", default="Unassigned")
     parser.add_argument("--prefix", default="MC")
     parser.add_argument("--language", choices=("en", "zh-TW"), default="en")
+    parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     labels = TASK_LABELS[args.language]
 
@@ -181,7 +161,7 @@ def main() -> int:
     root.mkdir(parents=True, exist_ok=True)
 
     project = root / "project.md"
-    if project_goal_is_blank(project):
+    if args.force or project_goal_is_blank(project):
         project.write_text(
             f"# {labels['project_title']}\n\n"
             f"- {labels['goal']}: {args.goal}\n"
@@ -204,10 +184,11 @@ def main() -> int:
         f"| {args.prefix}-M1 | {labels['milestone']} | Task | {args.prefix}-E1 | P1 | Backlog |  | {args.prefix}-R1 | {labels['milestone_next']} | {labels['milestone_done']} | 5 | plan, execution |  |",
         f"| {args.prefix}-V1 | {labels['verification_closeout']} | Task | {args.prefix}-E1 | P1 | Backlog |  | {args.prefix}-M1 | {labels['verification_next']} | {labels['recorded']} | 3 | verification, closeout |  |",
     ]
-    tasks.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    if args.force or tasks_file_is_placeholder(tasks):
+        tasks.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     smoke_tests = root / "smoke-tests.md"
-    if not smoke_tests.exists():
+    if args.force or not smoke_tests.exists():
         smoke_tests.write_text(
             f"# {labels['smoke_title']}\n\n"
             + "\n".join(table_header(labels["smoke_columns"]))

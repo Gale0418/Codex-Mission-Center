@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Append a timestamped activity note to a MissionCenter project file."""
 
 from __future__ import annotations
@@ -8,18 +8,37 @@ from datetime import datetime
 from pathlib import Path
 
 
-def append_block(path: Path, header: str, line: str) -> None:
+ACTIVITY_HEADERS = ("- Activity log:", "- Activity log：", "- 活動紀錄:", "- 活動紀錄：")
+
+
+def detect_project_header(text: str) -> str:
+    if "# 專案" in text or "- 目標" in text or "- 活動紀錄" in text:
+        return "專案"
+    return "Project"
+
+
+def detect_activity_header(text: str) -> str:
+    for header in ACTIVITY_HEADERS:
+        if header in text:
+            return header
+    return "- 活動紀錄:" if detect_project_header(text) == "專案" else "- Activity log:"
+
+
+def append_block(path: Path, line: str) -> None:
     if not path.exists():
-        path.write_text(f"# {header}\n\n", encoding="utf-8")
+        path.write_text("# Project\n\n", encoding="utf-8")
     text = path.read_text(encoding="utf-8")
-    if "Activity log:" not in text:
-        text = text.rstrip() + "\n- Activity log:\n"
+    text = text.replace("- Activity log：", "- Activity log:")
+    text = text.replace("- 活動紀錄：", "- 活動紀錄:")
+    activity_header = detect_activity_header(text)
+    if activity_header not in text:
+        text = text.rstrip() + f"\n{activity_header}\n"
     lines = text.splitlines()
     output: list[str] = []
     inserted = False
-    for idx, current in enumerate(lines):
+    for current in lines:
         output.append(current)
-        if current.strip() == "- Activity log:" and not inserted:
+        if current.strip() == activity_header and not inserted:
             output.append(f"  - {line}")
             inserted = True
     if not inserted:
@@ -44,7 +63,7 @@ def main() -> int:
         note += f" | reason: {args.reason}"
     if args.impact:
         note += f" | impact: {args.impact}"
-    append_block(path, "Project", note)
+    append_block(path, note)
     print(path)
     return 0
 

@@ -140,20 +140,23 @@ def print_changes(label: str, changes: list[str]) -> None:
         print("no changes")
 
 
-def verify_skill_targets(
+def verify_targets(
     canonical: Path,
     personal: Path,
-    marketplace_skill: Path,
+    repo: Path,
+    marketplace: Path,
     cache_skill: Path | None,
 ) -> bool:
-    expected = file_map(canonical)
-    targets = [("personal", personal), ("marketplace", marketplace_skill)]
+    targets = [
+        ("personal", file_map(canonical), file_map(personal)),
+        ("marketplace", plugin_file_map(repo), file_map(marketplace)),
+    ]
     if cache_skill is not None:
-        targets.append(("cache", cache_skill))
+        targets.append(("cache", file_map(canonical), file_map(cache_skill)))
 
     valid = True
-    for label, target in targets:
-        changes = map_diff(expected, file_map(target))
+    for label, expected, actual in targets:
+        changes = map_diff(expected, actual)
         print_changes(label, changes)
         valid = valid and not changes
     return valid
@@ -183,42 +186,27 @@ def main(argv: list[str] | None = None) -> int:
     if not (repo / ".codex-plugin" / "plugin.json").is_file():
         raise ValueError(f"Plugin manifest not found: {repo}")
 
-    personal = validate_target(
-        args.personal_skill, ("skills", "mission-center")
-    )
-    marketplace = validate_target(
-        args.marketplace_plugin, ("plugins", "mission-center")
-    )
+    personal = validate_target(args.personal_skill, ("skills", "mission-center"))
+    marketplace = validate_target(args.marketplace_plugin, ("plugins", "mission-center"))
     cache_skill = None
     if args.cache_skill is not None:
-        cache_skill = validate_target(
-            args.cache_skill, ("skills", "mission-center")
-        )
+        cache_skill = validate_target(args.cache_skill, ("skills", "mission-center"))
 
     if args.write and cache_skill is not None:
         raise ValueError("--cache-skill is verify-only; cache is Codex-managed")
 
     if args.dry_run:
         print_changes("personal", map_diff(file_map(canonical), file_map(personal)))
-        print_changes(
-            "marketplace", map_diff(plugin_file_map(repo), file_map(marketplace))
-        )
+        print_changes("marketplace", map_diff(plugin_file_map(repo), file_map(marketplace)))
         if cache_skill is not None:
-            print_changes(
-                "cache", map_diff(file_map(canonical), file_map(cache_skill))
-            )
+            print_changes("cache", map_diff(file_map(canonical), file_map(cache_skill)))
         return 0
 
     if args.write:
         replace_from_stage(personal, lambda staging: stage_skill(canonical, staging))
         replace_from_stage(marketplace, lambda staging: stage_plugin(repo, staging))
 
-    return 0 if verify_skill_targets(
-        canonical,
-        personal,
-        marketplace / "skills" / "mission-center",
-        cache_skill,
-    ) else 1
+    return 0 if verify_targets(canonical, personal, repo, marketplace, cache_skill) else 1
 
 
 if __name__ == "__main__":

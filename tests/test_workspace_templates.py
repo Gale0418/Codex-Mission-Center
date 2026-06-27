@@ -1,15 +1,19 @@
 import os
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
+
+from tests import workspace_tempdir
 
 
 ROOT = Path(__file__).parents[1]
 SCRIPT_ROOT = ROOT / "skills" / "mission-center" / "scripts"
 BOOTSTRAP = SCRIPT_ROOT / "bootstrap_mission_center.py"
 SEED = SCRIPT_ROOT / "seed_task_tree.py"
+NORMALIZE = SCRIPT_ROOT / "normalize_mission_center.py"
+SYNC = SCRIPT_ROOT / "sync_mission_center.py"
+LOG = SCRIPT_ROOT / "log_mission_center_change.py"
 
 
 def run_script(script: Path, *args: str) -> None:
@@ -34,7 +38,7 @@ def run_script(script: Path, *args: str) -> None:
 
 class WorkspaceTemplateTests(unittest.TestCase):
     def test_bootstrap_creates_concise_research_log_in_both_languages(self):
-        with tempfile.TemporaryDirectory() as temporary:
+        with workspace_tempdir("workspace-templates-") as temporary:
             root = Path(temporary)
             english = root / "english"
             chinese = root / "chinese"
@@ -68,7 +72,7 @@ class WorkspaceTemplateTests(unittest.TestCase):
             self.assertNotIn("active agent", chinese_hub.lower())
 
     def test_seed_creates_a_small_rolling_plan_with_canonical_statuses(self):
-        with tempfile.TemporaryDirectory() as temporary:
+        with workspace_tempdir("workspace-templates-") as temporary:
             workspace = Path(temporary) / "workspace"
             run_script(BOOTSTRAP, workspace, "--language", "en")
             run_script(
@@ -110,7 +114,7 @@ class WorkspaceTemplateTests(unittest.TestCase):
             self.assertIn("First experiment", project)
 
     def test_bootstrap_without_force_preserves_existing_files(self):
-        with tempfile.TemporaryDirectory() as temporary:
+        with workspace_tempdir("workspace-templates-") as temporary:
             workspace = Path(temporary) / "workspace"
             run_script(BOOTSTRAP, workspace, "--language", "en")
             notes = workspace / "MissionCenter" / "notes.md"
@@ -119,7 +123,7 @@ class WorkspaceTemplateTests(unittest.TestCase):
             self.assertEqual(notes.read_text(encoding="utf-8"), "keep me\n")
 
     def test_seed_preserves_an_existing_project_summary(self):
-        with tempfile.TemporaryDirectory() as temporary:
+        with workspace_tempdir("workspace-templates-") as temporary:
             workspace = Path(temporary) / "workspace"
             run_script(BOOTSTRAP, workspace, "--language", "en")
             project = workspace / "MissionCenter" / "project.md"
@@ -138,7 +142,7 @@ class WorkspaceTemplateTests(unittest.TestCase):
             )
 
     def test_seed_fills_summary_when_goal_field_is_missing(self):
-        with tempfile.TemporaryDirectory() as temporary:
+        with workspace_tempdir("workspace-templates-") as temporary:
             workspace = Path(temporary) / "workspace"
             project = workspace / "MissionCenter" / "project.md"
             project.parent.mkdir(parents=True)
@@ -158,6 +162,52 @@ class WorkspaceTemplateTests(unittest.TestCase):
             content = project.read_text(encoding="utf-8")
             self.assertIn("- Goal: Recovered goal", content)
             self.assertIn("- Cycle: Recovered cycle", content)
+
+    def test_seed_without_force_preserves_existing_tasks(self):
+        with workspace_tempdir("workspace-templates-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            run_script(BOOTSTRAP, workspace, "--language", "en")
+            tasks = workspace / "MissionCenter" / "tasks.md"
+            tasks.write_text("keep tasks\n", encoding="utf-8")
+            run_script(SEED, workspace, "--goal", "Keep tasks", "--language", "en")
+            self.assertEqual(tasks.read_text(encoding="utf-8"), "keep tasks\n")
+
+    def test_sync_keeps_traditional_chinese_project_and_progress_labels(self):
+        with workspace_tempdir("workspace-templates-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            run_script(BOOTSTRAP, workspace, "--language", "zh-TW")
+            run_script(SEED, workspace, "--goal", "照護計畫", "--project", "照護專案", "--cycle", "本週", "--language", "zh-TW", "--force")
+            run_script(SYNC, workspace, "--project", "照護專案", "--cycle", "本週", "--goal", "照護計畫", "--labels", "照護, 家庭", "--milestone", "第一階段", "--activity", "同步完成。")
+
+            project = (workspace / "MissionCenter" / "project.md").read_text(encoding="utf-8")
+            progress = (workspace / "MissionCenter" / "progress.md").read_text(encoding="utf-8")
+            self.assertIn("# 專案", project)
+            self.assertIn("- 目標: 照護計畫", project)
+            self.assertIn("- 活動紀錄:", project)
+            self.assertIn("# 進度", progress)
+            self.assertIn("- 專案: 照護專案", progress)
+            self.assertIn("- 進度條:", progress)
+
+    def test_normalize_and_log_scripts_support_traditional_chinese_headers(self):
+        with workspace_tempdir("workspace-templates-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            run_script(BOOTSTRAP, workspace, "--language", "zh-TW")
+            tasks = workspace / "MissionCenter" / "tasks.md"
+            tasks.write_text(
+                "# 任務\n\n"
+                "| ID | 標題 | 類型 | 父層 | 優先級 | 狀態 | 負責人 | 依賴 | 下一步 | 驗證方式 | 估時 | 標籤 | 備註 |\n"
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+                "| MC-T1 | 修正同步 | Task |  | high | doing | Codex |  | 更新腳本 | 測試通過 | 2 | Alpha; Beta |  |\n",
+                encoding="utf-8",
+            )
+            run_script(NORMALIZE, workspace)
+            run_script(LOG, workspace, "--change", "修正同步腳本")
+
+            normalized = tasks.read_text(encoding="utf-8")
+            project = (workspace / "MissionCenter" / "project.md").read_text(encoding="utf-8")
+            self.assertIn("| P1 | In Progress |", normalized)
+            self.assertIn("alpha, beta", normalized)
+            self.assertIn("- 活動紀錄:", project)
 
 
 

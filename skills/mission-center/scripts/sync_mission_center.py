@@ -11,6 +11,50 @@ from pathlib import Path
 from visual_state import build_visual_state, normalize_tasks
 
 
+TEXT = {
+    "en": {
+        "progress_title": "Progress",
+        "project_label": "Project",
+        "objective_label": "Objective",
+        "status_label": "Current status",
+        "milestone_label": "Milestone",
+        "progress_bar_label": "Progress bar",
+        "active_label": "Active tasks",
+        "blocked_label": "Blocked by",
+        "next_update_label": "Next update",
+        "next_update_value": "Re-run sync after any task or smoke-test change.",
+        "none": "None",
+        "project_title": "Project",
+        "goal_label": "Goal",
+        "cycle_label": "Cycle",
+        "labels_label": "Labels",
+        "activity_log_label": "Activity log",
+        "open_comments_label": "Open comments",
+        "smoke_note": "Smoke tests recorded",
+    },
+    "zh-TW": {
+        "progress_title": "進度",
+        "project_label": "專案",
+        "objective_label": "目標",
+        "status_label": "目前狀態",
+        "milestone_label": "里程碑",
+        "progress_bar_label": "進度條",
+        "active_label": "進行中任務",
+        "blocked_label": "阻塞原因",
+        "next_update_label": "下次更新",
+        "next_update_value": "任務或 smoke-test 有變動後請重新執行 sync。",
+        "none": "無",
+        "project_title": "專案",
+        "goal_label": "目標",
+        "cycle_label": "週期",
+        "labels_label": "標籤",
+        "activity_log_label": "活動紀錄",
+        "open_comments_label": "開放問題",
+        "smoke_note": "已記錄 Smoke tests",
+    },
+}
+
+
 def parse_table(path: Path) -> list[dict[str, str]]:
     if not path.exists():
         return []
@@ -78,32 +122,67 @@ def render_bar(percent: int) -> str:
     return f"[{'#' * filled}{'-' * (10 - filled)}] {percent}%"
 
 
-def update_progress(path: Path, project: str, objective: str, milestone: str, percent: int, mode: str, active: list[str], blocked: list[str]) -> None:
-    content = f"""# Progress
+def detect_language(root: Path) -> str:
+    markers = ("# 專案", "# 進度", "# 任務", "- 目標:", "- 目標：")
+    for name in ("project.md", "progress.md", "tasks.md"):
+        path = root / name
+        if path.exists():
+            text = path.read_text(encoding="utf-8")
+            if any(marker in text for marker in markers):
+                return "zh-TW"
+    return "en"
 
-- Project: {project}
-- Objective: {objective}
-- Current status: {mode}
-- Milestone: {milestone}
-- Progress bar: {render_bar(percent)}
-- Active tasks:
-{''.join(f'  - {item}\n' for item in active) or '  - None\n'}- Blocked by:
-{''.join(f'  - {item}\n' for item in blocked) or '  - None\n'}- Next update: Re-run sync after any task or smoke-test change.
-"""
+
+def update_progress(
+    path: Path,
+    project: str,
+    objective: str,
+    milestone: str,
+    percent: int,
+    mode: str,
+    active: list[str],
+    blocked: list[str],
+    language: str,
+) -> None:
+    labels = TEXT[language]
+    active_lines = "".join(f"  - {item}\n" for item in active) or f"  - {labels['none']}\n"
+    blocked_lines = "".join(f"  - {item}\n" for item in blocked) or f"  - {labels['none']}\n"
+    content = (
+        f"# {labels['progress_title']}\n\n"
+        f"- {labels['project_label']}: {project}\n"
+        f"- {labels['objective_label']}: {objective}\n"
+        f"- {labels['status_label']}: {mode}\n"
+        f"- {labels['milestone_label']}: {milestone}\n"
+        f"- {labels['progress_bar_label']}: {render_bar(percent)}\n"
+        f"- {labels['active_label']}:\n"
+        f"{active_lines}"
+        f"- {labels['blocked_label']}:\n"
+        f"{blocked_lines}"
+        f"- {labels['next_update_label']}: {labels['next_update_value']}\n"
+    )
     path.write_text(content, encoding="utf-8")
 
 
-def update_project(path: Path, project: str, cycle: str, goal: str, labels: str, activity_note: str) -> None:
-    content = f"""# Project
-
-- Goal: {goal}
-- Cycle: {cycle}
-- Labels: {labels}
-- Activity log:
-  - {activity_note}
-- Open comments:
-  - None
-"""
+def update_project(
+    path: Path,
+    project: str,
+    cycle: str,
+    goal: str,
+    labels_text: str,
+    activity_note: str,
+    language: str,
+) -> None:
+    labels = TEXT[language]
+    content = (
+        f"# {labels['project_title']}\n\n"
+        f"- {labels['goal_label']}: {goal}\n"
+        f"- {labels['cycle_label']}: {cycle}\n"
+        f"- {labels['labels_label']}: {labels_text}\n"
+        f"- {labels['activity_log_label']}:\n"
+        f"  - {activity_note}\n"
+        f"- {labels['open_comments_label']}:\n"
+        f"  - {labels['none']}\n"
+    )
     path.write_text(content, encoding="utf-8")
 
 
@@ -131,16 +210,18 @@ def main() -> int:
     args = parser.parse_args()
 
     root = Path(args.workspace).resolve() / "MissionCenter"
+    language = detect_language(root)
+    labels = TEXT[language]
     raw_tasks = parse_table(root / "tasks.md")
     tasks = normalize_tasks(raw_tasks)
     smoke_tests = parse_table(root / "smoke-tests.md")
     percent, mode, active, blocked = compute_progress(tasks)
     if smoke_tests:
-        activity = f"{args.activity} Smoke tests recorded: {len(smoke_tests)}."
+        activity = f"{args.activity} {labels['smoke_note']}: {len(smoke_tests)}."
     else:
         activity = args.activity
-    update_project(root / "project.md", args.project, args.cycle, args.goal, args.labels, activity)
-    update_progress(root / "progress.md", args.project, args.goal, args.milestone, percent, mode, active, blocked)
+    update_project(root / "project.md", args.project, args.cycle, args.goal, args.labels, activity, language)
+    update_progress(root / "progress.md", args.project, args.goal, args.milestone, percent, mode, active, blocked, language)
     update_visual_state(root.parent, build_visual_state(tasks, args.goal, percent))
     print(root)
     return 0

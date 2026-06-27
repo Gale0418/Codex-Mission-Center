@@ -1,7 +1,8 @@
 import sys
-import tempfile
 import unittest
 from pathlib import Path
+
+from tests import workspace_tempdir
 
 
 ROOT = Path(__file__).parents[1]
@@ -37,7 +38,7 @@ def make_fake_repo(root: Path) -> Path:
 
 class PublishLocalTests(unittest.TestCase):
     def test_dry_run_does_not_create_targets(self):
-        with tempfile.TemporaryDirectory() as temporary:
+        with workspace_tempdir("publish-local-") as temporary:
             root = Path(temporary)
             repo = make_fake_repo(root)
             personal = root / "personal" / "skills" / "mission-center"
@@ -58,7 +59,7 @@ class PublishLocalTests(unittest.TestCase):
             self.assertFalse(marketplace.exists())
 
     def test_write_syncs_skill_and_plugin_without_generated_files(self):
-        with tempfile.TemporaryDirectory() as temporary:
+        with workspace_tempdir("publish-local-") as temporary:
             root = Path(temporary)
             repo = make_fake_repo(root)
             personal = root / "personal" / "skills" / "mission-center"
@@ -99,7 +100,7 @@ class PublishLocalTests(unittest.TestCase):
             )
 
     def test_verify_reports_drift(self):
-        with tempfile.TemporaryDirectory() as temporary:
+        with workspace_tempdir("publish-local-") as temporary:
             root = Path(temporary)
             repo = make_fake_repo(root)
             personal = root / "personal" / "skills" / "mission-center"
@@ -132,7 +133,7 @@ class PublishLocalTests(unittest.TestCase):
             )
 
     def test_write_rejects_codex_managed_cache_target(self):
-        with tempfile.TemporaryDirectory() as temporary:
+        with workspace_tempdir("publish-local-") as temporary:
             root = Path(temporary)
             repo = make_fake_repo(root)
             personal = root / "personal" / "skills" / "mission-center"
@@ -154,12 +155,45 @@ class PublishLocalTests(unittest.TestCase):
                 )
 
     def test_rejects_targets_outside_expected_tail(self):
-        with tempfile.TemporaryDirectory() as temporary:
+        with workspace_tempdir("publish-local-") as temporary:
             root = Path(temporary)
             with self.assertRaisesRegex(ValueError, "skills/mission-center"):
                 validate_target(root / "mission-center", ("skills", "mission-center"))
             with self.assertRaisesRegex(ValueError, "plugins/mission-center"):
                 validate_target(root / "mission-center", ("plugins", "mission-center"))
+
+    def test_verify_reports_plugin_drift_outside_skill_directory(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            root = Path(temporary)
+            repo = make_fake_repo(root)
+            personal = root / "personal" / "skills" / "mission-center"
+            marketplace = root / "marketplace" / "plugins" / "mission-center"
+            main(
+                [
+                    "--repo",
+                    str(repo),
+                    "--personal-skill",
+                    str(personal),
+                    "--marketplace-plugin",
+                    str(marketplace),
+                    "--write",
+                ]
+            )
+            write(marketplace / "assets" / "icon.svg", "drifted\n")
+            self.assertEqual(
+                main(
+                    [
+                        "--repo",
+                        str(repo),
+                        "--personal-skill",
+                        str(personal),
+                        "--marketplace-plugin",
+                        str(marketplace),
+                        "--verify",
+                    ]
+                ),
+                1,
+            )
 
 
 if __name__ == "__main__":
