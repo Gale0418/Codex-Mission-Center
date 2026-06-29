@@ -72,8 +72,11 @@ python scripts/publish_local.py --repo . --personal-skill ~/.codex/skills/missio
 ```
 
 Use `--write` to replace both derived copies through staging directories, then use
-`--verify` to detect drift. Codex owns its installed plugin cache; refresh that copy
-through the normal plugin install command rather than editing cache files directly.
+`--verify` to detect drift. Add `--register` when you also want Codex to refresh the
+local marketplace registration and reinstall the plugin with its icon metadata.
+The bundled `scripts/install-unix.sh`, `scripts/install-plugin-unix.sh`,
+`scripts/install-windows.ps1`, and `scripts/install-plugin-windows.ps1` wrappers
+do this automatically for `--write`.
 
 ## Visual Assets
 
@@ -111,5 +114,3 @@ It is inspired by the workflow concepts of Linear and Superpowers, but it does n
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
-
-123

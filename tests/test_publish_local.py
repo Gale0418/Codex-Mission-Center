@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import call, patch
 
 from tests import workspace_tempdir
 
@@ -24,6 +25,7 @@ def make_fake_repo(root: Path) -> Path:
     write(repo / "README.md", "readme\n")
     write(repo / "LICENSE", "license\n")
     write(repo / "NOTICE.md", "notice\n")
+    write(repo / "PRIVACY.md", "privacy\n")
     write(repo / "skills" / "mission-center" / "SKILL.md", "canonical\n")
     write(
         repo / "skills" / "mission-center" / "references" / "rules.md",
@@ -83,7 +85,14 @@ class PublishLocalTests(unittest.TestCase):
             )
             self.assertFalse((personal / "obsolete.txt").exists())
             self.assertFalse((personal / "scripts" / "__pycache__").exists())
+            self.assertTrue(
+                (marketplace.parent.parent / ".agents" / "plugins" / "marketplace.json").is_file()
+            )
             self.assertTrue((marketplace / ".codex-plugin" / "plugin.json").is_file())
+            self.assertEqual(
+                (marketplace / "PRIVACY.md").read_text(encoding="utf-8"),
+                "privacy\n",
+            )
             self.assertEqual(
                 main(
                     [
@@ -97,6 +106,70 @@ class PublishLocalTests(unittest.TestCase):
                     ]
                 ),
                 0,
+            )
+
+    def test_write_with_register_refreshes_plugin_version_and_calls_codex_cli(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            root = Path(temporary)
+            repo = make_fake_repo(root)
+            write(
+                repo / ".codex-plugin" / "plugin.json",
+                '{"name":"mission-center","version":"0.1.0","interface":{"displayName":"Mission Center","category":"Productivity"}}\n',
+            )
+            personal = root / "personal" / "skills" / "mission-center"
+            marketplace = root / "marketplace" / "plugins" / "mission-center"
+            fake_codex = root / "fake-codex"
+            fake_codex.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+
+            with patch("publish_local.subprocess.run") as run_mock:
+                run_mock.return_value.returncode = 0
+                result = main(
+                    [
+                        "--repo",
+                        str(repo),
+                        "--personal-skill",
+                        str(personal),
+                        "--marketplace-plugin",
+                        str(marketplace),
+                        "--write",
+                        "--register",
+                        "--codex-cli",
+                        str(fake_codex),
+                    ]
+                )
+
+            self.assertEqual(result, 0)
+            manifest = (marketplace / ".codex-plugin" / "plugin.json").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn('"version": "0.1.0+codex.', manifest)
+            marketplace_manifest = (
+                marketplace.parent.parent / ".agents" / "plugins" / "marketplace.json"
+            ).read_text(encoding="utf-8")
+            self.assertIn('"name": "mission-center-local"', marketplace_manifest)
+            self.assertIn('"path": "./plugins/mission-center"', marketplace_manifest)
+            run_mock.assert_has_calls(
+                [
+                    call(
+                        [
+                            str(fake_codex),
+                            "plugin",
+                            "marketplace",
+                            "add",
+                            str(marketplace.parent.parent),
+                        ],
+                        check=True,
+                    ),
+                    call(
+                        [
+                            str(fake_codex),
+                            "plugin",
+                            "add",
+                            "mission-center@mission-center-local",
+                        ],
+                        check=True,
+                    ),
+                ]
             )
 
     def test_verify_reports_drift(self):
@@ -194,6 +267,31 @@ class PublishLocalTests(unittest.TestCase):
                 ),
                 1,
             )
+
+    def test_register_requires_resolvable_codex_cli(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            root = Path(temporary)
+            repo = make_fake_repo(root)
+            write(
+                repo / ".codex-plugin" / "plugin.json",
+                '{"name":"mission-center","version":"0.1.0","interface":{"displayName":"Mission Center"}}\n',
+            )
+            personal = root / "personal" / "skills" / "mission-center"
+            marketplace = root / "marketplace" / "plugins" / "mission-center"
+            with patch("publish_local.get_codex_executable", return_value=None):
+                with self.assertRaisesRegex(RuntimeError, "Codex executable not found"):
+                    main(
+                        [
+                            "--repo",
+                            str(repo),
+                            "--personal-skill",
+                            str(personal),
+                            "--marketplace-plugin",
+                            str(marketplace),
+                            "--write",
+                            "--register",
+                        ]
+                    )
 
 
 if __name__ == "__main__":

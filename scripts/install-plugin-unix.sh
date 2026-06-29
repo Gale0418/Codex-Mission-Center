@@ -16,10 +16,11 @@ python3 "$ROOT/scripts/publish_local.py" \
   --repo "$ROOT" \
   --personal-skill "$PERSONAL_SKILL" \
   --marketplace-plugin "$MARKETPLACE_PLUGIN" \
-  "$MODE"
+  "$MODE" \
+  $( [ "$MODE" = "--write" ] && printf '%s' "--register" )
 
 case "$MODE" in
   --dry-run) echo "Dry-run completed. No files were modified." ;;
-  --write) echo "Published Mission Center to personal Skill and local marketplace plugin." ;;
+  --write) echo "Published Mission Center to personal Skill and local marketplace plugin, then refreshed Codex plugin registration." ;;
   --verify) echo "Verification completed successfully." ;;
 esac

@@ -9,6 +9,18 @@ from pathlib import Path
 
 
 ACTIVITY_HEADERS = ("- Activity log:", "- Activity log：", "- 活動紀錄:", "- 活動紀錄：")
+ZH_MARKERS = ("# 專案", "# 進度", "# 任務", "# 快照", "- 目標:", "- 目標：")
+
+
+def detect_workspace_language(root: Path) -> str:
+    for name in ("project.md", "tasks.md", "progress.md", "snapshot.md"):
+        candidate = root / name
+        if not candidate.exists():
+            continue
+        text = candidate.read_text(encoding="utf-8")
+        if any(marker in text for marker in ZH_MARKERS):
+            return "zh-TW"
+    return "en"
 
 
 def detect_project_header(text: str) -> str:
@@ -26,7 +38,9 @@ def detect_activity_header(text: str) -> str:
 
 def append_block(path: Path, line: str) -> None:
     if not path.exists():
-        path.write_text("# Project\n\n", encoding="utf-8")
+        language = detect_workspace_language(path.parent)
+        heading = "# 專案\n\n" if language == "zh-TW" else "# Project\n\n"
+        path.write_text(heading, encoding="utf-8")
     text = path.read_text(encoding="utf-8")
     text = text.replace("- Activity log：", "- Activity log:")
     text = text.replace("- 活動紀錄：", "- 活動紀錄:")

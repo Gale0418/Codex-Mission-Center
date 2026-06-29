@@ -21,13 +21,14 @@ if ($mode -notin @("--dry-run", "--write", "--verify")) {
   --repo $root `
   --personal-skill $personalSkill `
   --marketplace-plugin $marketplacePlugin `
-  $mode
+  $mode `
+  $(if ($mode -eq "--write") { "--register" })
 if ($LASTEXITCODE -ne 0) {
   exit $LASTEXITCODE
 }
 
 switch ($mode) {
   "--dry-run" { Write-Output "Dry-run completed. No files were modified." }
-  "--write" { Write-Output "Published Mission Center to personal Skill and local marketplace plugin." }
+  "--write" { Write-Output "Published Mission Center to personal Skill and local marketplace plugin, then refreshed Codex plugin registration." }
   "--verify" { Write-Output "Verification completed successfully." }
 }

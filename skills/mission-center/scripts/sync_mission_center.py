@@ -174,6 +174,49 @@ def _merge_items(existing: list[str], new_item: str) -> list[str]:
     return merged
 
 
+def _extract_custom_bullets(text: str) -> list[str]:
+    known_labels = {
+        TEXT["en"]["project_label"],
+        TEXT["en"]["goal_label"],
+        TEXT["en"]["cycle_label"],
+        TEXT["en"]["labels_label"],
+        TEXT["en"]["activity_log_label"],
+        TEXT["en"]["open_comments_label"],
+        TEXT["zh-TW"]["project_label"],
+        TEXT["zh-TW"]["goal_label"],
+        TEXT["zh-TW"]["cycle_label"],
+        TEXT["zh-TW"]["labels_label"],
+        TEXT["zh-TW"]["activity_log_label"],
+        TEXT["zh-TW"]["open_comments_label"],
+    }
+    custom: list[str] = []
+    for line in text.splitlines():
+        if not line.startswith("- "):
+            continue
+        label, _, _ = line[2:].partition(":")
+        if not _:
+            label, _, _ = line[2:].partition("：")
+        if label.strip() and label.strip() not in known_labels:
+            custom.append(line.rstrip())
+    return custom
+
+
+def _extract_custom_sections(text: str) -> list[str]:
+    sections: list[str] = []
+    current: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if current:
+                sections.append("\n".join(current).rstrip())
+            current = [line]
+            continue
+        if current:
+            current.append(line)
+    if current:
+        sections.append("\n".join(current).rstrip())
+    return sections
+
+
 def update_progress(
     path: Path,
     project: str,
@@ -227,19 +270,26 @@ def update_project(
     ]
     activity_items = _merge_items(_extract_list_items(existing_text, activity_labels), activity_note)
     open_comment_items = _extract_list_items(existing_text, open_comment_labels) or [labels["none"]]
+    custom_bullets = _extract_custom_bullets(existing_text)
+    custom_sections = _extract_custom_sections(existing_text)
     activity_lines = "".join(f"  - {item}\n" for item in activity_items)
     open_comment_lines = "".join(f"  - {item}\n" for item in open_comment_items)
+    custom_bullet_lines = "".join(f"{line}\n" for line in custom_bullets)
+    custom_section_block = "\n\n".join(section for section in custom_sections if section)
     content = (
         f"# {labels['project_title']}\n\n"
         f"- {labels['project_label']}: {project}\n"
         f"- {labels['goal_label']}: {goal}\n"
         f"- {labels['cycle_label']}: {cycle}\n"
         f"- {labels['labels_label']}: {labels_text}\n"
+        f"{custom_bullet_lines}"
         f"- {labels['activity_log_label']}:\n"
         f"{activity_lines}"
         f"- {labels['open_comments_label']}:\n"
         f"{open_comment_lines}"
     )
+    if custom_section_block:
+        content = content.rstrip() + "\n\n" + custom_section_block + "\n"
     path.write_text(content, encoding="utf-8")
 
 

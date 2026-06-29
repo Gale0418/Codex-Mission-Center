@@ -130,7 +130,10 @@ class WorkspaceTemplateTests(unittest.TestCase):
             workspace = Path(temporary) / "workspace"
             run_script(BOOTSTRAP, workspace, "--language", "en")
             project = workspace / "MissionCenter" / "project.md"
-            project.write_text("# Project\n\n- Goal: Keep this goal\n", encoding="utf-8")
+            project.write_text(
+                "# Project\n\n- Goal: Keep this goal\n",
+                encoding="utf-8",
+            )
             run_script(
                 SEED,
                 workspace,
@@ -267,6 +270,73 @@ class WorkspaceTemplateTests(unittest.TestCase):
             self.assertIn("  - Existing note", content)
             self.assertIn("  - Existing question", content)
             self.assertIn("  - Fresh sync note.", content)
+
+
+    def test_sync_preserves_custom_project_fields_and_sections(self):
+        with workspace_tempdir("workspace-templates-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            run_script(BOOTSTRAP, workspace, "--language", "en")
+            run_script(
+                SEED,
+                workspace,
+                "--goal",
+                "Keep custom context",
+                "--project",
+                "Mission Archive",
+                "--cycle",
+                "Cycle 8",
+                "--language",
+                "en",
+                "--force",
+            )
+            project = workspace / "MissionCenter" / "project.md"
+            project.write_text(
+                "# Project\n\n"
+                "- Project: Mission Archive\n"
+                "- Goal: Keep custom context\n"
+                "- Cycle: Cycle 8\n"
+                "- Labels: archive, verification\n"
+                "- Custom field: Preserve me\n"
+                "- Activity log:\n"
+                "  - Existing note\n"
+                "- Open comments:\n"
+                "  - Existing question\n\n"
+                "## Custom section\n\n"
+                "Do not delete this section.\n",
+                encoding="utf-8",
+            )
+            run_script(
+                SYNC,
+                workspace,
+                "--project",
+                "Mission Archive",
+                "--cycle",
+                "Cycle 8",
+                "--goal",
+                "Keep custom context",
+                "--labels",
+                "archive, verification",
+                "--activity",
+                "Fresh sync note.",
+            )
+
+            content = project.read_text(encoding="utf-8")
+            self.assertIn("- Custom field: Preserve me", content)
+            self.assertIn("## Custom section", content)
+            self.assertIn("Do not delete this section.", content)
+
+    def test_log_uses_workspace_language_when_project_file_is_missing(self):
+        with workspace_tempdir("workspace-templates-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            run_script(BOOTSTRAP, workspace, "--language", "zh-TW")
+            project = workspace / "MissionCenter" / "project.md"
+            project.unlink()
+
+            run_script(LOG, workspace, "--change", "補上活動紀錄")
+
+            content = project.read_text(encoding="utf-8")
+            self.assertTrue(content.startswith("# 專案"))
+            self.assertIn("- 活動紀錄:", content)
 
     def test_snapshot_and_closeout_support_traditional_chinese(self):
         with workspace_tempdir("workspace-templates-") as temporary:

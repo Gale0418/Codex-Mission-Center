@@ -148,6 +148,18 @@ class SkillContractTests(unittest.TestCase):
                 self.assertNotIn("remove-item", normalized)
                 self.assertNotIn("rm -rf", normalized)
 
+    def test_install_wrappers_register_plugin_on_write_mode(self):
+        wrappers = (
+            "install-windows.ps1",
+            "install-unix.sh",
+            "install-plugin-windows.ps1",
+            "install-plugin-unix.sh",
+        )
+        for name in wrappers:
+            text = (ROOT / "scripts" / name).read_text(encoding="utf-8").casefold()
+            with self.subTest(name=name):
+                self.assertIn("--register", text)
+
     def test_install_wrappers_report_each_publish_mode_accurately(self):
         wrappers = (
             "install-windows.ps1",
