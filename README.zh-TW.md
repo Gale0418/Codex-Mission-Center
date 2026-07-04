@@ -6,7 +6,7 @@
 
 **Codex Mission Center** 是一套完全離線、以檔案為核心的 Codex 外掛套件與 Skill。它受 Linear 式專案追蹤與 Superpowers 執行紀律啟發，能將模糊的目標逐步收斂並轉化為本地化的任務工作區 (`MissionCenter/`)。
 
-![skills/mission-center/assets/visual-hub/readme-hero.png](https://pbs.twimg.com/media/HGvWLdmbcAAckSd.jpg)
+![skills/mission-center/assets/visual-hub/readme-hero.png](skills/mission-center/assets/visual-hub/readme-hero.png)
 
 ---
 
