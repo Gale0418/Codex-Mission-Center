@@ -10,6 +10,12 @@ SKILL_PATH = SKILL_ROOT / "SKILL.md"
 
 
 class SkillContractTests(unittest.TestCase):
+    def test_post_commit_hook_is_explicitly_maintainer_only(self):
+        text = SKILL_PATH.read_text(encoding="utf-8")
+        self.assertIn("Maintainer-only", text)
+        self.assertIn("not a normal target-workspace command", text)
+        self.assertNotIn("In the **Codex-Mission-Center repo root**", text)
+
     def test_frontmatter_description_is_trigger_only(self):
         text = SKILL_PATH.read_text(encoding="utf-8")
         match = re.search(r"^description:\s*[\"']?(.+?)[\"']?$", text, re.MULTILINE)

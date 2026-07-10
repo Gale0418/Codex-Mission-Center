@@ -8,6 +8,8 @@ import os
 import shutil
 from pathlib import Path
 
+from workspace_contract import REQUIRED_FILES
+
 
 FILES_EN = {
     "project.md": """# Project
@@ -149,6 +151,10 @@ FILES_ZH_TW = {
 - 小人規則：`tasks.md` 中一個小人代表一個任務
 """,
 }
+
+
+if set(FILES_EN) != set(REQUIRED_FILES) or set(FILES_ZH_TW) != set(REQUIRED_FILES):
+    raise RuntimeError("Bootstrap templates do not match the canonical workspace contract")
 
 
 def choose_language(value: str) -> str:

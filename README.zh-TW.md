@@ -6,6 +6,8 @@
 
 **Codex Mission Center** 是一套完全離線、以檔案為核心的 Codex 外掛套件與 Skill。它受 Linear 式專案追蹤與 Superpowers 執行紀律啟發，能將模糊的目標逐步收斂並轉化為本地化的任務工作區 (`MissionCenter/`)。
 
+Mission Center 僅服務目前這一個專案。它只建立或讀取目前 repo 的 `./MissionCenter/`，不掃描其他倉庫、不合併跨專案任務，也不提供全局監控。
+
 ![skills/mission-center/assets/visual-hub/readme-hero.png](skills/mission-center/assets/visual-hub/readme-hero.png)
 
 ---
@@ -45,7 +47,10 @@ MissionCenter/
 ├── tasks.md                 # 核心任務清單 (唯一狀態來源)
 ├── decisions.md             # 架構決策紀錄 (ADR)
 ├── smoke-tests.md           # 煙霧測試與驗證清單
-└── notes.md                 # 研究筆記與討論紀錄
+├── notes.md                 # 研究筆記與討論紀錄
+├── snapshot.md              # 可恢復的工作快照
+├── closeout.md              # 週期收尾與回顧
+└── visual-hub.md            # 本專案 HUD 入口
 ```
 
 ---
@@ -70,6 +75,14 @@ python3 scripts/install.py
 
 ```text
 使用 $mission-center 規劃這個專案目標，先進行訪談，然後建立 MissionCenter 工作區。
+```
+
+最短的單專案流程：
+
+```bash
+python skills/mission-center/scripts/bootstrap_mission_center.py . --language zh-TW
+python skills/mission-center/scripts/sync_mission_center.py .
+python skills/mission-center/scripts/doctor_mission_center.py .
 ```
 
 ---

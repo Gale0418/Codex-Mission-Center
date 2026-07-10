@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Exercise one local Mission Center workspace
+        run: |
+          python skills/mission-center/scripts/bootstrap_mission_center.py /tmp/mc-demo --language zh-TW
+          python skills/mission-center/scripts/normalize_mission_center.py /tmp/mc-demo
+          python skills/mission-center/scripts/sync_mission_center.py /tmp/mc-demo
+          python skills/mission-center/scripts/doctor_mission_center.py /tmp/mc-demo
+

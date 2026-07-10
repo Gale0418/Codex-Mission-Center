@@ -7,6 +7,5 @@ __pycache__/
 MYKEY.txt
 .env
 .env.*
-MissionCenter/
 output/
 .worktrees/

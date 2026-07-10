@@ -151,6 +151,14 @@ class PublishLocalTests(unittest.TestCase):
             run_mock.assert_has_calls(
                 [
                     call(
+                        [str(fake_codex), "plugin", "remove", "mission-center@mission-center-local"],
+                        check=False,
+                    ),
+                    call(
+                        [str(fake_codex), "plugin", "marketplace", "remove", "mission-center-local"],
+                        check=False,
+                    ),
+                    call(
                         [
                             str(fake_codex),
                             "plugin",

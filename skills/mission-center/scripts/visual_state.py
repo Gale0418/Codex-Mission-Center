@@ -55,8 +55,9 @@ def normalize_tasks(rows: list[dict[str, str]]) -> list[dict[str, str]]:
 def select_visible_tasks(
     tasks: list[dict[str, str]], limit: int = 15
 ) -> list[dict[str, str]]:
-    """Select the first ten unfinished tasks and newest completed tasks."""
-    unfinished = [task for task in tasks if task["Status"].lower() != "done"][:10]
+    """Select up to ten unfinished tasks and newest completed tasks within limit."""
+    unfinished_limit = min(10, limit)
+    unfinished = [task for task in tasks if task["Status"].lower() != "done"][:unfinished_limit]
     done = [task for task in tasks if task["Status"].lower() == "done"]
     done_slots = max(0, limit - len(unfinished))
     visible_done = done[-done_slots:] if done_slots else []
@@ -102,7 +103,7 @@ def build_visual_state(
                 "status": status,
                 "zone": status,
                 "avatar": _stable_avatar(task["ID"]),
-                "active": True,
+                "active": task["Status"].lower() != "done",
             }
         )
     return {

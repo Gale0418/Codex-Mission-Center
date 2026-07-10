@@ -34,7 +34,14 @@ On Windows PowerShell:
 python $env:USERPROFILE\.codex\skills\mission-center\scripts\bootstrap_mission_center.py .
 ```
 
-Expected result:
+Expected result for the current workspace only:
 
 - A `MissionCenter/` folder is created in the current workspace.
-- The folder contains `project.md`, `progress.md`, `tasks.md`, `decisions.md`, `smoke-tests.md`, `notes.md`, `snapshot.md`, and `closeout.md`.
+- The folder contains `project.md`, `progress.md`, `tasks.md`, `decisions.md`, `smoke-tests.md`, `notes.md`, `snapshot.md`, `closeout.md`, and `visual-hub.md`.
+- No parent folder, sibling repository, registry, or background scanner is used.
+
+Validate that workspace with:
+
+```bash
+python3 ~/.codex/skills/mission-center/scripts/doctor_mission_center.py .
+```
