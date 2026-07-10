@@ -301,6 +301,14 @@ def register_marketplace_and_plugin(
     marketplace_name = f"{plugin_manifest['name']}-local"
     plugin_ref = f"{plugin_manifest['name']}@{marketplace_name}"
     subprocess.run(
+        [str(codex_executable), "plugin", "remove", plugin_ref],
+        check=False,
+    )
+    subprocess.run(
+        [str(codex_executable), "plugin", "marketplace", "remove", marketplace_name],
+        check=False,
+    )
+    subprocess.run(
         [str(codex_executable), "plugin", "marketplace", "add", str(marketplace_root)],
         check=True,
     )

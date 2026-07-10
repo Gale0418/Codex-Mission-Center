@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""Validate one explicitly selected Mission Center workspace without mutating it."""
+
+from __future__ import annotations
+
+import argparse
+import re
+from pathlib import Path
+
+from sync_mission_center import build_visual_state, compute_progress, render_bar
+from visual_state import normalize_tasks
+from workspace_contract import REQUIRED_FILES
+
+
+SMOKE_ID_HEADERS = ("Linked task ID", "對應任務 ID")
+SMOKE_RESULT_HEADERS = ("Pass / fail", "通過 / 失敗")
+PASS_VALUES = {"pass", "passed", "ok", "通過", "成功"}
+
+
+def split_cells(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def parse_table_strict(path: Path, table_name: str) -> tuple[list[dict[str, str]], list[str]]:
+    if not path.is_file():
+        return [], []
+
+    table_lines = [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip().startswith("|")
+    ]
+    if len(table_lines) < 2:
+        return [], [f"{table_name} does not contain a Markdown table"]
+
+    headers = split_cells(table_lines[0])
+    separator = split_cells(table_lines[1])
+    if not headers or len(separator) != len(headers):
+        return [], [f"{table_name} has an invalid table header"]
+    if any(not re.fullmatch(r":?-{3,}:?", cell) for cell in separator):
+        return [], [f"{table_name} has an invalid table separator"]
+
+    rows: list[dict[str, str]] = []
+    errors: list[str] = []
+    for row_number, line in enumerate(table_lines[2:], start=1):
+        cells = split_cells(line)
+        if len(cells) != len(headers):
+            errors.append(
+                f"{table_name} row {row_number} has {len(cells)} cells; expected {len(headers)}"
+            )
+            continue
+        row = dict(zip(headers, cells))
+        if any(row.values()):
+            rows.append(row)
+    return rows, errors
+
+
+def first_value(row: dict[str, str], headers: tuple[str, ...]) -> str:
+    for header in headers:
+        if header in row:
+            return row[header].strip()
+    return ""
+
+
+def inspect_workspace(workspace: Path) -> list[str]:
+    workspace = Path(workspace).expanduser().resolve()
+    root = workspace / "MissionCenter"
+    if not root.is_dir():
+        return [f"MissionCenter directory not found: {root}"]
+
+    errors = [
+        f"Missing required file: {name}"
+        for name in REQUIRED_FILES
+        if not (root / name).is_file()
+    ]
+    if not (root / "tasks.md").is_file():
+        return errors
+
+    raw_tasks, task_errors = parse_table_strict(root / "tasks.md", "tasks.md")
+    errors.extend(task_errors)
+    tasks: list[dict[str, str]] = []
+    if not task_errors:
+        try:
+            tasks = normalize_tasks(raw_tasks)
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    if tasks:
+        smoke_rows, smoke_errors = parse_table_strict(
+            root / "smoke-tests.md", "smoke-tests.md"
+        )
+        errors.extend(smoke_errors)
+        passing_task_ids = {
+            first_value(row, SMOKE_ID_HEADERS)
+            for row in smoke_rows
+            if first_value(row, SMOKE_RESULT_HEADERS).casefold() in PASS_VALUES
+        }
+        for task in tasks:
+            if task["Status"] == "Done" and task["ID"] not in passing_task_ids:
+                errors.append(
+                    f"Done task {task['ID']} has no passing smoke-test record"
+                )
+
+    if tasks or not task_errors:
+        try:
+            percent, _, _, _ = compute_progress(tasks)
+            expected_bar = render_bar(percent)
+            progress_path = root / "progress.md"
+            if progress_path.is_file() and expected_bar not in progress_path.read_text(
+                encoding="utf-8"
+            ):
+                errors.append(
+                    f"progress.md is stale; expected progress bar {expected_bar}"
+                )
+            build_visual_state(tasks, "MissionCenter workspace", percent)
+        except (KeyError, TypeError, ValueError) as exc:
+            errors.append(f"Unable to derive Mission Center state: {exc}")
+
+    return errors
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Validate one workspace's local MissionCenter directory."
+    )
+    parser.add_argument("workspace", nargs="?", default=".")
+    args = parser.parse_args(argv)
+
+    errors = inspect_workspace(Path(args.workspace))
+    if errors:
+        for error in errors:
+            print(f"ERROR: {error}")
+        return 1
+    print("MissionCenter doctor: OK")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+

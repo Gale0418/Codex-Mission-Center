@@ -3,6 +3,12 @@
 Mission Center is an offline, file-based Codex plugin and skill for turning vague goals into a local task workspace.
 It is inspired by Linear-style project tracking and Superpowers-style execution discipline, but it does not connect to Linear or any external app.
 
+Mission Center is per-project only.
+Use it inside the current repo/workspace.
+It creates or reads `./MissionCenter/`.
+It does not monitor all repositories.
+It does not merge tasks across projects.
+
 ![skills/mission-center/assets/visual-hub/readme-hero.png](https://pbs.twimg.com/media/HGvWLdmbcAAckSd.jpg)
 
 ## What It Does
@@ -16,7 +22,6 @@ It is inspired by Linear-style project tracking and Superpowers-style execution 
 - Keeps task state local and readable as Markdown.
 - Follows the user's language for generated workspace files, including Traditional Chinese.
 - Shows one animated HUD helper per task and moves it with the task lifecycle.
-- Supports a future global overview mode without mixing unrelated workspace tasks.
 
 ## Plugin Layout
 
@@ -50,6 +55,7 @@ MissionCenter/
   smoke-tests.md
   notes.md
   snapshot.md
+  closeout.md
   visual-hub.md
 output/
   mission-center-assets/
@@ -62,6 +68,14 @@ output/
 ```
 
 Open `output/mission-center-assets/visual-summary.html` to view the local visual HUD.
+
+The shortest local workflow is:
+
+```bash
+python skills/mission-center/scripts/bootstrap_mission_center.py . --language zh-TW
+python skills/mission-center/scripts/sync_mission_center.py .
+python skills/mission-center/scripts/doctor_mission_center.py .
+```
 
 ## Local Publishing
 
@@ -87,19 +101,6 @@ Mission Center bundles the HUD assets needed for offline use:
 - `skills/mission-center/assets/visual-hub/mission-helper-roster-8-girls-2.png`
 - `skills/mission-center/assets/visual-hub/visual-summary.html`
 - `skills/mission-center/assets/visual-hub/update-visual-state.ps1`
-
-## Global Overview Safety
-
-Mission Center is intentionally local-first.
-If you later build a global overview for multiple Codex workspaces, treat it as a dashboard only:
-
-- Each workspace keeps its own `MissionCenter/` as the source of truth.
-- A global hub may read summaries from multiple workspaces.
-- A global hub must not merge task tables across folders.
-- A global hub must not mutate another workspace's task files unless that workspace is explicitly selected.
-- Every global card should include a workspace path or workspace ID.
-
-In short: global overview, not global task soup.
 
 ## macOS Notes
 

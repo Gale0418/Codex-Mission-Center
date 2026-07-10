@@ -193,9 +193,13 @@ def _extract_custom_bullets(text: str) -> list[str]:
     for line in text.splitlines():
         if not line.startswith("- "):
             continue
-        label, _, _ = line[2:].partition(":")
-        if not _:
-            label, _, _ = line[2:].partition("：")
+        body = line[2:]
+        separator_positions = [
+            position
+            for position in (body.find(":"), body.find("："))
+            if position >= 0
+        ]
+        label = body[: min(separator_positions)] if separator_positions else body
         if label.strip() and label.strip() not in known_labels:
             custom.append(line.rstrip())
     return custom

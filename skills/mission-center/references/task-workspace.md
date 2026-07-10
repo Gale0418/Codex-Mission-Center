@@ -4,6 +4,8 @@
 
 Create this structure under the current workspace root:
 
+This is a per-project contract. Do not scan, register, or merge any other repository.
+
 ```text
 MissionCenter/
   project.md
@@ -13,6 +15,7 @@ MissionCenter/
   smoke-tests.md
   notes.md
   snapshot.md
+  closeout.md
   visual-hub.md
 ```
 
@@ -115,6 +118,18 @@ Each entry should include:
 - `Date`
 - `Linked task ID`
 - `Run type` (`manual` or `automated`)
+
+### `snapshot.md`
+
+Keep the latest reopenable checkpoint for this project.
+
+### `closeout.md`
+
+Record the current project's completed work, unfinished tasks, risks, verification, and retrospective.
+
+### `visual-hub.md`
+
+Link to the HUD generated from this project's `tasks.md` only.
 
 ## Update Rules
 

@@ -16,6 +16,7 @@ SYNC = SCRIPT_ROOT / "sync_mission_center.py"
 LOG = SCRIPT_ROOT / "log_mission_center_change.py"
 SNAPSHOT = SCRIPT_ROOT / "snapshot_mission_center.py"
 CLOSEOUT = SCRIPT_ROOT / "closeout_mission_center_cycle.py"
+sys.path.insert(0, str(SCRIPT_ROOT))
 
 
 def run_script(script: Path, *args: str) -> None:
@@ -270,6 +271,28 @@ class WorkspaceTemplateTests(unittest.TestCase):
             self.assertIn("  - Existing note", content)
             self.assertIn("  - Existing question", content)
             self.assertIn("  - Fresh sync note.", content)
+
+    def test_repeated_sync_does_not_duplicate_list_field_labels(self):
+        with workspace_tempdir("workspace-templates-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            run_script(BOOTSTRAP, workspace, "--language", "zh-TW")
+            run_script(SYNC, workspace, "--activity", "第一次同步。")
+            run_script(SYNC, workspace, "--activity", "第二次同步。")
+
+            content = (workspace / "MissionCenter" / "project.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertEqual(content.count("- 活動紀錄:"), 1)
+            self.assertEqual(content.count("- 開放問題:"), 1)
+            self.assertIn("第一次同步。", content)
+            self.assertIn("第二次同步。", content)
+
+    def test_sync_recognizes_full_width_known_label_before_ascii_value_colon(self):
+        from sync_mission_center import _extract_custom_bullets
+
+        custom = _extract_custom_bullets("- 活動紀錄：10:30\n")
+
+        self.assertEqual(custom, [])
 
 
     def test_sync_preserves_custom_project_fields_and_sections(self):

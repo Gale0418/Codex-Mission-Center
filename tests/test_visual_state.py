@@ -76,6 +76,21 @@ class VisualStateTests(unittest.TestCase):
         self.assertEqual(tasks[0]["Title"], "研究")
         self.assertEqual(tasks[0]["Status"], "Blocked")
 
+    def test_done_blocked_and_in_progress_map_to_expected_zones(self):
+        tasks = normalize_tasks(
+            [
+                {"ID": "T1", "標題": "進行", "狀態": "In Progress", "估時": "2"},
+                {"ID": "T2", "標題": "阻塞", "狀態": "Blocked", "估時": "3"},
+                {"ID": "T3", "標題": "完成", "狀態": "Done", "估時": "1"},
+            ]
+        )
+        state = build_visual_state(tasks, goal="驗證區域", progress=17)
+        self.assertEqual([task["Estimate"] for task in tasks], ["2", "3", "1"])
+        self.assertEqual(
+            [agent["zone"] for agent in state["agents"]],
+            ["In Progress", "Blocked", "Done"],
+        )
+
     def test_unknown_status_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "Unsupported task status"):
             normalize_tasks(
