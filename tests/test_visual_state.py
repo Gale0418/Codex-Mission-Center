@@ -6,7 +6,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).parents[1] / "skills" / "mission-center" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from visual_state import build_visual_state, normalize_tasks
+from visual_state import build_visual_state, normalize_tasks, select_visible_tasks
 
 
 class VisualStateTests(unittest.TestCase):
@@ -62,6 +62,19 @@ class VisualStateTests(unittest.TestCase):
             [f"D{i}" for i in range(2, 7)],
         )
 
+    def test_custom_limit_keeps_ten_unfinished_cap_and_reserves_done_slots(self):
+        rows = [
+            {"ID": f"T{i}", "Title": f"未完成 {i}", "Status": "Ready"}
+            for i in range(15)
+        ] + [
+            {"ID": f"D{i}", "Title": f"完成 {i}", "Status": "Done"}
+            for i in range(5)
+        ]
+
+        visible = select_visible_tasks(normalize_tasks(rows), limit=12)
+
+        self.assertEqual([task["ID"] for task in visible[:10]], [f"T{i}" for i in range(10)])
+        self.assertEqual([task["ID"] for task in visible[10:]], ["D3", "D4"])
     def test_traditional_chinese_headers_are_normalized(self):
         tasks = normalize_tasks(
             [
