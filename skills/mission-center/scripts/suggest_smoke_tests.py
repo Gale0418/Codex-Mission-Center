@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Suggest or apply default smoke tests for MissionCenter tasks."""
 
 from __future__ import annotations
