@@ -120,7 +120,7 @@ class SkillContractTests(unittest.TestCase):
             (ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
         )
         repository = "https://github.com/Gale0418/Codex-Mission-Center"
-        self.assertEqual(manifest["license"], "Apache-2.0")
+        self.assertEqual(manifest["license"], "MIT")
         self.assertEqual(manifest["homepage"], repository)
         self.assertEqual(manifest["repository"], repository)
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
