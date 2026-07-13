@@ -14,7 +14,7 @@ SYNC = SCRIPTS / "sync_mission_center.py"
 FIXTURE = ROOT / "tests" / "fixtures" / "demo-workspace"
 sys.path.insert(0, str(SCRIPTS))
 
-from sync_mission_center import compute_progress
+from sync_mission_center import compute_progress, parse_table
 
 
 class SyncMissionCenterTests(unittest.TestCase):
@@ -57,6 +57,39 @@ class SyncMissionCenterTests(unittest.TestCase):
         )
         self.assertEqual(percent, 50)
         self.assertEqual(mode, "1/2 tasks")
+
+    def test_progress_falls_back_to_task_count_for_mixed_estimates(self):
+        percent, mode, _, _ = compute_progress(
+            [
+                {"ID": "T1", "Title": "完成", "Status": "Done", "Estimate": "1"},
+                {"ID": "T2", "Title": "進行", "Status": "In Progress", "Estimate": ""},
+            ]
+        )
+        self.assertEqual(percent, 50)
+        self.assertEqual(mode, "1/2 tasks")
+
+    def test_parse_table_preserves_escaped_pipe(self):
+        with workspace_tempdir("sync-pipe-") as temporary:
+            tasks = Path(temporary) / "tasks.md"
+            tasks.write_text(
+                "| ID | Title | Status | Estimate |\n"
+                "| --- | --- | --- | --- |\n"
+                "| T1 | A \\| B | Done | 1 |\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(parse_table(tasks)[0]["Title"], "A | B")
+
+    def test_parse_table_rejects_malformed_rows(self):
+        with workspace_tempdir("sync-malformed-") as temporary:
+            tasks = Path(temporary) / "tasks.md"
+            tasks.write_text(
+                "| ID | Title | Status |\n"
+                "| --- | --- | --- |\n"
+                "| T1 | missing status |\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "expected 3"):
+                parse_table(tasks)
 
 
 if __name__ == "__main__":

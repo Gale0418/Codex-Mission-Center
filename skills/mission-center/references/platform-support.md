@@ -25,13 +25,14 @@ After copying the skill folder:
 Create a temporary workspace and run:
 
 ```bash
-python3 ~/.codex/skills/mission-center/scripts/bootstrap_mission_center.py .
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/mission-center/scripts/bootstrap_mission_center.py" .
 ```
 
 On Windows PowerShell:
 
 ```powershell
-python $env:USERPROFILE\.codex\skills\mission-center\scripts\bootstrap_mission_center.py .
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
+python (Join-Path $codexHome 'skills/mission-center/scripts/bootstrap_mission_center.py') .
 ```
 
 Expected result for the current workspace only:
@@ -43,5 +44,5 @@ Expected result for the current workspace only:
 Validate that workspace with:
 
 ```bash
-python3 ~/.codex/skills/mission-center/scripts/doctor_mission_center.py .
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/mission-center/scripts/doctor_mission_center.py" .
 ```

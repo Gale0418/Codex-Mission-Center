@@ -1,0 +1,64 @@
+import importlib.util
+import shutil
+import subprocess
+import sys
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).parents[1]
+TEST_TMP_ROOT = ROOT.parent / ".tmp-mission-center-tests"
+TEST_TMP_ROOT.mkdir(parents=True, exist_ok=True)
+
+
+def fresh_test_dir(name: str) -> Path:
+    path = TEST_TMP_ROOT / name
+    if path.exists():
+        shutil.rmtree(path)
+    path.mkdir(parents=True)
+    return path
+MODULE_PATH = ROOT / "scripts" / "install_git_hook.py"
+
+
+def load_installer():
+    spec = importlib.util.spec_from_file_location("mission_center_install_git_hook", MODULE_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class InstallGitHookTests(unittest.TestCase):
+    def test_existing_non_tool_hook_is_preserved_and_fails(self):
+        installer = load_installer()
+        repo = fresh_test_dir("hook-non-tool")
+        try:
+            hook = repo / ".git" / "hooks" / "post-commit"
+            hook.parent.mkdir(parents=True)
+            hook.write_text("#!/bin/sh\necho user-hook\n", encoding="utf-8")
+
+            result = subprocess.run(
+                [sys.executable, str(MODULE_PATH), str(repo)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(hook.read_text(encoding="utf-8"), "#!/bin/sh\necho user-hook\n")
+        finally:
+            shutil.rmtree(repo)
+
+    def test_existing_tool_hook_is_idempotent(self):
+        installer = load_installer()
+        repo = fresh_test_dir("hook-tool")
+        try:
+            hook = repo / ".git" / "hooks" / "post-commit"
+            hook.parent.mkdir(parents=True)
+            hook.write_text(installer.POST_COMMIT_HOOK_SCRIPT, encoding="utf-8")
+            self.assertTrue(installer.install_git_hook(repo))
+        finally:
+            shutil.rmtree(repo)
+
+
+if __name__ == "__main__":
+    unittest.main()

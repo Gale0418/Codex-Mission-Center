@@ -61,7 +61,18 @@ class DoctorMissionCenterTests(unittest.TestCase):
                 any("progress.md is stale" in error for error in inspect_workspace(workspace))
             )
 
+    def test_malformed_task_row_is_reported(self):
+        with workspace_tempdir("doctor-malformed-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            tasks = workspace / "MissionCenter" / "tasks.md"
+            tasks.write_text(
+                tasks.read_text(encoding="utf-8") + "| BROKEN | too few cells |\n",
+                encoding="utf-8",
+            )
+            self.assertTrue(
+                any("has 2 cells; expected" in error for error in inspect_workspace(workspace))
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -34,7 +34,13 @@ Codex-Mission-Center/
 ├── assets/                  # 視覺 HUD 基礎圖資
 ├── docs/                    # 設計規範與導向文件
 ├── scripts/                 # 自動化腳本 (bootstrap, sync, normalize, install)
-├── skills/mission-center/   # 外掛封裝 Skill 檔
+├── skills/
+│   └── mission-center/       # 外掛封裝 Skill 檔
+│       ├── SKILL.md
+│       ├── agents/
+│       ├── references/
+│       ├── scripts/
+│       └── assets/
 └── tests/                   # 自動化測試套件
 ```
 

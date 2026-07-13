@@ -55,6 +55,35 @@ TEXT = {
 }
 
 
+def split_cells(line: str) -> list[str]:
+    """Split one Markdown table row, honoring backslash-escaped pipes."""
+    text = line.strip()
+    if text.startswith("|"):
+        text = text[1:]
+    if text.endswith("|") and not text.endswith("\\|"):
+        text = text[:-1]
+    cells: list[str] = []
+    current: list[str] = []
+    escaped = False
+    for char in text:
+        if escaped:
+            if char not in ("|", "\\"):
+                current.append("\\")
+            current.append(char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == "|":
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+    if escaped:
+        raise ValueError("Markdown table row ends with an incomplete escape")
+    cells.append("".join(current).strip())
+    return cells
+
+
 def parse_table(path: Path) -> list[dict[str, str]]:
     if not path.exists():
         return []
@@ -62,12 +91,23 @@ def parse_table(path: Path) -> list[dict[str, str]]:
     table_lines = [line for line in rows if line.startswith("|")]
     if len(table_lines) < 2:
         return []
-    headers = [cell.strip() for cell in table_lines[0].strip("|").split("|")]
+    try:
+        headers = split_cells(table_lines[0])
+        separator = split_cells(table_lines[1])
+    except ValueError as exc:
+        raise ValueError(f"{path.name}: malformed Markdown table: {exc}") from exc
+    if not headers or len(separator) != len(headers):
+        raise ValueError(f"{path.name}: invalid table header")
+    if any(not re.fullmatch(r":?-{3,}:?", cell) for cell in separator):
+        raise ValueError(f"{path.name}: invalid table separator")
     data = []
-    for line in table_lines[2:]:
-        cells = [cell.strip() for cell in line.strip("|").split("|")]
+    for row_number, line in enumerate(table_lines[2:], start=1):
+        try:
+            cells = split_cells(line)
+        except ValueError as exc:
+            raise ValueError(f"{path.name} row {row_number}: malformed Markdown table: {exc}") from exc
         if len(cells) != len(headers):
-            continue
+            raise ValueError(f"{path.name} row {row_number} has {len(cells)} cells; expected {len(headers)}")
         item = dict(zip(headers, cells))
         if any(value for value in item.values()):
             data.append(item)
@@ -84,6 +124,7 @@ def compute_progress(tasks: list[dict[str, str]]) -> tuple[int, str, list[str], 
     done = 0
     total_est = 0
     done_est = 0
+    estimated_tasks = 0
     active: list[str] = []
     blocked: list[str] = []
 
@@ -96,6 +137,7 @@ def compute_progress(tasks: list[dict[str, str]]) -> tuple[int, str, list[str], 
             if status == "done":
                 done += 1
             if estimate is not None:
+                estimated_tasks += 1
                 total_est += estimate
                 if status == "done":
                     done_est += estimate
@@ -104,7 +146,7 @@ def compute_progress(tasks: list[dict[str, str]]) -> tuple[int, str, list[str], 
             if status == "blocked" and len(blocked) < 5:
                 blocked.append(f"{task.get('ID', '').strip()} {title}")
 
-    if total_est > 0:
+    if total > 0 and estimated_tasks == total and total_est > 0:
         percent = round((done_est / total_est) * 100)
         mode = f"{done_est}/{total_est} estimated"
     elif total > 0:

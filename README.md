@@ -9,7 +9,7 @@ It creates or reads `./MissionCenter/`.
 It does not monitor all repositories.
 It does not merge tasks across projects.
 
-![skills/mission-center/assets/visual-hub/readme-hero.png](https://pbs.twimg.com/media/HGvWLdmbcAAckSd.jpg)
+![skills/mission-center/assets/visual-hub/readme-hero.png](skills/mission-center/assets/visual-hub/readme-hero.png)
 
 ## What It Does
 
@@ -28,7 +28,13 @@ It does not merge tasks across projects.
 ```text
 .codex-plugin/plugin.json
 assets/mission-center.svg
-skills/mission-center/
+skills/
+  mission-center/
+    SKILL.md
+    agents/
+    references/
+    scripts/
+    assets/
 ```
 
 Codex plugin hosts should read `.codex-plugin/plugin.json`, then load the bundled skill from `skills/mission-center/`.

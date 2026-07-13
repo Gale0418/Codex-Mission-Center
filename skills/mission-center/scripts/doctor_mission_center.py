@@ -18,7 +18,20 @@ PASS_VALUES = {"pass", "passed", "ok", "通過", "成功"}
 
 
 def split_cells(line: str) -> list[str]:
-    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+    text = line.strip()
+    if text.startswith("|"): text = text[1:]
+    if text.endswith("|") and not text.endswith("\\|"): text = text[:-1]
+    cells, current, escaped = [], [], False
+    for char in text:
+        if escaped:
+            if char not in ("|", "\\"): current.append("\\")
+            current.append(char); escaped = False
+        elif char == "\\": escaped = True
+        elif char == "|": cells.append("".join(current).strip()); current = []
+        else: current.append(char)
+    if escaped: raise ValueError("row ends with an incomplete escape")
+    cells.append("".join(current).strip())
+    return cells
 
 
 def parse_table_strict(path: Path, table_name: str) -> tuple[list[dict[str, str]], list[str]]:
@@ -33,8 +46,11 @@ def parse_table_strict(path: Path, table_name: str) -> tuple[list[dict[str, str]
     if len(table_lines) < 2:
         return [], [f"{table_name} does not contain a Markdown table"]
 
-    headers = split_cells(table_lines[0])
-    separator = split_cells(table_lines[1])
+    try:
+        headers = split_cells(table_lines[0])
+        separator = split_cells(table_lines[1])
+    except ValueError as exc:
+        return [], [f"{table_name} has malformed Markdown table: {exc}"]
     if not headers or len(separator) != len(headers):
         return [], [f"{table_name} has an invalid table header"]
     if any(not re.fullmatch(r":?-{3,}:?", cell) for cell in separator):
@@ -43,7 +59,11 @@ def parse_table_strict(path: Path, table_name: str) -> tuple[list[dict[str, str]
     rows: list[dict[str, str]] = []
     errors: list[str] = []
     for row_number, line in enumerate(table_lines[2:], start=1):
-        cells = split_cells(line)
+        try:
+            cells = split_cells(line)
+        except ValueError as exc:
+            errors.append(f"{table_name} row {row_number} is malformed: {exc}")
+            continue
         if len(cells) != len(headers):
             errors.append(
                 f"{table_name} row {row_number} has {len(cells)} cells; expected {len(headers)}"

@@ -161,7 +161,8 @@ When the workspace is created for a new goal, seed these starting files:
 - `project.md` with the project title, cycle, goal, and labels
 - `progress.md` with the current objective and empty progress bar
 - `tasks.md` with one top-level epic and initial child tasks
-- `smoke-tests.md` with at least one placeholder row for the first verification
+- `smoke-tests.md` as an empty verification log; add a row only after a real
+  smoke check has been run (never mark a placeholder as verified)
 - `decisions.md` with any assumptions made during intake
 - `notes.md` for open questions and the concise research log
 - `snapshot.md` for the latest reopenable checkpoint
