@@ -61,6 +61,41 @@ class SkillContractTests(unittest.TestCase):
         }
         self.assertEqual(reference_files, linked)
 
+    def test_dynamic_expert_council_uses_complexity_evidence_and_approval_gates(self):
+        council = (
+            SKILL_ROOT / "references" / "dynamic-expert-council.md"
+        ).read_text(encoding="utf-8")
+        normalized = council.casefold()
+        for phrase in (
+            "`skip`",
+            "`council_lite`",
+            "`council_full`",
+            "at least three dynamically selected professional perspectives",
+            "improbable but feasible",
+            "confirm and state the current date",
+            "primary source",
+            "jina reader",
+            "do not invent",
+            "evidence discipline",
+            "exploration variance",
+            "explicit approval",
+            "agreed budget",
+            "do not consume additional runtime-agent quota",
+            "receives:",
+            "not responsible for:",
+            "low-confidence behavior:",
+            "confidence plus unknowns",
+            "separate from validators",
+            "bounded retries",
+            "material dissent",
+            "next verification",
+        ):
+            self.assertIn(phrase, normalized)
+        self.assertIn(
+            "not by claiming different model settings or temperature values", normalized
+        )
+        self.assertIn("do not draw from a fixed role catalogue", normalized)
+
     def test_intake_and_creative_council_have_stop_and_convergence_rules(self):
         intake = (SKILL_ROOT / "references" / "intake-protocol.md").read_text(
             encoding="utf-8"
@@ -94,7 +129,7 @@ class SkillContractTests(unittest.TestCase):
             SKILL_ROOT / "references" / "agent-orchestration.md"
         ).read_text(encoding="utf-8")
         self.assertIn("explicit user approval", orchestration)
-        self.assertIn("simulated expert perspectives", orchestration)
+        self.assertIn("simulated perspectives", orchestration)
 
     def test_linear_and_execution_references_enforce_rolling_approval(self):
         linear = (SKILL_ROOT / "references" / "linear-parity.md").read_text(

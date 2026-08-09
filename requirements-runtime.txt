@@ -1,0 +1,2 @@
+# Optional live Runtime Adapter only. Core Mission Center remains stdlib-only.
+websockets>=16.1,<17

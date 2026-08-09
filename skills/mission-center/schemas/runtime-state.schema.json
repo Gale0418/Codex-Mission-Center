@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RuntimeState",
+  "type": "object",
+  "required": ["schemaVersion", "updatedAt", "sourceStatus", "capabilities", "attention", "agents"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "updatedAt": {"type": "string", "format": "date-time"},
+    "sourceStatus": {"enum": ["connected", "replay", "file", "stale", "disconnected"]},
+    "capabilities": {"type": "object", "required": ["approve", "reject", "focus"], "properties": {"approve": {"type": "boolean"}, "reject": {"type": "boolean"}, "focus": {"type": "boolean"}}, "additionalProperties": false},
+    "attention": {"type": "array", "items": {"type": "object"}},
+    "agents": {"type": "array", "items": {"type": "object"}}
+  },
+  "additionalProperties": false
+}

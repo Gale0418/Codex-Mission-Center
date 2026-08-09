@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mission-center.local/schemas/project-profile.schema.json",
+  "title": "ProjectProfile",
+  "type": "object",
+  "required": ["schemaVersion", "taskType", "parameterShape", "measurement", "noise", "reversibility", "risk", "budget"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "taskType": {"enum": ["deterministic", "decision", "optimization", "research", "mixed"]},
+    "parameterShape": {"enum": ["none", "discrete", "categorical", "continuous", "mixed", "multi_objective"]},
+    "measurement": {"enum": ["none", "subjective", "repeatable", "expensive"]},
+    "noise": {"enum": ["low", "medium", "high", "unknown"]},
+    "reversibility": {"enum": ["easy", "costly", "irreversible", "unknown"]},
+    "risk": {"enum": ["low", "medium", "high"]},
+    "budget": {
+      "type": "object",
+      "required": ["trials", "tokens", "wallClockSeconds"],
+      "properties": {
+        "trials": {"type": "integer", "minimum": 0},
+        "tokens": {"type": "integer", "minimum": 0},
+        "wallClockSeconds": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "objectives": {"type": "array", "items": {"type": "string"}},
+    "differentiable": {"type": "boolean"},
+    "factorCount": {"type": "integer", "minimum": 0},
+    "localCases": {"type": "array", "items": {"type": "string"}},
+    "unknowns": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

@@ -39,9 +39,9 @@ class DoctorMissionCenterTests(unittest.TestCase):
                 tasks.read_text(encoding="utf-8").replace("In Progress", "Flying"),
                 encoding="utf-8",
             )
-            self.assertTrue(
-                any("Unsupported task status: Flying" in error for error in inspect_workspace(workspace))
-            )
+            errors = inspect_workspace(workspace)
+            self.assertTrue(any("Unsupported task status: Flying" in error for error in errors))
+            self.assertFalse(any("focus.md does not match" in error for error in errors))
 
     def test_done_task_requires_passing_smoke_test(self):
         with workspace_tempdir("doctor-smoke-") as temporary:
@@ -72,6 +72,41 @@ class DoctorMissionCenterTests(unittest.TestCase):
             self.assertTrue(
                 any("has 2 cells; expected" in error for error in inspect_workspace(workspace))
             )
+
+    def test_stale_materialized_view_fails(self):
+        with workspace_tempdir("doctor-memory-stale-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            project = workspace / "MissionCenter" / "project.md"
+            project.write_text(project.read_text(encoding="utf-8") + "\n- Changed: yes\n", encoding="utf-8")
+            self.assertTrue(any("brief.md is stale" in error for error in inspect_workspace(workspace)))
+
+    def test_focus_must_match_unfinished_p0(self):
+        with workspace_tempdir("doctor-focus-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            focus = workspace / "MissionCenter" / "focus.md"
+            focus.write_text(
+                focus.read_text(encoding="utf-8")
+                + "| FAKE | Wrong | Ready | Work | | test |\n",
+                encoding="utf-8",
+            )
+            self.assertTrue(any("focus.md does not match" in error for error in inspect_workspace(workspace)))
+
+    def test_guardrail_and_daily_log_schema_fail_closed(self):
+        with workspace_tempdir("doctor-memory-schema-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            mission = workspace / "MissionCenter"
+            guardrails = mission / "guardrails.md"
+            guardrails.write_text(
+                guardrails.read_text(encoding="utf-8")
+                + "| bad | Huge | always | x | y | z | human | yesterday | Candidate |\n",
+                encoding="utf-8",
+            )
+            daily = mission / "daily-log.md"
+            daily.write_text("# Daily Log\n\n- Last organized: nope\n\n## 2026-99-99\n- bad\n", encoding="utf-8")
+            errors = inspect_workspace(workspace)
+            self.assertTrue(any("invalid ID" in error for error in errors))
+            self.assertTrue(any("invalid status" in error for error in errors))
+            self.assertTrue(any("Last organized" in error for error in errors))
 
 
 if __name__ == "__main__":

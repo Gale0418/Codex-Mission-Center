@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Append a timestamped activity note to a MissionCenter project file."""
+"""Record one compact MissionCenter activity event."""
 
 from __future__ import annotations
 
@@ -60,6 +60,19 @@ def append_block(path: Path, line: str) -> None:
     path.write_text("\n".join(output) + "\n", encoding="utf-8")
 
 
+def resolve_mission_file(root: Path, value: str) -> Path:
+    relative = Path(value)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("--file must stay inside MissionCenter")
+    resolved_root = root.resolve()
+    candidate = (resolved_root / relative).resolve()
+    try:
+        candidate.relative_to(resolved_root)
+    except ValueError as exc:
+        raise ValueError("--file must stay inside MissionCenter") from exc
+    return candidate
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("workspace", nargs="?", default=".")
@@ -70,15 +83,29 @@ def main() -> int:
     args = parser.parse_args()
 
     root = Path(args.workspace).resolve() / "MissionCenter"
-    path = root / args.file
+    try:
+        path = resolve_mission_file(root, args.file)
+    except ValueError as exc:
+        parser.error(str(exc))
     timestamp = datetime.now().isoformat(timespec="seconds")
     note = f"[{timestamp}] {args.change}"
     if args.reason:
         note += f" | reason: {args.reason}"
     if args.impact:
         note += f" | impact: {args.impact}"
-    append_block(path, note)
-    print(path)
+    if path == (root / "project.md").resolve():
+        if not path.exists():
+            language = detect_workspace_language(root)
+            heading = "# 專案\n\n- 活動紀錄:\n" if language == "zh-TW" else "# Project\n\n- Activity log:\n"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(heading, encoding="utf-8")
+        from mission_maintenance import run_daily
+
+        run_daily(root, note)
+        print(root / "daily-log.md")
+    else:
+        append_block(path, note)
+        print(path)
     return 0
 
 

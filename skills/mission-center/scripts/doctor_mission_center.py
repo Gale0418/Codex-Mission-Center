@@ -10,6 +10,17 @@ from pathlib import Path
 from sync_mission_center import build_visual_state, compute_progress, render_bar
 from visual_state import normalize_tasks
 from workspace_contract import REQUIRED_FILES
+from mission_maintenance import (
+    FOCUS_FINGERPRINT_SOURCES,
+    GUARDRAIL_REQUIRED,
+    compute_workspace_fingerprint,
+    extract_focus_tasks,
+    is_fingerprint_stale,
+    normalize_guardrail_rows,
+    parse_derived_fingerprint,
+    validate_daily_log_text,
+    validate_guardrails,
+)
 
 
 SMOKE_ID_HEADERS = ("Linked task ID", "對應任務 ID")
@@ -99,11 +110,13 @@ def inspect_workspace(workspace: Path) -> list[str]:
     raw_tasks, task_errors = parse_table_strict(root / "tasks.md", "tasks.md")
     errors.extend(task_errors)
     tasks: list[dict[str, str]] = []
+    task_normalization_failed = False
     if not task_errors:
         try:
             tasks = normalize_tasks(raw_tasks)
         except ValueError as exc:
             errors.append(str(exc))
+            task_normalization_failed = True
 
     if tasks:
         smoke_rows, smoke_errors = parse_table_strict(
@@ -135,6 +148,48 @@ def inspect_workspace(workspace: Path) -> list[str]:
             build_visual_state(tasks, "MissionCenter workspace", percent)
         except (KeyError, TypeError, ValueError) as exc:
             errors.append(f"Unable to derive Mission Center state: {exc}")
+
+    current_fingerprint = compute_workspace_fingerprint(root)
+    for name in ("brief.md", "focus.md"):
+        path = root / name
+        if not path.is_file():
+            continue
+        cached = parse_derived_fingerprint(path.read_text(encoding="utf-8"))
+        if not cached:
+            errors.append(f"{name} is not a generated MissionCenter view")
+        expected_fingerprint = (
+            compute_workspace_fingerprint(root, FOCUS_FINGERPRINT_SOURCES)
+            if name == "focus.md"
+            else current_fingerprint
+        )
+        if cached and is_fingerprint_stale(expected_fingerprint, cached):
+            errors.append(f"{name} is stale; run mission_maintenance.py sync")
+
+    focus_path = root / "focus.md"
+    if focus_path.is_file() and not task_errors and not task_normalization_failed:
+        focus_rows, focus_errors = parse_table_strict(focus_path, "focus.md")
+        errors.extend(focus_errors)
+        expected_ids = [task["ID"] for task in extract_focus_tasks(tasks)]
+        actual_ids = [row.get("ID", "").strip() for row in focus_rows]
+        if not focus_errors and actual_ids != expected_ids:
+            errors.append(
+                f"focus.md does not match unfinished P0 tasks; expected {expected_ids}, got {actual_ids}"
+            )
+
+    guardrail_path = root / "guardrails.md"
+    if guardrail_path.is_file():
+        guardrail_rows, guardrail_errors = parse_table_strict(guardrail_path, "guardrails.md")
+        errors.extend(guardrail_errors)
+        if not guardrail_errors:
+            normalized_guardrails = normalize_guardrail_rows(guardrail_rows)
+            headers = set(normalized_guardrails[0]) if normalized_guardrails else set()
+            if guardrail_rows and not set(GUARDRAIL_REQUIRED).issubset(headers):
+                errors.append("guardrails.md is missing required columns")
+            errors.extend(validate_guardrails(normalized_guardrails))
+
+    daily_path = root / "daily-log.md"
+    if daily_path.is_file():
+        errors.extend(validate_daily_log_text(daily_path.read_text(encoding="utf-8")))
 
     return errors
 

@@ -4,3 +4,11 @@
 - 2026-07-10：移除 global overview reference，不保留 registry、dashboard 或跨 repo 任務合併入口。
 - 2026-07-10：doctor 採唯讀驗證，不在檢查時修改使用者檔案。
 - 2026-07-10：沿用既有腳本與測試，只補可驗證的行為缺口，不依指定檔名重寫功能。
+- 2026-08-09：MissionCenter 定位為任務作業系統；Adaptive Optimization 是 Prior Art 後按需啟動的決策模組。
+- 2026-08-09：第一版自適應採規則、結構化分類與目前 repo 案例檢索，不訓練本地神經網路、不做跨專案學習。
+- 2026-08-09：RuntimeState 與既有 `visual-state.json` 分離；任何 Runtime 事件都不得直接更新 Task lifecycle。
+- 2026-08-09：Live Runtime 採 loopback companion；WebSocket 為 optional dependency，故障時回退靜態 HUD。
+- 2026-08-09：agency-agents 僅 Learn／Adapt 契約概念，不匯入角色庫或人格 Prompt。
+- 2026-08-09：前期 Creative Council 與中後期 Dynamic Expert Council 分工；後者依複雜度採 `skip`、`council_lite`、`council_full`，模擬視角不額外耗用 Runtime Agent 額度，真實 subagent 與 Shadow trial 仍需人工核准預算。
+- 2026-08-09：採分層、漸進揭露的 repo-local 記憶；`daily-log.md` 與 `guardrails.md` 為 canonical，`brief.md` 與 `focus.md` 為有內容指紋、可重建的 materialized views，不建立 daemon、不呼叫模型。
+- 2026-08-09：護欄只能經人工明確核准成為 Active 或 Superseded；自動化與 Shadow 實驗最多提出候選，不得自行升格。

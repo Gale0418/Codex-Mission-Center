@@ -15,6 +15,18 @@ from workspace_contract import REQUIRED_FILES
 
 
 class BootstrapMissionCenterTests(unittest.TestCase):
+    def test_workspace_named_missioncenter_still_creates_nested_contract(self):
+        with workspace_tempdir("bootstrap-name-") as temporary:
+            workspace = Path(temporary) / "MissionCenter"
+            result = subprocess.run(
+                [sys.executable, str(BOOTSTRAP), str(workspace), "--language", "en"],
+                capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            target = workspace / "MissionCenter"
+            self.assertTrue((target / "brief.md").is_file())
+            self.assertTrue((target / "focus.md").is_file())
+
     def test_both_languages_create_exact_canonical_file_set(self):
         with workspace_tempdir("bootstrap-contract-") as temporary:
             root = Path(temporary)

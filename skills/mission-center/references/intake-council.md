@@ -1,5 +1,7 @@
 # Creative Cross-Domain Council
 
+This is the early North Star and architecture-divergence council. For a later-stage research, implementation, optimization, or decision revisit, classify complexity and use the [Dynamic Expert Council Gate](dynamic-expert-council.md) instead.
+
 ## When to Use
 
 Run this council when the mission is open-ended and benefits from invention, differentiation, experience design, system design, architecture, or a way out of a local optimum.

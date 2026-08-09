@@ -40,6 +40,28 @@ def run_script(script: Path, *args: str) -> None:
 
 
 class WorkspaceTemplateTests(unittest.TestCase):
+    def test_log_rejects_paths_outside_mission_center(self):
+        with workspace_tempdir("workspace-log-path-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            run_script(BOOTSTRAP, workspace, "--language", "en")
+            result = subprocess.run(
+                [sys.executable, str(LOG), str(workspace), "--file", "../escape.md", "--change", "nope"],
+                capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("must stay inside MissionCenter", result.stderr)
+            self.assertFalse((workspace / "escape.md").exists())
+
+    def test_log_equivalent_project_path_uses_daily_log(self):
+        with workspace_tempdir("workspace-log-project-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            run_script(BOOTSTRAP, workspace, "--language", "en")
+            run_script(LOG, workspace, "--file", "./project.md", "--change", "equivalent path")
+            daily = (workspace / "MissionCenter/daily-log.md").read_text(encoding="utf-8")
+            project = (workspace / "MissionCenter/project.md").read_text(encoding="utf-8")
+            self.assertIn("equivalent path", daily)
+            self.assertNotIn("equivalent path", project)
+
     def test_bootstrap_creates_concise_research_log_in_both_languages(self):
         with workspace_tempdir("workspace-templates-") as temporary:
             root = Path(temporary)
@@ -191,7 +213,7 @@ class WorkspaceTemplateTests(unittest.TestCase):
             progress = (workspace / "MissionCenter" / "progress.md").read_text(encoding="utf-8")
             self.assertIn("# 專案", project)
             self.assertIn("- 目標: 照護計畫", project)
-            self.assertIn("- 活動紀錄:", project)
+            self.assertIn("- 活動紀錄", project)
             self.assertIn("# 進度", progress)
             self.assertIn("- 專案: 照護專案", progress)
             self.assertIn("- 進度條:", progress)
@@ -199,6 +221,8 @@ class WorkspaceTemplateTests(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertIn("# 冒煙測試", smoke_tests)
+            daily = (workspace / "MissionCenter" / "daily-log.md").read_text(encoding="utf-8")
+            self.assertIn("同步完成。", daily)
 
     def test_normalize_and_log_scripts_support_traditional_chinese_headers(self):
         with workspace_tempdir("workspace-templates-") as temporary:
@@ -219,7 +243,10 @@ class WorkspaceTemplateTests(unittest.TestCase):
             project = (workspace / "MissionCenter" / "project.md").read_text(encoding="utf-8")
             self.assertIn("| P1 | In Progress |", normalized)
             self.assertIn("alpha, beta", normalized)
-            self.assertIn("- 活動紀錄:", project)
+            self.assertIn("- 活動紀錄", project)
+            daily = (workspace / "MissionCenter" / "daily-log.md").read_text(encoding="utf-8")
+            self.assertIn("修正同步腳本", daily)
+            self.assertNotIn("修正同步腳本", project)
 
 
     def test_sync_preserves_existing_activity_log_and_open_comments(self):
@@ -270,7 +297,9 @@ class WorkspaceTemplateTests(unittest.TestCase):
             content = project.read_text(encoding="utf-8")
             self.assertIn("  - Existing note", content)
             self.assertIn("  - Existing question", content)
-            self.assertIn("  - Fresh sync note.", content)
+            self.assertNotIn("Fresh sync note.", content)
+            daily = (workspace / "MissionCenter" / "daily-log.md").read_text(encoding="utf-8")
+            self.assertIn("Fresh sync note.", daily)
 
     def test_repeated_sync_does_not_duplicate_list_field_labels(self):
         with workspace_tempdir("workspace-templates-") as temporary:
@@ -284,8 +313,11 @@ class WorkspaceTemplateTests(unittest.TestCase):
             )
             self.assertEqual(content.count("- 活動紀錄:"), 1)
             self.assertEqual(content.count("- 開放問題:"), 1)
-            self.assertIn("第一次同步。", content)
-            self.assertIn("第二次同步。", content)
+            self.assertNotIn("第一次同步。", content)
+            self.assertNotIn("第二次同步。", content)
+            daily = (workspace / "MissionCenter" / "daily-log.md").read_text(encoding="utf-8")
+            self.assertIn("第一次同步。", daily)
+            self.assertIn("第二次同步。", daily)
 
     def test_sync_recognizes_full_width_known_label_before_ascii_value_colon(self):
         from sync_mission_center import _extract_custom_bullets
@@ -360,6 +392,8 @@ class WorkspaceTemplateTests(unittest.TestCase):
             content = project.read_text(encoding="utf-8")
             self.assertTrue(content.startswith("# 專案"))
             self.assertIn("- 活動紀錄:", content)
+            daily = (workspace / "MissionCenter" / "daily-log.md").read_text(encoding="utf-8")
+            self.assertIn("補上活動紀錄", daily)
 
     def test_snapshot_and_closeout_support_traditional_chinese(self):
         with workspace_tempdir("workspace-templates-") as temporary:
@@ -414,6 +448,28 @@ class WorkspaceTemplateTests(unittest.TestCase):
             self.assertIn("# 收尾", closeout)
             self.assertIn("- 摘要: 本輪完成同步與驗證", closeout)
             self.assertIn("- 冒煙測試: 2 項通過", closeout)
+
+    def test_sync_without_metadata_preserves_existing_project_identity(self):
+        with workspace_tempdir("workspace-templates-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            run_script(BOOTSTRAP, workspace, "--language", "zh-TW")
+            project = workspace / "MissionCenter" / "project.md"
+            project.write_text(
+                "# 專案\n\n- 專案: OWO+\n- 目標: 保留既有目標\n- 週期: Evolution v2\n- 標籤: runtime, optimization\n- 活動紀錄:\n- 開放問題:\n",
+                encoding="utf-8",
+            )
+            progress = workspace / "MissionCenter" / "progress.md"
+            progress.write_text(
+                "# 進度\n\n- 專案: OWO+\n- 目標: 保留既有目標\n- 目前狀態: 0/0 tasks\n- 里程碑: Release\n- 進度條: [----------] 0%\n- 進行中任務:\n- 阻塞原因:\n- 下次更新:\n",
+                encoding="utf-8",
+            )
+
+            run_script(SYNC, workspace)
+
+            self.assertIn("- 專案: OWO+", project.read_text(encoding="utf-8"))
+            self.assertIn("- 目標: 保留既有目標", project.read_text(encoding="utf-8"))
+            self.assertIn("- 週期: Evolution v2", project.read_text(encoding="utf-8"))
+            self.assertIn("- 里程碑: Release", progress.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

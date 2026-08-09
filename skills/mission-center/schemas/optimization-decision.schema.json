@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OptimizationDecision",
+  "type": "object",
+  "required": ["schemaVersion", "mode", "strategy", "reason", "missingEvidence", "promotionPolicy"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "mode": {"enum": ["skip", "decision", "hybrid", "experimental", "research_spike"]},
+    "strategy": {"type": "string"},
+    "reason": {"type": "array", "items": {"type": "string"}},
+    "missingEvidence": {"type": "array", "items": {"type": "string"}},
+    "promotionPolicy": {"const": "manual_review_only"}
+  },
+  "additionalProperties": false
+}

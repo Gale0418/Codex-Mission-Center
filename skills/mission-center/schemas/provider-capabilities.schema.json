@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProviderCapabilities",
+  "type": "object",
+  "required": ["approve", "reject", "focus"],
+  "properties": {
+    "approve": {"type": "boolean"},
+    "reject": {"type": "boolean"},
+    "focus": {"type": "boolean"}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExperimentResult",
+  "type": "object",
+  "required": ["schemaVersion", "experimentId", "status", "baselineDelta", "paretoCandidates", "confidence", "sampleCount", "unknowns", "promotionRecommendation"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "experimentId": {"type": "string"},
+    "status": {"enum": ["completed", "budget_exhausted", "stopped", "invalid"]},
+    "baselineDelta": {"type": "object"},
+    "paretoCandidates": {"type": "array", "items": {"type": "string"}},
+    "confidence": {"enum": ["none", "low", "medium", "high"]},
+    "sampleCount": {"type": "integer", "minimum": 0},
+    "unknowns": {"type": "array", "items": {"type": "string"}},
+    "compositeLoss": {"type": ["object", "null"]},
+    "promotionRecommendation": {"enum": ["insufficient_evidence", "reject", "review"]}
+  },
+  "additionalProperties": true
+}

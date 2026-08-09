@@ -14,6 +14,7 @@ Turn an unclear goal into an approved, research-backed task workspace under `Mis
 - Understand the whole mission before publishing tasks.
 - Ask exactly one focused question per intake turn.
 - Research existing solutions before proposing custom implementation.
+- Route optimization by evidence; never force numerical methods onto unmeasurable work.
 - Present options, trade-offs, and an approved task draft before writing `tasks.md`.
 - Treat `tasks.md` as the only task-order and lifecycle source.
 - Require recorded verification before moving a task to `Done`.
@@ -41,7 +42,7 @@ The bundled hook installer assumes a source checkout that contains `skills/missi
 
 ### 1. Resume or Start
 
-If `MissionCenter/` exists, read `project.md`, `progress.md`, `tasks.md`, `decisions.md`, `notes.md`, and `smoke-tests.md` before changing anything. Otherwise begin North Star Intake and do not scaffold files while the goal is still unclear.
+If `MissionCenter/` exists, follow [memory-maintenance.md](references/memory-maintenance.md): check freshness, then read `brief.md` and `focus.md` first. Read `guardrails.md` for relevant pitfalls. Open canonical files progressively; always read `tasks.md` before changing lifecycle or ordering, and read decisions, research, or smoke-test evidence when the work depends on them. If the compact views are stale or truncated, rebuild them and fall back to canonical files. Otherwise begin North Star Intake and do not scaffold files while the goal is still unclear.
 
 ### 2. North Star Intake
 
@@ -49,31 +50,39 @@ Follow [intake-protocol.md](references/intake-protocol.md). Restate the current 
 
 ### 3. Creative Cross-Domain Council
 
-Use [intake-council.md](references/intake-council.md) only for open-ended invention, product, experience, system, or architecture work where cross-domain transfer may improve the result. Diverge across mechanisms and distant fields first, then converge on ideas that are unexpected but feasible. Routine fixes and deterministic updates skip this council.
+Use [intake-council.md](references/intake-council.md) during intake only for open-ended invention, product, experience, system, or architecture work where cross-domain transfer may improve the initial direction. Diverge across mechanisms and distant fields first, then converge on ideas that are unexpected but feasible. Routine fixes and deterministic updates skip this council.
 
 ### 4. Prior Art Gate
 
 Use [research-protocol.md](references/research-protocol.md). Inspect local context first, then current primary sources when needed. Compare adopting, adapting, learning from, and independently building solutions. Record only decision-relevant research and respect license, attribution, access-control, and Clean-room rules.
 
-### 5. Propose and Approve
+### 5. Dynamic Expert Council Gate
+
+After Prior Art, and again when a material implementation or optimization decision appears, follow [dynamic-expert-council.md](references/dynamic-expert-council.md). Route by complexity to `skip`, `council_lite`, or `council_full`. Use simulated perspectives by default, select disciplines from the problem rather than a fixed roster, and include one playful but feasible contrarian perspective when a council runs. Do not perform mandatory web searches for deterministic work or manufacture evidence. Real subagents and Shadow trials remain separately budgeted and require explicit user approval.
+
+### 6. Adaptive Optimization Gate
+
+After Prior Art, follow [optimization-protocol.md](references/optimization-protocol.md) and [optimization-routing.md](references/optimization-routing.md). Create a repository-local ProjectProfile and route to `skip`, `decision`, `hybrid`, `experimental`, or `research_spike`. Use [experiment-design.md](references/experiment-design.md) only when repeatable metrics, hard constraints, budgets, and stopping rules exist. Shadow winners may enter `Review` but are never promoted automatically.
+
+### 7. Propose and Approve
 
 Offer two or three viable approaches with trade-offs and a recommendation. Build a rolling Linear-style draft using `Project -> Cycle -> Epic -> Task -> Subtask`: map the full set of Epics, detail only the first verifiable milestone, and keep later work as a coarse Backlog.
 
 Do not write `tasks.md` until the user accepts the approved task draft. Follow [linear-parity.md](references/linear-parity.md) and [execution-gates.md](references/execution-gates.md).
 
-### 6. Publish the Workspace
+### 8. Publish the Workspace
 
 Create or reuse `MissionCenter/`. Use `scripts/bootstrap_mission_center.py` for first-run files and `scripts/seed_task_tree.py` only after task-draft approval. Follow [task-seeding.md](references/task-seeding.md), then run `scripts/normalize_mission_center.py` after table edits that may contain loose statuses, priorities, labels, parents, or dependencies. Use the user's language consistently. Keep research notes concise and decisions traceable.
 
-### 7. Execute and Maintain
+### 9. Execute and Maintain
 
-Use Superpowers-style gates: `Brainstorm -> Spec -> Plan -> TDD -> Verify -> Closeout`. Scale document depth with risk, but never skip goal understanding or final verification. Update project, progress, task, decision, and smoke-test files when facts change. Use [activity-log-format.md](references/activity-log-format.md) and `scripts/log_mission_center_change.py` for meaningful scope, blocker, reopen, or closeout updates. Follow [agent-orchestration.md](references/agent-orchestration.md) before using real subagents.
+Use Superpowers-style gates: `Brainstorm -> Spec -> Plan -> TDD -> Verify -> Closeout`. Scale document depth with risk, but never skip goal understanding or final verification. Update project, progress, task, decision, and smoke-test files when facts change. Group routine events in `daily-log.md`; use `scripts/log_mission_center_change.py` for meaningful scope, blocker, reopen, or closeout updates, then rebuild compact views lazily. Never auto-promote a guardrail. Follow [activity-log-format.md](references/activity-log-format.md), [memory-maintenance.md](references/memory-maintenance.md), and [agent-orchestration.md](references/agent-orchestration.md).
 
-### 8. Sync the HUD
+### 10. Sync the HUD
 
-Follow [visual-hub.md](references/visual-hub.md). One helper represents one task. The helper name, order, zone, and count come from `tasks.md`, never owners, processes, active agents, or execution parallelism. Run `scripts/sync_mission_center.py` after task-state changes.
+Follow [visual-hub.md](references/visual-hub.md) and [runtime-agent-protocol.md](references/runtime-agent-protocol.md). One helper represents one task on the map. The helper name, order, zone, and count come from `tasks.md`, never runtime agents or execution parallelism. Optional runtime agents render in a separate Live Agents surface and cannot modify Task status. Run `scripts/sync_mission_center.py` after task-state changes.
 
-### 9. Optional Final CodeRabbit Review
+### 11. Optional Final CodeRabbit Review
 
 After implementation and local verification, use [coderabbit-review-gate.md](references/coderabbit-review-gate.md) when the user requests independent review or the change is large or high risk. CodeRabbit is advisory: obtain upload consent, scope out irrelevant large files, verify every issue, and never report a failed or rate-limited review as passed.
 
@@ -101,9 +110,14 @@ Use `Backlog -> Ready -> In Progress -> Blocked -> Review -> Done`. `Blocked` me
 ## References
 
 - [task-workspace.md](references/task-workspace.md): canonical workspace files and fields.
+- [memory-maintenance.md](references/memory-maintenance.md): daily compaction, hot-context routing, P0 focus, and guardrails.
 - [intake-protocol.md](references/intake-protocol.md): intake completeness and question rules.
 - [intake-council.md](references/intake-council.md): creative cross-domain transfer.
 - [research-protocol.md](references/research-protocol.md): Prior Art, Jina, Clean-room, and licensing.
+- [dynamic-expert-council.md](references/dynamic-expert-council.md): complexity-routed expert deliberation for consequential decisions.
+- [optimization-protocol.md](references/optimization-protocol.md): ProjectProfile, modes, and expert contracts.
+- [optimization-routing.md](references/optimization-routing.md): evidence-based strategy selection.
+- [experiment-design.md](references/experiment-design.md): bounded Shadow manifests and results.
 - [linear-parity.md](references/linear-parity.md): Linear task model and rolling planning.
 - [execution-gates.md](references/execution-gates.md): approval and execution gates.
 - [task-seeding.md](references/task-seeding.md): initial task-tree scope and expansion rules.
@@ -111,6 +125,7 @@ Use `Backlog -> Ready -> In Progress -> Blocked -> Review -> Done`. `Blocked` me
 - [activity-log-format.md](references/activity-log-format.md): concise change-reason records.
 - [agent-orchestration.md](references/agent-orchestration.md): simulated perspectives and real subagents.
 - [visual-hub.md](references/visual-hub.md): task-driven HUD contract.
+- [runtime-agent-protocol.md](references/runtime-agent-protocol.md): optional runtime telemetry and privacy contract.
 - [coderabbit-review-gate.md](references/coderabbit-review-gate.md): risk-based final independent review.
 - [smoke-test-patterns.md](references/smoke-test-patterns.md): verification selection.
 - [smoke-test-catalog.md](references/smoke-test-catalog.md): default smoke-test ideas by task kind.

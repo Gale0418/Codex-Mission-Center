@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExperimentManifest",
+  "type": "object",
+  "required": ["schemaVersion", "experimentId", "kind", "candidates", "cases", "metrics", "hardConstraints", "budget", "stoppingConditions", "validation", "promotionState"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "experimentId": {"type": "string", "minLength": 1},
+    "kind": {"enum": ["routing", "prompt_ablation", "evaluator", "handoff", "failure_injection", "custom"]},
+    "candidates": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+    "cases": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+    "metrics": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["name", "direction", "unit"], "properties": {"name": {"type": "string"}, "direction": {"enum": ["minimize", "maximize"]}, "unit": {"type": "string"}}, "additionalProperties": true}},
+    "hardConstraints": {"type": "array", "items": {"type": "object"}},
+    "budget": {"type": "object", "required": ["trials", "tokens", "wallClockSeconds"], "properties": {"trials": {"type": "integer", "minimum": 1}, "tokens": {"type": "integer", "minimum": 1}, "wallClockSeconds": {"type": "integer", "minimum": 1}, "maxConcurrency": {"type": "integer", "minimum": 1, "maximum": 2}, "retriesPerTrial": {"type": "integer", "minimum": 0, "maximum": 1}}, "additionalProperties": false},
+    "stoppingConditions": {"type": "array", "items": {"type": "object"}},
+    "validation": {"type": "object"},
+    "normalization": {"type": "object"},
+    "weights": {"type": "object"},
+    "promotionState": {"const": "shadow"}
+  },
+  "additionalProperties": false
+}

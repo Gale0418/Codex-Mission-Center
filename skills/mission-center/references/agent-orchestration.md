@@ -2,7 +2,7 @@
 
 ## Default: Simulated Perspectives
 
-Creative Council experts are simulated expert perspectives used by the main agent to transfer principles and expose trade-offs. They do not imply real subagent processes, and they never control HUD helper count.
+Creative and Dynamic Expert Council participants are simulated perspectives used by the main agent to transfer principles, challenge assumptions, and expose trade-offs. They do not imply real subagent processes, consume separate runtime-agent quota, or control HUD helper count.
 
 ## Real Subagent Gate
 

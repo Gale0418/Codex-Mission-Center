@@ -17,6 +17,10 @@ class PerProjectReleaseTests(unittest.TestCase):
         self.assertEqual(
             actual,
             {
+                "brief.md",
+                "focus.md",
+                "guardrails.md",
+                "daily-log.md",
                 "project.md",
                 "progress.md",
                 "tasks.md",
@@ -42,6 +46,10 @@ class PerProjectReleaseTests(unittest.TestCase):
 
     def test_documented_layout_matches_canonical_contract(self):
         expected = {
+            "brief.md",
+            "focus.md",
+            "guardrails.md",
+            "daily-log.md",
             "project.md",
             "progress.md",
             "tasks.md",
@@ -66,12 +74,15 @@ class PerProjectReleaseTests(unittest.TestCase):
             "push:",
             "pull_request:",
             "python -m unittest discover -s tests -p \"test_*.py\" -v",
-            "bootstrap_mission_center.py /tmp/mc-demo --language zh-TW",
-            "normalize_mission_center.py /tmp/mc-demo",
-            "sync_mission_center.py /tmp/mc-demo",
-            "doctor_mission_center.py /tmp/mc-demo",
+            'workspace="${RUNNER_TEMP}/mc-demo"',
+            'bootstrap_mission_center.py "$workspace" --language zh-TW',
+            'normalize_mission_center.py "$workspace"',
+            'sync_mission_center.py "$workspace"',
+            'doctor_mission_center.py "$workspace"',
         ):
             self.assertIn(phrase, workflow)
+        self.assertIn("os: [ubuntu-latest, windows-latest]", workflow)
+        self.assertIn("runtime: [core, websocket]", workflow)
 
     def test_release_checklist_repeats_product_boundaries(self):
         checklist = (ROOT / "RELEASE_CHECKLIST.md").read_text(encoding="utf-8").lower()

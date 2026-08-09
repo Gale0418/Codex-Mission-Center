@@ -2,6 +2,10 @@
 """Canonical files and lifecycle values for one Mission Center workspace."""
 
 REQUIRED_FILES = (
+    "brief.md",
+    "focus.md",
+    "guardrails.md",
+    "daily-log.md",
     "project.md",
     "progress.md",
     "tasks.md",
@@ -13,6 +17,8 @@ REQUIRED_FILES = (
     "visual-hub.md",
 )
 
+DERIVED_FILES = ("brief.md", "focus.md")
+
 CANONICAL_STATUSES = (
     "Backlog",
     "Ready",
@@ -21,4 +27,3 @@ CANONICAL_STATUSES = (
     "Review",
     "Done",
 )
-
