@@ -28,7 +28,7 @@ Never let CodeRabbit or a review suggestion write Codex-managed plugin cache. Re
 
 ## Budget
 
-Use at most one full scoped review per task and one focused re-review of the small fix diff. Do not repeatedly rerun reviews to chase a clean badge. Real subagents remain separately approval-gated and are not required.
+The service limit is three review runs per rolling hour and 150 files per run. Pre-filter generated files, binary assets, caches, fixtures that only contain known-good sample data, and unrelated large files before uploading. Use at most one full scoped review per task and one focused re-review of the small fix diff, leaving the third slot as recovery capacity. Do not repeatedly rerun reviews to chase a clean badge. Real subagents remain separately approval-gated and are not required.
 
 ## Run
 

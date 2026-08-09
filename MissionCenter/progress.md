@@ -1,9 +1,9 @@
 # 進度
 
 - 專案: Codex Mission Center
-- 目標: 建立穩定、單一專案限定的 Mission Center skill/plugin
-- 目前狀態: 16/16 estimated
-- 里程碑: Per-project hardening complete
+- 目標: 將 Mission Center 升級為研究驅動的自適應 Project OS，並提供可選的本機 Live Agent HUD
+- 目前狀態: 61/61 estimated
+- 里程碑: OWO+ Evolution complete
 - 進度條: [##########] 100%
 - 進行中任務:
   - 無

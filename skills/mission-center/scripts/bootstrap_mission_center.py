@@ -12,6 +12,19 @@ from workspace_contract import REQUIRED_FILES
 
 
 FILES_EN = {
+    "brief.md": "# Mission Brief\n\nGenerated after bootstrap.\n",
+    "focus.md": "# P0 Focus\n\nGenerated after bootstrap.\n",
+    "guardrails.md": """# Guardrails
+
+Automation must not add, promote, or retire guardrails without explicit human approval.
+
+| ID | Severity | Applies when | Pitfall | Must follow | Verification | Source | Last confirmed | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+""",
+    "daily-log.md": """# Daily Log
+
+- Last organized: 1970-01-01
+""",
     "project.md": """# Project
 
 - Goal:
@@ -83,6 +96,19 @@ FILES_EN = {
 
 
 FILES_ZH_TW = {
+    "brief.md": "# 任務簡報\n\nBootstrap 後產生。\n",
+    "focus.md": "# P0 焦點\n\nBootstrap 後產生。\n",
+    "guardrails.md": """# 重要護欄
+
+自動化不得新增、升格或停用護欄；變更必須經人工明確核准。
+
+| ID | 嚴重度 | 適用情境 | 曾踩過的坑 | 必須遵守 | 驗證方式 | 來源 | 最後確認 | 狀態 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+""",
+    "daily-log.md": """# 每日紀錄
+
+- 最後整理：1970-01-01
+""",
     "project.md": """# 專案
 
 - 目標：
@@ -215,6 +241,11 @@ def main() -> int:
         path.write_text(content, encoding="utf-8")
 
     copy_visual_assets(root, args.force)
+
+    # Materialized views are generated from canonical files, never hand-maintained.
+    from mission_maintenance import run_sync
+
+    run_sync(target)
 
     print(target)
     return 0

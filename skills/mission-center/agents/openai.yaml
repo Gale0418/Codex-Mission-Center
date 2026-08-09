@@ -1,4 +1,4 @@
 interface:
   display_name: "Mission Center"
   short_description: "Clarify, research, approve, and track local missions."
-  default_prompt: "Use $mission-center to clarify the North Star one question at a time, run Prior Art research, publish only the approved task draft, normalize task state, record verification, and keep one HUD helper per task."
+  default_prompt: "Use $mission-center to clarify the North Star one question at a time, run Prior Art research, route the Adaptive Optimization Gate by evidence, publish only the approved task draft, normalize task state, record verification, and keep task helpers separate from optional runtime agents."

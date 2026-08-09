@@ -601,6 +601,55 @@
         width: 16.5%;
       }
     }
+
+    .entity-label {
+      position: absolute;
+      z-index: 8;
+      padding: 5px 9px;
+      border: 1px solid rgba(134, 240, 164, 0.5);
+      border-radius: 999px;
+      background: rgba(8, 22, 35, 0.88);
+      color: #baffca;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+    }
+
+    .map-label { left: 2%; top: 17%; }
+
+    .live-agents-panel {
+      position: absolute;
+      z-index: 9;
+      right: 2%;
+      top: 2%;
+      width: min(36%, 330px);
+      max-height: 30%;
+      overflow: auto;
+      padding: 10px;
+      border: 1px solid rgba(78, 224, 255, 0.45);
+      border-radius: 14px;
+      background: rgba(8, 22, 35, 0.9);
+      color: #effcff;
+      box-shadow: 0 0 18px rgba(78, 224, 255, 0.12);
+    }
+
+    .live-agents-panel h2 { margin: 0 0 6px; font-size: 13px; }
+    .runtime-summary { margin: 0 0 6px; color: #a9d9e6; font-size: 10px; }
+    .runtime-list { display: grid; gap: 5px; }
+    .runtime-agent {
+      padding: 6px 7px;
+      border-left: 3px solid #6dd8ff;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.07);
+      font-size: 10px;
+      line-height: 1.3;
+    }
+    .runtime-agent[data-attention="true"] { border-left-color: #ffb454; background: rgba(255, 180, 84, 0.13); }
+    .runtime-empty { color: #8eabb5; font-size: 10px; }
+
+    @media (max-width: 680px) {
+      .live-agents-panel { width: 46%; max-height: 24%; }
+    }
   </style>
 </head>
 <body>
@@ -619,7 +668,7 @@
       <div class="tech-prop nap-pods"></div>
     </div>
 
-    <section class="summary" aria-label="MissionCenter status">
+    <section class="summary" aria-label="Mission Island">
       <h1>MissionCenter</h1>
       <p class="goal">Goal: <span id="goal">Build task dashboard</span></p>
       <p class="metric">Progress: <span id="progressText">40%</span> · Stage <span id="stageText">4/10</span></p>
@@ -630,7 +679,14 @@
       <div class="monument" id="monument"></div>
     </section>
 
-    <div class="agents-layer" aria-hidden="true"></div>
+    <div class="entity-label map-label">PIXEL MISSION MAP · TASKS</div>
+    <div class="agents-layer" data-entity-kind="task" aria-label="Task lifecycle helpers"></div>
+
+    <aside class="live-agents-panel" aria-label="Live Agents" data-entity-kind="runtime-agent">
+      <h2>LIVE AGENTS</h2>
+      <p class="runtime-summary" id="runtimeSummary">Runtime optional · static HUD active</p>
+      <div class="runtime-list" id="runtimeList"><div class="runtime-empty">No connected runtime agents</div></div>
+    </aside>
 
     <div class="status-pill">Now: <span id="statusText">Intake</span></div>
 
@@ -656,6 +712,8 @@
     const constructionSite = document.querySelector(".construction-site");
     const monument = document.querySelector("#monument");
     const stageArt = document.querySelector("#stageArt");
+    const runtimeSummary = document.querySelector("#runtimeSummary");
+    const runtimeList = document.querySelector("#runtimeList");
     const validStatuses = new Set(["Intake", "In Progress", "Blocked", "Review", "Done"]);
     const maxVisibleAgents = 15;
     const helperAvatarLimit = 16;
@@ -673,6 +731,7 @@
       "Done": { minX: 35, maxX: 64, minY: 75, maxY: 81 }
     };
     let currentAgents = [];
+    let lastValidRuntimeState = null;
 
     function pickRandomAvatar(id, usedAvatars) {
       if (avatarAssignments.has(id)) return avatarAssignments.get(id);
@@ -796,6 +855,32 @@
       }
     }
 
+    function renderRuntimeState(state) {
+      const runtimeAgents = Array.isArray(state?.agents) ? state.agents.slice(0, 15) : [];
+      const attention = Array.isArray(state?.attention) ? state.attention.length : 0;
+      runtimeSummary.textContent = `${state?.sourceStatus || "disconnected"} · ${runtimeAgents.length} agents · ${attention} attention`;
+      runtimeList.innerHTML = runtimeAgents.length ? runtimeAgents.map((agent) => {
+        const tasks = Array.isArray(agent.taskIds) && agent.taskIds.length ? agent.taskIds.join(", ") : "No Task link";
+        return `<div class="runtime-agent" data-attention="${agent.requiresAttention === true}">
+          <strong>${escapeHtml(agent.agentId || "agent")}</strong> · ${escapeHtml(agent.state || "idle")}<br>
+          ${escapeHtml(tasks)} · ${escapeHtml(agent.activity || "Idle")}
+        </div>`;
+      }).join("") : '<div class="runtime-empty">No connected runtime agents</div>';
+    }
+
+    async function loadRuntimeState() {
+      try {
+        const response = await fetch(`../mission-center-runtime/runtime-state.json?ts=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) return;
+        const state = await response.json();
+        if (!Array.isArray(state.agents) || !Array.isArray(state.attention)) return;
+        lastValidRuntimeState = state;
+        renderRuntimeState(state);
+      } catch {
+        if (lastValidRuntimeState) renderRuntimeState(lastValidRuntimeState);
+      }
+    }
+
     function round(value) {
       return Math.round(value * 10) / 10;
     }
@@ -820,7 +905,9 @@
     }
 
     loadState();
+    loadRuntimeState();
     setInterval(loadState, 10000);
+    setInterval(loadRuntimeState, 2000);
     setInterval(wanderAgents, 6500);
   </script>
 </body>

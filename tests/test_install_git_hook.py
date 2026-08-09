@@ -2,12 +2,13 @@ import importlib.util
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
-TEST_TMP_ROOT = ROOT.parent / ".tmp-mission-center-tests"
+TEST_TMP_ROOT = Path(tempfile.gettempdir()) / "codex-mission-center-hook-tests"
 TEST_TMP_ROOT.mkdir(parents=True, exist_ok=True)
 
 

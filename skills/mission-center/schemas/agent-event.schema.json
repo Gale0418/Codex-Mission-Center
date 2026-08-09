@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentEvent",
+  "type": "object",
+  "required": ["schemaVersion", "eventId", "timestamp", "provider", "sessionId", "agentId", "eventType", "activity", "attention", "sequence"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "eventId": {"type": "string", "minLength": 1},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "provider": {"type": "string"},
+    "sessionId": {"type": "string"},
+    "threadId": {"type": ["string", "null"]},
+    "turnId": {"type": ["string", "null"]},
+    "agentId": {"type": "string"},
+    "parentAgentId": {"type": ["string", "null"]},
+    "taskIds": {"type": "array", "items": {"type": "string"}},
+    "eventType": {"type": "string"},
+    "activity": {"type": "string"},
+    "attention": {"enum": ["none", "approval", "question", "blocked", "error", "verification"]},
+    "sequence": {"type": "integer", "minimum": 0},
+    "state": {"enum": ["idle", "working", "waiting_approval", "blocked", "finished", "failed", "stale", "disconnected"]}
+  },
+  "additionalProperties": false
+}

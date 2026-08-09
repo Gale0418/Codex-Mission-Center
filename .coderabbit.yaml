@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+reviews:
+  path_filters:
+    - "!**/*.png"
+    - "!**/*.jpg"
+    - "!**/*.jpeg"
+    - "!**/*.gif"
+    - "!**/*.pyc"
+    - "!**/__pycache__/**"
+    - "!output/**"
+    - "!MissionCenter/brief.md"
+    - "!MissionCenter/focus.md"
+    - "!tests/fixtures/demo-workspace/MissionCenter/brief.md"
+    - "!tests/fixtures/demo-workspace/MissionCenter/focus.md"
+  path_instructions:
+    - path: "skills/mission-center/scripts/**/*.py"
+      instructions: >-
+        Preserve Python 3.11 stdlib-only core behavior, per-repository boundaries,
+        tasks.md as the only task lifecycle truth, deterministic writes, and Windows/Linux portability.
+    - path: "tests/**/*.py"
+      instructions: >-
+        Check that tests exercise observable behavior without depending on Codex installation,
+        network access, a live runtime endpoint, or non-portable temporary paths.

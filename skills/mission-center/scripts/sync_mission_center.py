@@ -183,6 +183,15 @@ def _extract_summary_value(line: str, label: str) -> str | None:
     return None
 
 
+def _find_summary_value(text: str, labels: list[str]) -> str | None:
+    for line in text.splitlines():
+        for label in labels:
+            value = _extract_summary_value(line, label)
+            if value:
+                return value
+    return None
+
+
 def _extract_list_items(text: str, labels: list[str]) -> list[str]:
     lines = text.splitlines()
     for label in labels:
@@ -354,28 +363,43 @@ def update_visual_state(workspace_root: Path, state: dict[str, object]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("workspace", nargs="?", default=".")
-    parser.add_argument("--project", default="MissionCenter")
-    parser.add_argument("--cycle", default="Unassigned")
-    parser.add_argument("--goal", default="MissionCenter workspace")
-    parser.add_argument("--labels", default="mission-center")
-    parser.add_argument("--milestone", default="Next slice")
-    parser.add_argument("--activity", default="Workspace synced from tasks and smoke tests.")
+    parser.add_argument("--project")
+    parser.add_argument("--cycle")
+    parser.add_argument("--goal")
+    parser.add_argument("--labels")
+    parser.add_argument("--milestone")
+    parser.add_argument(
+        "--activity", default="",
+        help="Optional event written to daily-log.md, not project.md.",
+    )
     args = parser.parse_args()
 
     root = Path(args.workspace).resolve() / "MissionCenter"
     language = detect_language(root)
     labels = TEXT[language]
+    project_text = (root / "project.md").read_text(encoding="utf-8") if (root / "project.md").exists() else ""
+    progress_text = (root / "progress.md").read_text(encoding="utf-8") if (root / "progress.md").exists() else ""
+    project = args.project or _find_summary_value(project_text, [labels["project_label"], TEXT["en"]["project_label"], TEXT["zh-TW"]["project_label"]]) or "MissionCenter"
+    goal = args.goal or _find_summary_value(project_text, [labels["goal_label"], TEXT["en"]["goal_label"], TEXT["zh-TW"]["goal_label"]]) or "MissionCenter workspace"
+    cycle = args.cycle or _find_summary_value(project_text, [labels["cycle_label"], TEXT["en"]["cycle_label"], TEXT["zh-TW"]["cycle_label"]]) or "Unassigned"
+    labels_text = args.labels or _find_summary_value(project_text, [labels["labels_label"], TEXT["en"]["labels_label"], TEXT["zh-TW"]["labels_label"]]) or "mission-center"
+    milestone = args.milestone or _find_summary_value(progress_text, [labels["milestone_label"], TEXT["en"]["milestone_label"], TEXT["zh-TW"]["milestone_label"]]) or "Next slice"
     raw_tasks = parse_table(root / "tasks.md")
     tasks = normalize_tasks(raw_tasks)
     smoke_tests = parse_table(root / "smoke-tests.md")
     percent, mode, active, blocked = compute_progress(tasks)
-    if smoke_tests:
-        activity = f"{args.activity} {labels['smoke_note']}: {len(smoke_tests)}."
-    else:
+    update_project(root / "project.md", project, cycle, goal, labels_text, "", language)
+    update_progress(root / "progress.md", project, goal, milestone, percent, mode, active, blocked, language)
+    update_visual_state(root.parent, build_visual_state(tasks, goal, percent))
+    from mission_maintenance import run_daily, run_sync
+
+    if args.activity:
         activity = args.activity
-    update_project(root / "project.md", args.project, args.cycle, args.goal, args.labels, activity, language)
-    update_progress(root / "progress.md", args.project, args.goal, args.milestone, percent, mode, active, blocked, language)
-    update_visual_state(root.parent, build_visual_state(tasks, args.goal, percent))
+        if smoke_tests:
+            activity = f"{activity} {labels['smoke_note']}: {len(smoke_tests)}."
+        run_daily(root, activity)
+    else:
+        run_sync(root)
     print(root)
     return 0
 

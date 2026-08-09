@@ -1,7 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 from tests import workspace_tempdir
 
@@ -148,37 +148,22 @@ class PublishLocalTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
             self.assertIn('"name": "mission-center-local"', marketplace_manifest)
             self.assertIn('"path": "./plugins/mission-center"', marketplace_manifest)
-            run_mock.assert_has_calls(
-                [
-                    call(
-                        [str(fake_codex), "plugin", "remove", "mission-center@mission-center-local"],
-                        check=False,
-                    ),
-                    call(
-                        [str(fake_codex), "plugin", "marketplace", "remove", "mission-center-local"],
-                        check=False,
-                    ),
-                    call(
-                        [
-                            str(fake_codex),
-                            "plugin",
-                            "marketplace",
-                            "add",
-                            str(marketplace.parent.parent),
-                        ],
-                        check=True,
-                    ),
-                    call(
-                        [
-                            str(fake_codex),
-                            "plugin",
-                            "add",
-                            "mission-center@mission-center-local",
-                        ],
-                        check=True,
-                    ),
-                ]
-            )
+            expected_calls = [
+                ([str(fake_codex), "plugin", "remove", "mission-center@mission-center-local"], False, {0}),
+                ([str(fake_codex), "plugin", "marketplace", "remove", "mission-center-local"], False, {0}),
+                ([str(fake_codex), "plugin", "marketplace", "add", str(marketplace.parent.parent)], True, {0, 4}),
+                ([str(fake_codex), "plugin", "add", "mission-center@mission-center-local"], True, {0}),
+            ]
+            self.assertEqual(len(run_mock.call_args_list), len(expected_calls))
+            for actual_call, (expected_command, expected_check, path_indexes) in zip(run_mock.call_args_list, expected_calls):
+                actual_command = actual_call.args[0]
+                self.assertEqual(len(actual_command), len(expected_command))
+                for index, (actual, expected) in enumerate(zip(actual_command, expected_command)):
+                    if sys.platform == "win32" and index in path_indexes:
+                        self.assertTrue(Path(actual).samefile(Path(expected)))
+                    else:
+                        self.assertEqual(actual, expected)
+                self.assertEqual(actual_call.kwargs, {"check": expected_check})
 
     def test_verify_reports_drift(self):
         with workspace_tempdir("publish-local-") as temporary:

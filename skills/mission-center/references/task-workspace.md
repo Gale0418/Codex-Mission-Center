@@ -8,6 +8,10 @@ This is a per-project contract. Do not scan, register, or merge any other reposi
 
 ```text
 MissionCenter/
+  brief.md
+  focus.md
+  guardrails.md
+  daily-log.md
   project.md
   progress.md
   tasks.md
@@ -19,9 +23,17 @@ MissionCenter/
   visual-hub.md
 ```
 
-Add extra files only when they clearly improve traceability.
+`brief.md` and `focus.md` are disposable derived views. All other listed files are canonical records.
 
 ## File Roles
+
+### `brief.md` and `focus.md`
+
+Read these compact, generated views first when resuming. `focus.md` contains only unfinished P0 tasks; neither file may update task status or replace canonical evidence.
+
+### `guardrails.md` and `daily-log.md`
+
+Keep explicitly approved pitfalls in `guardrails.md` and group routine activity under one local-date section per day in `daily-log.md`. Guardrail status changes require human approval.
 
 ### `project.md`
 
@@ -140,7 +152,7 @@ Link to the HUD generated from this project's `tasks.md` only.
 - If a task becomes obsolete, move the reason into `decisions.md` or `notes.md` before removing it.
 - If a new task appears during execution, assign it an ID immediately and link it to its parent.
 - If a task is reopened, append the new work to the existing entry instead of creating a duplicate.
-- Keep `project.md`, `progress.md`, and `tasks.md` aligned when scope or cycle changes.
+- Keep `project.md`, `progress.md`, and `tasks.md` aligned when scope or cycle changes, then rebuild `brief.md` and `focus.md`.
 
 ## Smoke Test Standard
 

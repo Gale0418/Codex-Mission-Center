@@ -15,6 +15,17 @@ class HudAssetTests(unittest.TestCase):
         self.assertNotIn('"SmokeTest"', html)
         self.assertIn("const maxVisibleAgents = 15", html)
 
+    def test_hud_keeps_task_and_runtime_entities_separate(self):
+        html = (ROOT / "assets" / "visual-hub" / "visual-summary.html").read_text(encoding="utf-8")
+        self.assertIn('data-entity-kind="task"', html)
+        self.assertIn('data-entity-kind="runtime-agent"', html)
+        self.assertIn("Mission Island", html)
+        self.assertIn("LIVE AGENTS", html)
+        self.assertIn("PIXEL MISSION MAP", html)
+        self.assertIn("setInterval(loadRuntimeState, 2000)", html)
+        self.assertIn("lastValidRuntimeState", html)
+        self.assertIn("No connected runtime agents", html)
+
     def test_default_state_is_empty(self):
         state = json.loads(
             (ROOT / "assets" / "visual-hub" / "visual-state.json").read_text(

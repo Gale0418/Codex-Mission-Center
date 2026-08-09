@@ -20,6 +20,11 @@ Mission Center 僅服務目前這一個專案。它只建立或讀取目前 repo
 - **滾動式任務劃分 (Linear-style Parity)**：以 `Project -> Cycle -> Epic -> Task -> Subtask` 劃分完整目標，僅精細拆解第一里程碑。
 - **純檔案工作區與多語系支援**：於專案根目錄建立 `MissionCenter/`（包含 `project.md`、`progress.md`、`tasks.md`、`decisions.md` 等），並完全支援繁體中文 (zh-TW) 輸出。
 - **離線動態視覺 HUD (Visual Summary)**：提供網頁視覺化面板 (`output/mission-center-assets/visual-summary.html`)，以小人動態看板反應任務進度與狀態。
+- **自適應最佳化 Gate**：依可量測性、參數型態、噪聲、風險與預算，自動選擇決策分析、DOE、Taguchi、Bayesian Optimization、TPE、Pareto 或梯度法；證據不足時回到研究，不假裝有數值最佳解。
+- **動態專家會議 Gate**：依決策複雜度選擇跳過、精簡會議或完整會議；只在真正需要時搜尋最新資料與召集多角度觀點，避免讓例行工作變成額度焚化爐。
+- **有預算上限的 Shadow 實驗**：只產出人工審查建議，不會自動採用候選方案。
+- **可選 Live Agent HUD**：透過本機 companion 顯示已連接 Codex app-server endpoint 的 Agent；與 Task 小人完全分層，Runtime 永遠不修改 Task 狀態。
+- **低額度熱區記憶**：以零模型呼叫的每日紀錄、人工護欄與可重建的 `brief.md`／`focus.md`，避免每次都重讀整座任務中心。
 
 ---
 
@@ -48,6 +53,10 @@ Codex-Mission-Center/
 
 ```text
 MissionCenter/
+├── brief.md                 # 可重建的短摘要熱區
+├── focus.md                 # 僅列未完成 P0 的可重建視圖
+├── guardrails.md            # 人工核准的重要踩坑護欄
+├── daily-log.md             # 一天一區塊的日誌
 ├── project.md               # 專案 North Star 目標與範圍
 ├── progress.md              # 階段進度條與里程碑
 ├── tasks.md                 # 核心任務清單 (唯一狀態來源)
@@ -91,6 +100,30 @@ python skills/mission-center/scripts/sync_mission_center.py .
 python skills/mission-center/scripts/doctor_mission_center.py .
 ```
 
+恢復任務時先檢查短摘要，或用純規則記一筆今日事件：
+
+```bash
+python skills/mission-center/scripts/mission_maintenance.py . status
+python skills/mission-center/scripts/mission_maintenance.py . daily --message "完成 parser 驗證"
+python skills/mission-center/scripts/mission_maintenance.py . sync
+```
+
+`tasks.md` 仍是唯一 Task lifecycle 真實來源；`brief.md` 與 `focus.md` 只是有內容指紋的可重建快取。`guardrails.md` 的新增、升格、停用一律需要人工明確核准。
+
+最佳化與 Runtime CLI：
+
+```bash
+python skills/mission-center/scripts/mission_optimizer.py profile --input project-profile.json
+python skills/mission-center/scripts/mission_optimizer.py route --profile project-profile.json
+python skills/mission-center/scripts/mission_optimizer.py shadow --manifest experiment.json --observations observations.json --workspace .
+python skills/mission-center/scripts/mission_runtime.py --workspace . replay events.jsonl
+python skills/mission-center/scripts/mission_runtime.py --workspace . serve --port 8765
+```
+
+核心功能仍是零必要第三方依賴。只有連接 WebSocket live runtime 時才需執行 `python -m pip install -r requirements-runtime.txt`。缺少 Runtime 或可選依賴時，HUD 會自動退回原本的靜態 Task 畫面。
+
+被動的 Runtime 監看只整理本機事件與 JSON，**不會呼叫模型，也不會額外消耗模型額度**。已連接 Agent 本身執行任務時仍依原本方式計費；只有明確啟用 LLM 分類或 Agent 驅動的實驗 trial 才消耗模型 token，且必須受 manifest 預算限制。
+
 ---
 
 ## 🧪 執行自動化測試
@@ -103,10 +136,10 @@ python skills/mission-center/scripts/doctor_mission_center.py .
 pwsh -Command "Invoke-Pester -Path ./tests"
 ```
 
-### Python Pytest 測試套件
+### Python unittest 測試套件
 
 ```bash
-pytest tests/
+python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
 ---

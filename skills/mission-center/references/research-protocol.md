@@ -10,6 +10,8 @@ Before creating a custom solution:
 4. Compare four paths: adopt, adapt, learn, or build independently.
 5. Explain why the selected path best fits the mission.
 
+For comparable open-source projects, record maintenance state, scope fit, contract ideas, dependency cost, and license. Classify each result as `Adopt`, `Adapt`, `Learn`, or `Reject`. Prefer learning from stable interfaces and evidence gates over importing large role or prompt libraries.
+
 Prefer primary and official sources. Treat search snippets as leads, not evidence.
 
 ## Network Fallback
