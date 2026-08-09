@@ -14,6 +14,8 @@ Use real subagents only when all conditions hold:
 - it does not depend on shared mutable state
 - explicit user approval has been given
 
+Completion Adversarial Critic Council seats additionally require explicit approval of the total budget, per-seat budget, tool budget, and wall-clock budget. These seats are real, read-only subagents: they cannot update `tasks.md`, smoke evidence, guardrails, closeout, runtime state, or the reviewed artifact. Use [completion-critic-council.md](completion-critic-council.md) for its immutable snapshot, routing, and wave limits.
+
 ## Wave Discipline
 
 Before opening a new wave:
@@ -26,6 +28,10 @@ Before opening a new wave:
 
 Keep the active set small. Do not dispatch a pile of overlapping experts or use subagents merely to make the process look busy.
 
+For completion critics, use at most an initial review phase and one delta wave; never continue until clean. When slots are constrained, the initial phase may queue blind critic batches: close each completed seat, seal its draft, and dispatch the separate evidence arbiter only after all critic drafts are sealed. Initial critic drafts are mutually blind. The chair deduplicates, preserves material dissent, and verifies claims against the frozen evidence and available capabilities.
+
 ## Task Packet
 
 Every dispatched subagent receives exact scope, goal, constraints, expected evidence, and acceptance criteria. The main agent remains responsible for integration and verification.
+
+For critic seats, the packet also includes the immutable `taskId`, revision/hash, build/platform/capabilities, evidence locators, read-only restriction, finding schema, authorization, and budget. Critic reports are advisory release-quality evidence; they cannot substitute for passing smoke verification or task lifecycle updates.

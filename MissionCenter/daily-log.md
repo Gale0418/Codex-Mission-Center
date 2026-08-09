@@ -1,6 +1,10 @@
 # 每日紀錄
 
-- 最後整理： 2026-08-09
+- 最後整理： 2026-08-10
+
+## 2026-08-10
+- [2026-08-10T03:09:43] 啟動 Completion Adversarial Critic Council 週期 | reason: 使用者要求在任務完成前由多個真實子代理對遊戲、文章、對話與其他可感知成果進行龜毛挑刺 | impact: 新增 MC-033 至 MC-036；評審唯讀、證據綁定 revision、最多兩波且不改 Task lifecycle
+- 完成 Completion Adversarial Critic Council：加入動態成果路由、真實唯讀子代理、CodeRabbit 先行、初審加一次 delta 上限、content-addressed snapshot、lane/journey coverage 與 stdlib validator；三輪兔子最終 0 issues，165 tests 全綠。
 
 ## 2026-08-09
 - 完成 Stabilization and Contract Fix Pass：修正跨平台 fingerprint、P0 compact views、qualitative routing、composite validation、Codex collab 事件、transport/activity 分離與低噪音 attention；CodeRabbit 2 issues 經重現後修正；Windows CI 另修正 8.3 短路徑 alias，並新增固定 `test` 聚合 job 對齊 main branch protection。

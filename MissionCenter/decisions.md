@@ -16,3 +16,7 @@
 - 2026-08-09：Codex live runtime 優先支援 stdio 啟動的明確 app-server endpoint；WebSocket 保留為 optional transport，不掃描或冒充既有 Desktop 全域 session。
 - 2026-08-09：Runtime map 位置僅由受限 `activityKind` 在 presentation layer 映射，不持久化位置、不解析 prompt、命令或 tool arguments。
 - 2026-08-09：Live Agents drawer 可呈現最多五代的父子拓樸，但不得顯示無可信來源的進度百分比、token 或完整任務內容；Project Map 另列 optional experiment，不與 RuntimeState 混合。
+- 2026-08-10：在 local verification 後加入成果導向的 Completion Adversarial Critic Council；適用時由多個真實唯讀子代理獨立挑刺，文章、對話、遊戲、UI 與影音採不同路由。
+- 2026-08-10：Critic finding 是 derived/advisory evidence，不是 Task status 或 passing smoke test；`tasks.md` 仍是唯一 lifecycle 真實來源，只有人類可接受剩餘高風險。
+- 2026-08-10：Critic 最多執行一次初審與一次受影響差異複審；缺能力、缺可觀察產物或超出預算時必須標示 blocked／limited，不得假裝完成體驗。
+- 2026-08-10：收尾順序固定為本機驗證、CodeRabbit 技術審查、成果 Critic Council；若 Critic 修正了程式碼，只重跑受影響的 focused Rabbit 與一次 delta critic，避免沿用失效證據。

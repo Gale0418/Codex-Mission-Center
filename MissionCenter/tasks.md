@@ -34,3 +34,7 @@
 | MC-030 | 實作受限 activity mapping 與 adaptive polling | Task | MC-024 | P1 | Done | Codex | MC-027, MC-029 | 已完成 | HUD/runtime tests | 2 | hud, privacy, performance | 不解析 prompt/command/tool args；zone 不變時保留位置 |
 | MC-031 | 完成文件、全量驗證與發布證據 | Task | MC-025 | P0 | Done | Codex | MC-026, MC-028, MC-029, MC-030 | 已完成 | full unittest、doctor、publish verify | 3 | docs, release, p0 | CodeRabbit 兩輪、三方本機發布 verify 完成 |
 | MC-032 | Optional Persistent Project Map | Experiment |  | P1 | Ready | Codex | MC-026 | 設計 html/json/lock、元件證據與 stale 契約 | 跨語言 spike、fingerprint tests、人工 review | 5 | codemap, experiment, visualization | 與 RuntimeState 分離；不得偽造 caller、依賴或 test evidence |
+| MC-033 | Completion Adversarial Critic Council | Epic |  | P0 | Done | Codex | MC-031 | 已完成 | skill contract、完整 unittest、獨立 review | 4 | critic, council, verification | 真實子代理唯讀；不建立第二套 lifecycle |
+| MC-034 | 定義成果路由與龜毛評審契約 | Task | MC-033 | P0 | Done | Codex | MC-031 | 已完成 | reference 與 skill contract tests | 2 | critic, routing, p0 | 初審＋最多一次 delta 複審 |
+| MC-035 | 鎖定證據、預算與 Task 邊界 | Task | MC-033 | P0 | Done | Codex | MC-034 | 已完成 | orchestration / execution gate tests | 2 | evidence, budget, p0 | 評語不得冒充 smoke-test evidence |
+| MC-036 | 驗證、兔子審查與本機發布 | Task | MC-033 | P0 | Done | Codex | MC-034, MC-035 | 已完成 | unittest、doctor、CodeRabbit、publish verify | 2 | review, release, p0 | 最終 0 issues；本機 plugin `0.2.0+codex.f87f7ed4885d4ad89347817f89aa38b8` |
