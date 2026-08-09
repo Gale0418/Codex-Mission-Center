@@ -149,19 +149,20 @@ class PublishLocalTests(unittest.TestCase):
             self.assertIn('"name": "mission-center-local"', marketplace_manifest)
             self.assertIn('"path": "./plugins/mission-center"', marketplace_manifest)
             expected_calls = [
-                ([str(fake_codex), "plugin", "remove", "mission-center@mission-center-local"], False),
-                ([str(fake_codex), "plugin", "marketplace", "remove", "mission-center-local"], False),
-                ([str(fake_codex), "plugin", "marketplace", "add", str(marketplace.parent.parent)], True),
-                ([str(fake_codex), "plugin", "add", "mission-center@mission-center-local"], True),
+                ([str(fake_codex), "plugin", "remove", "mission-center@mission-center-local"], False, {0}),
+                ([str(fake_codex), "plugin", "marketplace", "remove", "mission-center-local"], False, {0}),
+                ([str(fake_codex), "plugin", "marketplace", "add", str(marketplace.parent.parent)], True, {0, 4}),
+                ([str(fake_codex), "plugin", "add", "mission-center@mission-center-local"], True, {0}),
             ]
             self.assertEqual(len(run_mock.call_args_list), len(expected_calls))
-            for actual_call, (expected_command, expected_check) in zip(run_mock.call_args_list, expected_calls):
+            for actual_call, (expected_command, expected_check, path_indexes) in zip(run_mock.call_args_list, expected_calls):
                 actual_command = actual_call.args[0]
-                if sys.platform == "win32":
-                    self.assertTrue(Path(actual_command[0]).samefile(fake_codex))
-                else:
-                    self.assertEqual(actual_command[0], expected_command[0])
-                self.assertEqual(actual_command[1:], expected_command[1:])
+                self.assertEqual(len(actual_command), len(expected_command))
+                for index, (actual, expected) in enumerate(zip(actual_command, expected_command)):
+                    if sys.platform == "win32" and index in path_indexes:
+                        self.assertTrue(Path(actual).samefile(Path(expected)))
+                    else:
+                        self.assertEqual(actual, expected)
                 self.assertEqual(actual_call.kwargs, {"check": expected_check})
 
     def test_verify_reports_drift(self):
