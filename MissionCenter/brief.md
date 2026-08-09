@@ -1,13 +1,13 @@
 <!-- Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files. -->
-<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=f490fb2a7ae2ebca04c80d4103e56c0b80eac1f26810467098cbab9b7c31e1a3 -->
+<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=bdaca40c7500f3009c290667e7cc2318a1226f5627baf4222a54aea5ed160895 -->
 # 任務簡報
 
 - Last organized: 2026-08-09
-- Source fingerprint: `f490fb2a7ae2ebca04c80d4103e56c0b80eac1f26810467098cbab9b7c31e1a3`
+- Source fingerprint: `bdaca40c7500f3009c290667e7cc2318a1226f5627baf4222a54aea5ed160895`
 - Source of truth: `tasks.md`
 - 專案: Codex Mission Center
 - 北極星: 將 Mission Center 升級為研究驅動的自適應 Project OS，並提供可選的本機 Live Agent HUD
-- 週期: OWO+ Low-Noise Mission Memory
+- 週期: OWO+ Correctness & Attention Convergence
 
 ## 未完成 P0 (0)
 - 無
@@ -20,6 +20,7 @@
 - 完成 CodeRabbit 兩輪限額審查：第一輪 10 issues、scripts 聚焦複查 19 issues；合併重複建議、驗證真實問題後完成安全修正，保留第 3 次每小時額度。
 - 完成低額度記憶架構研究：採分層記憶、漸進揭露與 materialized view；Antigravity 初稿經 Codex 審查後修正真實來源、P0 篩選與寫入位置。
 - 實作每日合併紀錄、P0 focus、content-fingerprinted brief 與人工 guardrails，並整合 bootstrap、sync、doctor 與文件。
+- 完成 OWO+ Correctness & Attention Convergence：代表性 Prior Art、Codex runtime 正確性、低噪音 attention capsule、父子 Agent 拓樸、CodeRabbit 兩輪修正與本機 plugin 三方發布驗證；Project Map 另列 MC-032 optional experiment。
 
 ## 重要護欄 (7)
 - GR-001

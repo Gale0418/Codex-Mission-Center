@@ -10,3 +10,4 @@
 - 完成 CodeRabbit 兩輪限額審查：第一輪 10 issues、scripts 聚焦複查 19 issues；合併重複建議、驗證真實問題後完成安全修正，保留第 3 次每小時額度。
 - 完成低額度記憶架構研究：採分層記憶、漸進揭露與 materialized view；Antigravity 初稿經 Codex 審查後修正真實來源、P0 篩選與寫入位置。
 - 實作每日合併紀錄、P0 focus、content-fingerprinted brief 與人工 guardrails，並整合 bootstrap、sync、doctor 與文件。
+- 完成 OWO+ Correctness & Attention Convergence：代表性 Prior Art、Codex runtime 正確性、低噪音 attention capsule、父子 Agent 拓樸、CodeRabbit 兩輪修正與本機 plugin 三方發布驗證；Project Map 另列 MC-032 optional experiment。

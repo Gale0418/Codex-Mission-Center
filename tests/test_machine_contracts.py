@@ -31,6 +31,18 @@ class MachineContractTests(unittest.TestCase):
         self.assertIn("from websockets.asyncio.client import connect", adapter)
         self.assertIn("except ImportError", adapter)
 
+    def test_runtime_schema_exposes_privacy_safe_activity_kind_without_location(self):
+        runtime = json.loads((SCHEMAS / "runtime-state.schema.json").read_text(encoding="utf-8"))
+        agent_properties = runtime["properties"]["agents"]["items"]["properties"]
+        self.assertIn("activityKind", agent_properties)
+        self.assertNotIn("location", agent_properties)
+        self.assertEqual(agent_properties["startedAt"]["format"], "date-time")
+        self.assertEqual(agent_properties["lastSeenAt"]["format"], "date-time")
+        self.assertEqual(agent_properties["sequence"]["minimum"], 0)
+        event = json.loads((SCHEMAS / "agent-event.schema.json").read_text(encoding="utf-8"))
+        self.assertIn("activityKind", event["properties"])
+        self.assertNotIn("location", event["properties"])
+
 
 if __name__ == "__main__":
     unittest.main()

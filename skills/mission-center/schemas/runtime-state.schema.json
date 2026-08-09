@@ -8,8 +8,46 @@
     "updatedAt": {"type": "string", "format": "date-time"},
     "sourceStatus": {"enum": ["connected", "replay", "file", "stale", "disconnected"]},
     "capabilities": {"type": "object", "required": ["approve", "reject", "focus"], "properties": {"approve": {"type": "boolean"}, "reject": {"type": "boolean"}, "focus": {"type": "boolean"}}, "additionalProperties": false},
-    "attention": {"type": "array", "items": {"type": "object"}},
-    "agents": {"type": "array", "items": {"type": "object"}}
+    "attention": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["agentId", "kind", "activity", "taskIds"],
+        "properties": {
+          "agentId": {"type": "string"},
+          "kind": {"enum": ["approval", "question", "blocked", "error", "verification"]},
+          "activity": {"type": "string"},
+          "taskIds": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": false
+      }
+    },
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["agentId", "taskIds", "state", "activity", "attention", "requiresAttention", "activityKind"],
+        "properties": {
+          "provider": {"type": "string"},
+          "sessionId": {"type": "string"},
+          "threadId": {"type": ["string", "null"]},
+          "turnId": {"type": ["string", "null"]},
+          "agentId": {"type": "string"},
+          "parentAgentId": {"type": ["string", "null"]},
+          "taskIds": {"type": "array", "items": {"type": "string"}},
+          "state": {"enum": ["idle", "working", "waiting_approval", "blocked", "finished", "failed", "stale", "disconnected"]},
+          "activity": {"type": "string"},
+          "attention": {"enum": ["none", "approval", "question", "blocked", "error", "verification"]},
+          "requiresAttention": {"type": "boolean"},
+          "activityKind": {"enum": ["unknown", "idle", "working", "command_execution", "file_change", "tool_use", "web_search", "waiting_input", "verification", "blocked", "error"]},
+          "startedAt": {"type": "string", "format": "date-time"},
+          "lastSeenAt": {"type": "string", "format": "date-time"},
+          "sequence": {"type": "integer", "minimum": 0},
+          "recentEventIds": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": false
+      }
+    }
   },
   "additionalProperties": false
 }

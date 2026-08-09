@@ -93,7 +93,7 @@ Open `output/mission-center-assets/visual-summary.html` to view the static task 
 python skills/mission-center/scripts/mission_runtime.py --workspace . serve --port 8765
 ```
 
-The companion is optional. If runtime data or `websockets` is unavailable, the existing static task HUD remains usable. Live WebSocket connection observes only sessions connected to the chosen endpoint; it is not global desktop monitoring.
+The companion is optional. If runtime data or `websockets` is unavailable, the existing static task HUD remains usable. The compact attention capsule stays quiet during ordinary work and opens a Live Agents drawer only when requested. Live connections observe only sessions connected to the chosen endpoint; they are not global desktop monitoring.
 
 ## Adaptive Optimization
 
@@ -109,14 +109,17 @@ python skills/mission-center/scripts/mission_optimizer.py shadow --manifest expe
 
 ## Optional Runtime Adapter
 
-Replay a privacy-safe JSONL fixture or connect to an explicitly exposed Codex app-server endpoint:
+Replay a privacy-safe JSONL fixture or connect to an explicitly launched Codex app-server over stdio. WebSocket remains an optional transport for an explicitly exposed endpoint:
 
 ```bash
 python skills/mission-center/scripts/mission_runtime.py --workspace . replay events.jsonl
 python skills/mission-center/scripts/mission_runtime.py --workspace . link --agent agent-id --task MC-009
+python skills/mission-center/scripts/mission_runtime.py --workspace . connect --stdio
 python -m pip install -r requirements-runtime.txt
 python skills/mission-center/scripts/mission_runtime.py --workspace . connect --url ws://127.0.0.1:4500
 ```
+
+On Windows, a Microsoft Store/WindowsApps-packaged Codex executable may reject direct subprocess launch. In that case, pass `--codex-executable` with a standalone Codex CLI path; Mission Center does not fall back to a shell wrapper.
 
 Runtime events never edit `MissionCenter/tasks.md`. Persisted telemetry excludes prompts, reasoning, complete commands, tool arguments, environment values, and secrets.
 

@@ -117,10 +117,13 @@ python skills/mission-center/scripts/mission_optimizer.py profile --input projec
 python skills/mission-center/scripts/mission_optimizer.py route --profile project-profile.json
 python skills/mission-center/scripts/mission_optimizer.py shadow --manifest experiment.json --observations observations.json --workspace .
 python skills/mission-center/scripts/mission_runtime.py --workspace . replay events.jsonl
+python skills/mission-center/scripts/mission_runtime.py --workspace . connect --stdio
 python skills/mission-center/scripts/mission_runtime.py --workspace . serve --port 8765
 ```
 
-核心功能仍是零必要第三方依賴。只有連接 WebSocket live runtime 時才需執行 `python -m pip install -r requirements-runtime.txt`。缺少 Runtime 或可選依賴時，HUD 會自動退回原本的靜態 Task 畫面。
+核心功能仍是零必要第三方依賴；stdio 可直接啟動目前 Codex app-server，只有連接 WebSocket live runtime 時才需執行 `python -m pip install -r requirements-runtime.txt`。HUD 平時只顯示安靜的注意力膠囊，展開後才看 Live Agents；缺少 Runtime 或可選依賴時會自動退回原本的靜態 Task 畫面。所有 Live 監看都只涵蓋明確連接的 endpoint，不宣稱全域監控 Codex Desktop。
+
+Windows 的 Microsoft Store／WindowsApps 封裝版 Codex 可能拒絕被 Python 直接建立子程序；此時請用 `--codex-executable` 指向獨立 CLI。Mission Center 不會偷偷退回 shell wrapper。
 
 被動的 Runtime 監看只整理本機事件與 JSON，**不會呼叫模型，也不會額外消耗模型額度**。已連接 Agent 本身執行任務時仍依原本方式計費；只有明確啟用 LLM 分類或 Agent 驅動的實驗 trial 才消耗模型 token，且必須受 manifest 預算限制。
 

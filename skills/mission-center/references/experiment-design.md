@@ -2,7 +2,7 @@
 
 ## Versioned Contracts
 
-Every `ExperimentManifest` declares schema version, experiment kind, candidates, cases, separate metrics, hard constraints, trial/token/wall-clock budgets, retry limit, stopping conditions, validation plan, and promotion state. Every `ExperimentResult` reports baseline deltas, Pareto candidates, confidence, sample count, unknowns, and a promotion recommendation.
+Every `ExperimentManifest` declares schema version, experiment kind, candidates, cases, separate metrics, hard constraints, trial/token/wall-clock budgets, retry limit, stopping conditions, validation plan, and promotion state. Every `ExperimentResult` reports baseline deltas, Pareto candidates, confidence, sample count, unknowns, and a promotion recommendation. In v1, `confidence` is a bounded evidence-strength heuristic derived from coverage and evaluator agreement; it is not a statistical confidence interval and must never be presented as one.
 
 Metrics with different units remain separate. Compute composite loss only when the manifest explicitly supplies normalization and weights. Missing observations stay unknown and never receive an invented score.
 

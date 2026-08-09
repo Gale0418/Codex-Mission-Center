@@ -18,7 +18,8 @@
     "activity": {"type": "string"},
     "attention": {"enum": ["none", "approval", "question", "blocked", "error", "verification"]},
     "sequence": {"type": "integer", "minimum": 0},
-    "state": {"enum": ["idle", "working", "waiting_approval", "blocked", "finished", "failed", "stale", "disconnected"]}
+    "state": {"enum": ["idle", "working", "waiting_approval", "blocked", "finished", "failed", "stale", "disconnected"]},
+    "activityKind": {"enum": ["unknown", "idle", "working", "command_execution", "file_change", "tool_use", "web_search", "waiting_input", "verification", "blocked", "error"]}
   },
   "additionalProperties": false
 }

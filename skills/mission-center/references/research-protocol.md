@@ -20,6 +20,24 @@ Use normal search, purpose-built connectors, or official documentation first. If
 
 Do not use Jina or another proxy to bypass authentication, authorization, paywalls, robots restrictions, or private access controls. If evidence remains unavailable, mark the claim uncertain instead of inventing an answer.
 
+## Representative GitHub Screening
+
+For software, AI-tooling, developer-tool, framework, runtime, agent, OCR, translation, or game-system missions with meaningful prior art, search broadly and then deeply screen roughly three to seven representative candidates. Adjust the count to the decision; never add weak candidates merely to fill a quota.
+
+Choose candidates that expose genuinely different routes where available: a direct competitor, the same use case, the same subsystem, a different architecture, a formerly popular abandoned approach, or another representative technical alternative. Do not count forks as independent architectures.
+
+GitHub Stars and Forks are only weak popularity signals. Never rank candidates by Stars alone. Evaluate only decision-relevant evidence, including:
+
+- problem, actual user workflow, and scope fit;
+- relevant module boundaries, data flow, client/server or local/cloud split, IPC, state, storage, caching, plugin/provider boundaries, and extension model;
+- language, runtime, major libraries, build, packaging, deployment, dependency health, operational cost, and exit difficulty;
+- recent commits and releases, issue and pull-request activity, maintainer response, contributors, roadmap, and archived status;
+- tests, CI, documentation, error handling, migrations, release process, dependency management, security posture, license, and known limitations.
+
+Do not label a project maintained from one recent commit. When weaknesses may affect the decision, inspect primary issue, discussion, pull-request, changelog, or release-note evidence for recurring bugs, performance complaints, maintenance pain, platform limits, and breaking dependencies. Mark unavailable evidence unknown.
+
+Use a compact comparison matrix containing only dimensions that change the decision, then classify each candidate as `Adopt`, `Adapt`, `Learn`, or `Reject`. State what to reuse, what architecture to learn from, what not to copy, and which dependencies are not worth introducing.
+
 ## Concise Research Log
 
 Keep only decision-relevant entries in `notes.md`:
@@ -28,7 +46,7 @@ Keep only decision-relevant entries in `notes.md`:
 Pre-search idea | Source | Adopted insight | License status
 ```
 
-Do not paste full search results or long article summaries into the workspace.
+Temporary detailed screening may remain under `output/` or the working session. Do not paste full search results, raw Markdown, long summaries, or source-code dumps into persistent MissionCenter memory.
 
 ## Clean-room Reference
 
