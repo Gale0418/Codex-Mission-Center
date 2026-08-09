@@ -84,7 +84,11 @@ Follow [visual-hub.md](references/visual-hub.md) and [runtime-agent-protocol.md]
 
 ### 11. Optional Final CodeRabbit Review
 
-After implementation and local verification, use [coderabbit-review-gate.md](references/coderabbit-review-gate.md) when the user requests independent review or the change is large or high risk. CodeRabbit is advisory: obtain upload consent, scope out irrelevant large files, verify every issue, and never report a failed or rate-limited review as passed.
+After implementation and local verification, use [coderabbit-review-gate.md](references/coderabbit-review-gate.md) when the user requests independent code review or the change is large or high risk. CodeRabbit checks implementation, security, and regression risks before experience critics inspect the resulting artifact. Obtain upload consent, scope out irrelevant large files, verify every issue, and never report a failed or rate-limited review as passed.
+
+### 12. Completion Adversarial Critic Council
+
+After applicable CodeRabbit findings are dispositioned and local verification is current, route the result through the [Completion Adversarial Critic Council Gate](references/completion-critic-council.md). This final bounded gate dynamically selects real read-only critic subagents for the artifact and audience. If critic-driven repairs change code, rerun local verification and only the affected focused CodeRabbit and critic delta checks before `Done` or Closeout.
 
 ## Task Lifecycle
 
@@ -124,6 +128,7 @@ Use `Backlog -> Ready -> In Progress -> Blocked -> Review -> Done`. `Blocked` me
 - [normalization-rules.md](references/normalization-rules.md): canonical statuses, priorities, labels, parents, and dependencies.
 - [activity-log-format.md](references/activity-log-format.md): concise change-reason records.
 - [agent-orchestration.md](references/agent-orchestration.md): simulated perspectives and real subagents.
+- [completion-critic-council.md](references/completion-critic-council.md): budgeted adversarial completion critique.
 - [visual-hub.md](references/visual-hub.md): task-driven HUD contract.
 - [runtime-agent-protocol.md](references/runtime-agent-protocol.md): optional runtime telemetry and privacy contract.
 - [coderabbit-review-gate.md](references/coderabbit-review-gate.md): risk-based final independent review.

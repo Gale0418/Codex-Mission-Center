@@ -22,11 +22,11 @@ Implement one bounded slice. Keep changes small, update task state when facts ch
 
 ## Gate 6: Review
 
-Before `Done`, require recorded verification, resolved or documented blockers, and task state that matches reality.
+After local verification, run applicable CodeRabbit technical review first, verify its findings, repair real defects, and re-verify locally. Then route the resulting artifact through the [Completion Adversarial Critic Council Gate](completion-critic-council.md) before `Done` or Closeout. Low-risk non-perceptual work may skip only with a recorded reason; perceptual work uses `critic_lite`, while games, releases, and high-impact work use `critic_full`. Critic-driven code repairs receive only the affected focused CodeRabbit review before the one allowed critic delta wave. Before `Done`, require recorded smoke verification, resolved or documented blockers and critic dispositions, and task state that matches reality. The council is advisory evidence, not passing smoke evidence.
 
 ## Gate 7: Closeout
 
-Summarize outcomes, preserve smoke-test evidence, record unfinished Backlog work, and capture the next reopenable checkpoint.
+After applicable CodeRabbit and Critic Council review, summarize outcomes, preserve smoke-test and advisory evidence separately, record unfinished Backlog work, and capture the next reopenable checkpoint.
 
 ## Adaptive Depth
 

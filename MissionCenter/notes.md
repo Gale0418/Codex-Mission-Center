@@ -20,6 +20,9 @@
 | 猜測 Codex Desktop 私有事件 | 本機 `codex app-server generate-json-schema` 與 stdio initialize probe | Adopt：以目前 schema 的 `thread/started`、`thread/status/changed`、`thread/closed` 和 status tagged object 為契約；舊通知不再臆測 | 本機官方 CLI 0.147.0-alpha.6.5；升級後需重新驗證 |
 | 將 Code Map 與 Agent HUD 當成同一種畫面 | https://x.com/so_ainsight/status/2084869512684519763 | Learn／Adapt：另設可重建的 html/json/lock Project Map，最多約 20 個主元件與 3–5 條關鍵流程，並以 fingerprint 標 stale | 公開貼文設計概念；尚未實作跨語言分析，不複製圖像 |
 | 讓每個子 Agent 直接競爭寫同一份 state.json | https://x.com/kotetsu_0321/status/2082383124462469353 | Adapt：採父子世代拓樸與狀態表情，但由集中 reducer 原子寫入；不採自報進度、完整任務、token 或事件實況 | 公開貼文設計概念；以既有 privacy contract 收斂 |
+| 用 one-shot Prompt 在完成後無限召喚分身互相批評 | https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents | Adapt：組合不同 grader 職能、保留多輪互動與證據；加入固定快照、能力宣告、預算與停止條件 | 官方工程文章；僅採 eval 方法概念 |
+| 多個 AI 評審一致就視為品質保證 | https://openai.com/index/gdpval/ | Learn：自動 grader 不能取代真正專家；採 rubric、盲評式獨立初稿與人工風險接受 | OpenAI 官方研究說明；僅採評估方法 |
+| 只靠平均分判斷長流程互動品質 | https://deepmind.google/blog/evaluating-multimodal-interactive-agents/ | Adapt：以時間延伸的情境、可觀察 continuation 與人工標註概念建立 journey coverage；不把主觀感受偽裝成總分 | Google DeepMind 官方研究；僅採方法概念 |
 
 ## Evolution 邊界
 

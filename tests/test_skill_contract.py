@@ -141,6 +141,104 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("explicit user approval", orchestration)
         self.assertIn("simulated perspectives", orchestration)
 
+    def test_completion_critic_council_is_budgeted_real_read_only_and_bounded(self):
+        critic = (
+            SKILL_ROOT / "references" / "completion-critic-council.md"
+        ).read_text(encoding="utf-8")
+        normalized = critic.casefold()
+        for phrase in (
+            "after local verification and applicable coderabbit review",
+            "before `done` or closeout",
+            "`skip`",
+            "`critic_lite`",
+            "`critic_full`",
+            "real subagents, never simulated perspectives",
+            "at least two independent critic subagents",
+            "at least three independent critic subagents plus a separate evidence-arbiter subagent",
+            "explicitly approved the total budget, per-seat budget, tool budget, and wall-clock budget",
+            "cannot reach `done` or a clean closeout",
+            "do not auto-downgrade to `skip`",
+            "immutable snapshot",
+            "taskid",
+            "revision/hash",
+            "parentsnapshot",
+            "content-addressed",
+            "read-only",
+            "must not change `tasks.md`",
+            "can never be represented as passing smoke evidence",
+            "initial wave and one delta wave",
+            "until clean",
+            "critical",
+            "unresolved `critical` findings block `done`",
+            "approver identity, approval time",
+            "tasks.md remains the only lifecycle truth",
+        ):
+            self.assertIn(phrase, normalized)
+
+    def test_completion_critic_council_routes_artifacts_and_preserves_evidence_contract(self):
+        critic = (
+            SKILL_ROOT / "references" / "completion-critic-council.md"
+        ).read_text(encoding="utf-8").casefold()
+        for phrase in (
+            "game / interactive",
+            "visual / audio",
+            "article / nonfiction",
+            "fiction / dialogue",
+            "ui / app",
+            "cli / api / library",
+            "non-perceptual",
+            "journey/player",
+            "visual/ux/accessibility",
+            "audio/feel",
+            "evidence arbiter",
+            "clarity",
+            "structure",
+            "fact evidence",
+            "voice",
+            "continuity",
+            "pacing",
+            "cacc-<taskid>-<categoryslug>-<hash8>-<ordinal>",
+            "evidence locator",
+            "repro-or-read-path",
+            "subjective preferences",
+            "material dissent",
+            "artifact modalities, user journey, audience, acceptance criteria, failure cost",
+            "first launch, onboarding",
+            "failure/retry",
+            "fictional world facts",
+            "disposable isolated runtime profile",
+            "capability loss never reduces full below three critic subagents",
+            "criticproposeddisposition",
+            "chairfinaldisposition",
+            "repaired finding and its delta-wave updates preserve that id",
+            "blind sequential batches",
+            "slot limits never reduce the required seat count",
+            "output/mission-center-critique/<taskid>-<snapshotid>.json",
+        ):
+            self.assertIn(phrase, critic)
+
+    def test_coderabbit_precedes_critic_gate_done_and_closeout(self):
+        skill = SKILL_PATH.read_text(encoding="utf-8").casefold()
+        gates = (SKILL_ROOT / "references" / "execution-gates.md").read_text(
+            encoding="utf-8"
+        ).casefold()
+        closeout = (SKILL_ROOT / "references" / "closeout-format.md").read_text(
+            encoding="utf-8"
+        ).casefold()
+        self.assertIn("completion adversarial critic council gate", skill)
+        self.assertLess(
+            skill.index("optional final coderabbit review"),
+            skill.index("completion adversarial critic council"),
+        )
+        self.assertIn("run applicable coderabbit technical review first", gates)
+        self.assertIn("before `done` or closeout", gates)
+        self.assertIn("affected focused coderabbit review", gates)
+        self.assertIn("completion critic council", closeout)
+        self.assertIn("conditional section", closeout)
+        self.assertIn(
+            "prevents `done`, a shipped release, and clean closeout", closeout
+        )
+
     def test_linear_and_execution_references_enforce_rolling_approval(self):
         linear = (SKILL_ROOT / "references" / "linear-parity.md").read_text(
             encoding="utf-8"
