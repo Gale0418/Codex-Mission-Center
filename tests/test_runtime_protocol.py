@@ -15,7 +15,7 @@ ROOT = Path(__file__).parents[1]
 SCRIPTS = ROOT / "skills" / "mission-center" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from mission_runtime import connect_live, is_loopback_host_header, link_task, loopback_server_type, replay, validate_websockets_version
+from mission_runtime import HudHandler, RecoverableTransportError, StdioTransport, codex_stdio_command, connect_live, is_loopback_host_header, link_task, loopback_server_type, replay, validate_websockets_version
 from runtime_protocol import age_runtime_state, empty_runtime_state, load_last_valid, normalize_codex_message, reduce_event, sanitize, touch_runtime_state, validate_initialize_response, write_runtime_state
 
 
@@ -199,6 +199,56 @@ class RuntimeProtocolTests(unittest.TestCase):
                     asyncio.run(connect_live(workspace, "ws://127.0.0.1:9999", None))
             self.assertEqual(load_last_valid(path), original)
 
+    def test_transport_is_closed_after_partial_connect_failure(self):
+        class PartialTransport:
+            def __init__(self):
+                self.closed = False
+
+            async def connect(self):
+                raise ConnectionError("partial setup")
+
+            async def close(self):
+                self.closed = True
+
+        with workspace_tempdir() as temp:
+            transport = PartialTransport()
+            with self.assertRaisesRegex(ConnectionError, "partial setup"):
+                asyncio.run(connect_live(Path(temp), transport=transport))
+            self.assertTrue(transport.closed)
+
+    def test_initialize_ignores_notifications_and_malformed_frames_before_matching_response(self):
+        class OrderedTransport:
+            def __init__(self):
+                self.messages = iter([
+                    json.dumps({"method": "thread/started", "params": {"thread": {"id": "early"}}}),
+                    "{broken",
+                    json.dumps({"id": 1, "result": {"serverInfo": {"name": "codex"}}}),
+                ])
+                self.sent = []
+                self.closed = False
+
+            async def connect(self):
+                return None
+
+            async def send(self, message):
+                self.sent.append(message)
+
+            async def recv(self):
+                try:
+                    return next(self.messages)
+                except StopIteration as exc:
+                    raise ConnectionError("closed after initialize") from exc
+
+            async def close(self):
+                self.closed = True
+
+        with workspace_tempdir() as temp:
+            transport = OrderedTransport()
+            with self.assertRaisesRegex(ConnectionError, "closed after initialize"):
+                asyncio.run(connect_live(Path(temp), transport=transport))
+            self.assertEqual([message.get("method") for message in transport.sent], ["initialize", "initialized"])
+            self.assertTrue(transport.closed)
+
     def test_invalid_or_unsupported_live_payload_preserves_last_valid_runtime_state(self):
         class FakeSocket:
             def __init__(self, payload):
@@ -250,6 +300,21 @@ class RuntimeProtocolTests(unittest.TestCase):
         self.assertEqual(loopback_server_type("127.0.0.1").address_family, socket.AF_INET)
         self.assertEqual(loopback_server_type("::1").address_family, socket.AF_INET6)
 
+    def test_hud_root_redirects_to_asset_directory_for_relative_images(self):
+        handler = object.__new__(HudHandler)
+        handler.path = "/"
+        handler.headers = {"Host": "127.0.0.1:8765"}
+        responses = []
+        headers = []
+        handler.send_response = lambda code: responses.append(code)
+        handler.send_header = lambda name, value: headers.append((name, value))
+        handler.end_headers = lambda: None
+        with mock.patch.object(HudHandler.__mro__[1], "do_GET") as parent_get:
+            handler.do_GET()
+        self.assertEqual(responses, [302])
+        self.assertIn(("Location", "/mission-center-assets/visual-summary.html"), headers)
+        parent_get.assert_not_called()
+
     def test_malformed_agent_is_normalized_before_aging(self):
         with workspace_tempdir() as temp:
             path = Path(temp) / "runtime.json"
@@ -273,6 +338,161 @@ class RuntimeProtocolTests(unittest.TestCase):
             self.assertEqual(state["agents"][0]["taskIds"], ["MC-009"])
             task_text = (workspace / "MissionCenter/tasks.md").read_text(encoding="utf-8")
             self.assertIn("| MC-009 | Runtime | Ready |", task_text)
+
+    def test_thread_status_object_mappings_and_closed(self):
+        cases = [
+            ({"type": "active", "activeFlags": []}, "working", "none", "working"),
+            ({"type": "idle"}, "idle", "none", "idle"),
+            ({"type": "systemError"}, "failed", "error", "error"),
+            ({"type": "notLoaded"}, "disconnected", "none", "idle"),
+        ]
+        for status_obj, expected_state, expected_attn, expected_kind in cases:
+            with self.subTest(status=status_obj):
+                msg = {"method": "thread/status/changed", "params": {"threadId": "t1", "agentId": "a1", "status": status_obj}}
+                events = normalize_codex_message(msg, 1)
+                self.assertEqual(len(events), 1)
+                self.assertEqual(events[0]["state"], expected_state)
+                self.assertEqual(events[0]["attention"], expected_attn)
+                self.assertEqual(events[0].get("activityKind"), expected_kind)
+
+        # thread/closed test
+        closed_msg = {"method": "thread/closed", "params": {"threadId": "t1", "agentId": "a1"}}
+        closed_events = normalize_codex_message(closed_msg, 2)
+        self.assertEqual(len(closed_events), 1)
+        self.assertEqual(closed_events[0]["state"], "disconnected")
+        self.assertEqual(closed_events[0]["attention"], "none")
+
+        # Unknown / malformed status must be ignored (return [])
+        for bad_status in [{"type": "active"}, {"type": "unknown_type"}, "active_string", None, 123]:
+            with self.subTest(bad_status=bad_status):
+                bad_msg = {"method": "thread/status/changed", "params": {"threadId": "t1", "agentId": "a1", "status": bad_status}}
+                self.assertEqual(normalize_codex_message(bad_msg, 3), [])
+
+    def test_activity_kind_privacy_and_no_location(self):
+        mappings = [
+            ("commandExecution", "command_execution"),
+            ("fileChange", "file_change"),
+            ("mcpToolCall", "tool_use"),
+            ("dynamicToolCall", "tool_use"),
+            ("webSearch", "web_search"),
+        ]
+        for item_type, expected_kind in mappings:
+            with self.subTest(item_type=item_type):
+                msg = {
+                    "method": "item/started",
+                    "params": {
+                        "threadId": "t1",
+                        "agentId": "a1",
+                        "item": {
+                            "id": "i1",
+                            "type": item_type,
+                            "prompt": "secret prompt text",
+                            "command": "secret command line",
+                            "arguments": {"secret": "val"},
+                        },
+                    },
+                }
+                events = normalize_codex_message(msg, 1)
+                self.assertEqual(len(events), 1)
+                event = events[0]
+                self.assertEqual(event.get("activityKind"), expected_kind)
+                self.assertNotIn("location", event)
+                dumped = json.dumps(event)
+                self.assertNotIn("secret prompt text", dumped)
+                self.assertNotIn("secret command line", dumped)
+                self.assertNotIn("secret", dumped)
+
+        # Test requestApproval -> waiting_input
+        approval_msg = {
+            "method": "item/commandExecution/requestApproval",
+            "params": {"threadId": "t1", "agentId": "a1", "command": "rm -rf /"},
+        }
+        app_events = normalize_codex_message(approval_msg, 2)
+        self.assertEqual(app_events[0].get("activityKind"), "waiting_input")
+        self.assertNotIn("location", app_events[0])
+
+        unknown = normalize_codex_message(
+            {"method": "item/started", "params": {"threadId": "t1", "item": {"id": "i2", "type": "futureItem"}}},
+            3,
+        )[0]
+        self.assertEqual(unknown["activityKind"], "unknown")
+
+        for method in ("thread/tokenUsage/updated", "heartbeat", "transport/activity"):
+            self.assertEqual(normalize_codex_message({"method": method, "params": {"threadId": "t1"}}, 4), [])
+
+    def test_stdio_transport_and_last_valid(self):
+        async def run_test():
+            reader = asyncio.StreamReader()
+            reader.feed_data(json.dumps({"id": 1, "result": {"serverInfo": {"name": "codex"}}}).encode("utf-8") + b"\n")
+            reader.feed_eof()
+
+            written = []
+
+            class MockWriter:
+                def write(self, data):
+                    written.append(data)
+
+                async def drain(self):
+                    pass
+
+                def close(self):
+                    pass
+
+                async def wait_closed(self):
+                    pass
+
+            transport = StdioTransport(["codex"], reader, MockWriter())
+            await transport.connect()
+            await transport.send({"id": 1, "method": "initialize", "params": {}})
+            msg1 = await transport.recv()
+            self.assertIn("serverInfo", msg1)
+            self.assertTrue(written[0].endswith(b"\n"))
+            with self.assertRaises(ConnectionError):
+                await transport.recv()
+            await transport.close()
+
+        asyncio.run(run_test())
+
+    def test_stdio_transport_replaces_invalid_utf8_and_recovers_from_oversized_lines(self):
+        async def run_test():
+            reader = asyncio.StreamReader(limit=4)
+            reader.feed_data(b"\xff\n")
+            reader.feed_data(b"12345\n")
+            reader.feed_eof()
+            transport = StdioTransport(["codex"], reader, object())
+            self.assertEqual(await transport.recv(), "\ufffd")
+            with self.assertRaises(RecoverableTransportError):
+                await transport.recv()
+
+        asyncio.run(run_test())
+
+    def test_stdio_transport_reports_packaged_executable_limit(self):
+        async def run_test():
+            transport = StdioTransport(["codex.exe"])
+            with mock.patch(
+                "mission_runtime.asyncio.create_subprocess_exec",
+                side_effect=PermissionError("packaged app"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "standalone CLI executable"):
+                    await transport.connect()
+
+        asyncio.run(run_test())
+
+    def test_stdio_command_is_explicit_and_never_uses_a_shell(self):
+        command = codex_stdio_command("C:/Tools/codex.exe")
+        self.assertEqual(command, ["C:/Tools/codex.exe", "app-server", "--listen", "stdio://"])
+        with mock.patch("mission_runtime.os.name", "nt"), mock.patch(
+            "mission_runtime.shutil.which", return_value="C:/Tools/codex"
+        ), mock.patch("mission_runtime.os.path.isfile", return_value=True), mock.patch.dict(
+            "os.environ", {}, clear=True
+        ):
+            self.assertEqual(
+                codex_stdio_command(),
+                ["C:/Tools/codex.exe", "app-server", "--listen", "stdio://"],
+            )
+        with mock.patch("mission_runtime.shutil.which", return_value=None), mock.patch.dict("os.environ", {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "--codex-executable"):
+                codex_stdio_command()
 
 
 if __name__ == "__main__":

@@ -121,6 +121,16 @@ class SkillContractTests(unittest.TestCase):
             "Pre-search idea | Source | Adopted insight | License status",
             "AGPL",
             "SSPL",
+            "Representative GitHub Screening",
+            "three to seven representative candidates",
+            "never add weak candidates merely to fill a quota",
+            "weak popularity signals",
+            "Do not label a project maintained from one recent commit",
+            "Adopt",
+            "Adapt",
+            "Learn",
+            "Reject",
+            "Temporary detailed screening",
         ):
             self.assertIn(phrase, research)
 

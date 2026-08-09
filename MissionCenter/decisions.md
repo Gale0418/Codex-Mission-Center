@@ -12,3 +12,7 @@
 - 2026-08-09：前期 Creative Council 與中後期 Dynamic Expert Council 分工；後者依複雜度採 `skip`、`council_lite`、`council_full`，模擬視角不額外耗用 Runtime Agent 額度，真實 subagent 與 Shadow trial 仍需人工核准預算。
 - 2026-08-09：採分層、漸進揭露的 repo-local 記憶；`daily-log.md` 與 `guardrails.md` 為 canonical，`brief.md` 與 `focus.md` 為有內容指紋、可重建的 materialized views，不建立 daemon、不呼叫模型。
 - 2026-08-09：護欄只能經人工明確核准成為 Active 或 Superseded；自動化與 Shadow 實驗最多提出候選，不得自行升格。
+- 2026-08-09：Live HUD 採 attention-first 漸進揭露；平時只顯示膠囊，Runtime Agent drawer 預設收合，一般活動不得觸發注意力。
+- 2026-08-09：Codex live runtime 優先支援 stdio 啟動的明確 app-server endpoint；WebSocket 保留為 optional transport，不掃描或冒充既有 Desktop 全域 session。
+- 2026-08-09：Runtime map 位置僅由受限 `activityKind` 在 presentation layer 映射，不持久化位置、不解析 prompt、命令或 tool arguments。
+- 2026-08-09：Live Agents drawer 可呈現最多五代的父子拓樸，但不得顯示無可信來源的進度百分比、token 或完整任務內容；Project Map 另列 optional experiment，不與 RuntimeState 混合。

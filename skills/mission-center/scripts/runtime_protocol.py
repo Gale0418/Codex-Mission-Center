@@ -14,6 +14,7 @@ from optimization_core import atomic_write_json, utc_now
 
 RUNTIME_STATES = {"idle", "working", "waiting_approval", "blocked", "finished", "failed", "stale", "disconnected"}
 ATTENTION_KINDS = {"approval", "question", "blocked", "error", "verification"}
+ACTIVITY_KINDS = {"unknown", "idle", "working", "command_execution", "file_change", "tool_use", "web_search", "waiting_input", "verification", "blocked", "error"}
 SENSITIVE_KEYS = {"prompt", "reasoning", "command", "arguments", "args", "environment", "env", "token", "secret", "authorization", "input", "content"}
 RUNTIME_ROOT_FIELDS = {"schemaVersion", "updatedAt", "sourceStatus", "capabilities", "attention", "agents"}
 CAPABILITY_FIELDS = {"approve", "reject", "focus"}
@@ -21,7 +22,7 @@ ATTENTION_FIELDS = {"agentId", "kind", "activity", "taskIds"}
 AGENT_FIELDS = {
     "provider", "sessionId", "threadId", "turnId", "agentId", "parentAgentId",
     "taskIds", "state", "activity", "attention", "requiresAttention", "startedAt",
-    "lastSeenAt", "sequence", "recentEventIds",
+    "lastSeenAt", "sequence", "recentEventIds", "activityKind",
 }
 
 
@@ -69,6 +70,8 @@ def sanitize_runtime_state(state: dict[str, Any]) -> dict[str, Any]:
         projected.setdefault("activity", "Unknown runtime activity")
         projected.setdefault("requiresAttention", False)
         projected.setdefault("taskIds", [])
+        if projected.get("activityKind") not in ACTIVITY_KINDS:
+            projected["activityKind"] = "unknown"
         normalized_agents.append(projected)
     root["agents"] = normalized_agents
     return sanitize(root)
@@ -100,7 +103,7 @@ def normalize_codex_message(message: dict[str, Any], sequence: int, task_links: 
     item = params.get("item") if isinstance(params.get("item"), dict) else {}
     agent_id = str(_first(params, "agentId", "agent_id") or _nested(item, "agent", "id") or thread_id or "codex")
     parent_id = _first(params, "parentAgentId", "parent_agent_id")
-    event_type, state, activity, attention = _map_codex_method(method, params, item)
+    event_type, state, activity, attention, activity_kind = _map_codex_method(method, params, item)
     if not event_type:
         return []
     explicit_tasks = _extract_task_ids(params)
@@ -123,6 +126,7 @@ def normalize_codex_message(message: dict[str, Any], sequence: int, task_links: 
         "attention": attention,
         "sequence": sequence,
         "state": state,
+        "activityKind": activity_kind,
     }
     if method.casefold() == "item/started" and _is_collab_tool_call(item):
         sender = str(item.get("senderThreadId") or agent_id)
@@ -132,45 +136,65 @@ def normalize_codex_message(message: dict[str, Any], sequence: int, task_links: 
     return [sanitize(event)]
 
 
-def _map_codex_method(method: str, params: dict[str, Any], item: dict[str, Any]) -> tuple[str, str, str, str]:
+def _map_codex_method(method: str, params: dict[str, Any], item: dict[str, Any]) -> tuple[str, str, str, str, str]:
     lower = method.casefold()
     item_type = str(item.get("type") or params.get("itemType") or "").casefold()
-    if lower in {"thread/started", "thread/resumed", "thread/loaded"}:
-        return "session_started", "idle", "Session connected", "none"
+    if lower == "thread/started":
+        return "session_started", "idle", "Session connected", "none", "idle"
+    if lower == "thread/status/changed":
+        status_val = params.get("status") if "status" in params else _nested(params, "thread", "status")
+        if isinstance(status_val, dict):
+            status_type = str(status_val.get("type") or "").casefold()
+            if status_type == "active":
+                if not isinstance(status_val.get("activeFlags"), list):
+                    return "", "idle", "", "none", "unknown"
+                return "status_changed", "working", "Working", "none", "working"
+            if status_type == "idle":
+                return "status_changed", "idle", "Idle", "none", "idle"
+            if status_type == "systemerror":
+                return "status_changed", "failed", "Thread error", "error", "error"
+            if status_type == "notloaded":
+                return "status_changed", "disconnected", "Thread disconnected", "none", "idle"
+        return "", "idle", "", "none", "unknown"
+    if lower == "thread/closed":
+        return "thread_closed", "disconnected", "Thread closed", "none", "idle"
     if lower == "turn/started":
-        return "turn_started", "working", "Working", "none"
+        return "turn_started", "working", "Working", "none", "working"
     if lower == "turn/completed":
         status = str(_nested(params, "turn", "status") or params.get("status") or "completed").casefold()
         if status in {"failed", "error"}:
-            return "turn_failed", "failed", "Turn failed", "error"
+            return "turn_failed", "failed", "Turn failed", "error", "error"
         if status in {"interrupted", "cancelled", "canceled"}:
-            return "turn_blocked", "blocked", "Turn interrupted", "blocked"
-        return "turn_finished", "finished", "Awaiting task verification", "verification"
+            return "turn_blocked", "blocked", "Turn interrupted", "blocked", "blocked"
+        return "turn_finished", "finished", "Awaiting task verification", "verification", "verification"
     if "requestapproval" in lower or lower in {"tool/requestuserinput", "mcpserver/elicitation/request"}:
         kind = "question" if "userinput" in lower or "elicitation" in lower else "approval"
-        return "approval_requested", "waiting_approval", "Waiting for approval" if kind == "approval" else "Waiting for answer", kind
+        return "approval_requested", "waiting_approval", "Waiting for approval" if kind == "approval" else "Waiting for answer", kind, "waiting_input"
     if lower == "serverrequest/resolved":
-        return "approval_resolved", "working", "Approval resolved", "none"
+        return "approval_resolved", "working", "Approval resolved", "none", "working"
     if lower == "error":
-        return "error", "failed", "Runtime error", "error"
+        return "error", "failed", "Runtime error", "error", "error"
     if lower == "thread/tokenusage/updated":
-        return "usage_updated", "working", "Usage updated", "none"
+        return "", "idle", "", "none", "unknown"
     if lower == "item/started":
         if item_type in {"collabagenttoolcall", "collabtoolcall"}:
-            return "subagent_started", "working", "Collaborating with subagent", "none"
-        labels = {
-            "commandexecution": "Running command",
-            "filechange": "Applying file changes",
-            "mcptoolcall": "Using MCP tool",
-            "dynamictoolcall": "Using tool",
-            "websearch": "Searching the web",
+            return "subagent_started", "working", "Collaborating with subagent", "none", "tool_use"
+        labels_kinds = {
+            "commandexecution": ("Running command", "command_execution"),
+            "filechange": ("Applying file changes", "file_change"),
+            "mcptoolcall": ("Using MCP tool", "tool_use"),
+            "dynamictoolcall": ("Using tool", "tool_use"),
+            "websearch": ("Searching the web", "web_search"),
         }
-        return "item_started", "working", labels.get(item_type, "Working on item"), "none"
+        if item_type in labels_kinds:
+            label, kind = labels_kinds[item_type]
+            return "item_started", "working", label, "none", kind
+        return "item_started", "working", "Working on item", "none", "unknown"
     if lower == "item/completed":
-        return "item_completed", "working", "Item completed", "none"
-    if lower in {"heartbeat", "runtime/heartbeat"}:
-        return "heartbeat", "idle", "Connected", "none"
-    return "", "idle", "", "none"
+        return "item_completed", "working", "Item completed", "none", "working"
+    if lower in {"heartbeat", "runtime/heartbeat", "transport/activity"}:
+        return "", "idle", "", "none", "unknown"
+    return "", "idle", "", "none", "unknown"
 
 
 def _is_collab_tool_call(item: dict[str, Any]) -> bool:
@@ -186,7 +210,7 @@ def reduce_event(state: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]
     if event.get("state") not in RUNTIME_STATES:
         raise ValueError(f"Unsupported runtime state: {event.get('state')}")
     if event.get("eventType") == "turn_finished" and not event.get("taskIds"):
-        event = {**event, "activity": "Turn completed", "attention": "none"}
+        event = {**event, "activity": "Turn completed", "attention": "none", "activityKind": "idle"}
     agents = {agent["agentId"]: dict(agent) for agent in state.get("agents", []) if agent.get("agentId")}
     agent_id = str(event["agentId"])
     current = agents.get(agent_id)
@@ -212,7 +236,9 @@ def reduce_event(state: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]
         "lastSeenAt": event["timestamp"],
         "sequence": event["sequence"],
         "recentEventIds": recent,
+        "activityKind": event.get("activityKind") if event.get("activityKind") in ACTIVITY_KINDS else "unknown",
     }
+
     next_state = dict(state)
     next_state["schemaVersion"] = "1.0"
     next_state["updatedAt"] = utc_now()
@@ -233,13 +259,14 @@ def age_runtime_state(state: dict[str, Any], now: datetime | None = None, socket
         seen = _parse_time(agent.get("lastSeenAt"))
         age = (now - seen).total_seconds() if seen else float("inf")
         if socket_closed:
-            agent.update(state="disconnected", activity="Disconnected", attention="blocked", requiresAttention=True)
+            agent.update(state="disconnected", activity="Disconnected", attention="blocked", requiresAttention=True, activityKind="blocked")
         elif age >= 60:
             agent.update(
                 state="stale",
                 activity="No recent provider activity",
                 attention="none",
                 requiresAttention=False,
+                activityKind="idle",
             )
         agents.append(agent)
     aged["agents"] = agents

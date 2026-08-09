@@ -1,0 +1,4 @@
+{"method":"thread/status/changed","params":{"threadId":"hud-worker","agentId":"hud-worker","taskIds":["MC-028"],"status":{"type":"active","activeFlags":[]}}}
+{"method":"item/started","params":{"threadId":"hud-worker","taskIds":["MC-028"],"item":{"id":"collab-hud","type":"collabAgentToolCall","senderThreadId":"hud-worker","receiverThreadIds":["hud-child"]}}}
+{"method":"item/commandExecution/requestApproval","params":{"threadId":"hud-reviewer","agentId":"hud-reviewer","taskIds":["MC-029"]}}
+{"method":"turn/completed","params":{"threadId":"hud-verifier","agentId":"hud-verifier","taskIds":["MC-031"],"turn":{"id":"turn-hud","status":"completed"}}}

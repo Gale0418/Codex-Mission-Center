@@ -23,3 +23,14 @@
 | MC-019 | Dynamic Expert Council Gate | Task | MC-009 | P0 | Done | Codex | MC-018 | 已完成 | skill contract、完整 unittest、doctor、publish verify | 2 | council, optimization, token-budget | 前期 Creative Council 與中後期 Expert Council 分工；Agency Agents 契約模式採 Learn／Adapt |
 | MC-020 | Local Skill and Plugin Release | Task | MC-012 | P0 | Done | Codex | MC-019 | 已完成 | personal／marketplace／cache 三方 verify＋plugin validator | 1 | release, plugin, verification | 安裝版本 `0.2.0+codex.e853fb1e3add497faf9d62b7b92c22aa` |
 | MC-021 | Stabilization and Contract Fix Pass | Task | MC-012 | P0 | Done | Codex | MC-020 | 已完成 | 完整 unittest、doctor、CodeRabbit、publish verify | 3 | stabilization, runtime, optimization, verification | 修正跨平台 fingerprint、runtime 狀態、定性路由與 composite validation；CodeRabbit 2 issues 已驗證修正 |
+| MC-022 | Prior Art Deep Screening | Epic |  | P1 | Done | Codex | MC-021 | 已完成 | research contract、notes evidence、skill tests | 3 | research, convergence | 搜廣、篩深；不為湊數加入弱候選 |
+| MC-023 | Runtime Correctness and Transport | Epic |  | P1 | Done | Codex | MC-022 | 已完成 | runtime protocol tests、local app-server smoke | 5 | runtime, correctness | 僅監看明確連接的 endpoint |
+| MC-024 | HUD Attention UX | Epic |  | P1 | Done | Codex | MC-023 | 已完成 | HUD contract tests、Chrome visual smoke | 4 | hud, attention, ux | Task 與 Runtime Agent 永久分層 |
+| MC-025 | Convergence Verification and Release | Epic |  | P1 | Done | Codex | MC-022, MC-023, MC-024 | 已完成 | unittest、doctor、publish verify、git push | 3 | verification, release | release gate 與本機發布證據完成；Git push 由最終提交收尾 |
+| MC-026 | 強化 representative research contract | Task | MC-022 | P0 | Done | Codex | MC-021 | 已完成 | test_skill_contract | 2 | research, p0 | 數量為指引，不是硬湊 quota |
+| MC-027 | 修正 Codex thread lifecycle mapping | Task | MC-023 | P0 | Done | Codex | MC-026 | 已完成 | test_runtime_protocol | 2 | runtime, schema, p0 | malformed / unknown fail closed |
+| MC-028 | 加入最小 stdio transport abstraction | Task | MC-023 | P0 | Done | Codex | MC-027 | 已完成 | unit tests、local initialize smoke | 3 | runtime, transport, p0 | 不經 shell；WindowsApps 封裝限制明確 fail closed |
+| MC-029 | 建立 attention capsule 與 Live Agents drawer | Task | MC-024 | P0 | Done | Codex | MC-027 | 已完成 | HUD tests、Chrome smoke | 2 | hud, ux, p0 | 只提升五種 attention；加入父子世代拓樸 |
+| MC-030 | 實作受限 activity mapping 與 adaptive polling | Task | MC-024 | P1 | Done | Codex | MC-027, MC-029 | 已完成 | HUD/runtime tests | 2 | hud, privacy, performance | 不解析 prompt/command/tool args；zone 不變時保留位置 |
+| MC-031 | 完成文件、全量驗證與發布證據 | Task | MC-025 | P0 | Done | Codex | MC-026, MC-028, MC-029, MC-030 | 已完成 | full unittest、doctor、publish verify | 3 | docs, release, p0 | CodeRabbit 兩輪、三方本機發布 verify 完成 |
+| MC-032 | Optional Persistent Project Map | Experiment |  | P1 | Ready | Codex | MC-026 | 設計 html/json/lock、元件證據與 stale 契約 | 跨語言 spike、fingerprint tests、人工 review | 5 | codemap, experiment, visualization | 與 RuntimeState 分離；不得偽造 caller、依賴或 test evidence |
