@@ -10,6 +10,7 @@ SCRIPTS = ROOT / "skills" / "mission-center" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from mission_maintenance import (
+    append_daily_log,
     atomic_write_if_changed,
     compute_workspace_fingerprint,
     extract_focus_tasks,
@@ -63,6 +64,10 @@ class MissionMaintenanceTests(unittest.TestCase):
                 self.assertIn("| T1 |", focus)
                 self.assertNotIn("| T2 |", focus)
                 self.assertNotIn("| T3 |", focus)
+                brief = (workspace / "MissionCenter" / "brief.md").read_text(encoding="utf-8")
+                self.assertIn("T1", brief)
+                self.assertNotIn("T2", brief)
+                self.assertNotIn("T3", brief)
 
     def test_extract_focus_uses_priority_column_not_labels(self):
         tasks = [
@@ -85,6 +90,15 @@ class MissionMaintenanceTests(unittest.TestCase):
             self.assertEqual(entries["2026-08-08"], ["Fixed parser"])
             self.assertLess(text.index("## 2026-08-09"), text.index("## 2026-08-08"))
             self.assertEqual(validate_daily_log_text(text), [])
+
+    def test_append_daily_log_requires_the_canonical_path(self):
+        with workspace_tempdir("memory-daily-path-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            mission = workspace / "MissionCenter"
+            with self.assertRaises(ValueError):
+                append_daily_log(mission / "progress.md", "must not land elsewhere", "2026-08-09")
+            self.assertTrue(append_daily_log(mission / "daily-log.md", "recorded", "2026-08-09"))
+            self.assertIn("recorded", (mission / "daily-log.md").read_text(encoding="utf-8"))
 
     def test_daily_placeholders_do_not_become_real_events(self):
         with workspace_tempdir("memory-placeholder-") as temporary:
@@ -120,6 +134,19 @@ class MissionMaintenanceTests(unittest.TestCase):
             self.assertEqual(mtimes["focus.md"], (mission / "focus.md").stat().st_mtime_ns)
             self.assertNotEqual(mtimes["brief.md"], (mission / "brief.md").stat().st_mtime_ns)
 
+    def test_force_requests_a_rebuild_without_claiming_prior_staleness(self):
+        with workspace_tempdir("memory-force-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            mission = workspace / "MissionCenter"
+            run_sync(workspace, date_str="2026-08-09")
+            mtimes = {name: (mission / name).stat().st_mtime_ns for name in ("brief.md", "focus.md")}
+            time.sleep(0.01)
+            result = run_sync(workspace, force=True, date_str="2026-08-09")
+            self.assertFalse(result["staleBeforeSync"])
+            self.assertTrue(result["forced"])
+            self.assertEqual(result["changed"], [])
+            self.assertEqual(mtimes, {name: (mission / name).stat().st_mtime_ns for name in mtimes})
+
     def test_status_detects_stale_then_sync_repairs_it(self):
         with workspace_tempdir("memory-stale-") as temporary:
             workspace = make_workspace(Path(temporary))
@@ -133,6 +160,16 @@ class MissionMaintenanceTests(unittest.TestCase):
             self.assertTrue(run_status(workspace, "2026-08-09")["stale"])
             run_sync(workspace, date_str="2026-08-09")
             self.assertFalse(run_status(workspace, "2026-08-09")["stale"])
+
+    def test_fingerprint_is_stable_across_lf_and_crlf_inputs(self):
+        with workspace_tempdir("memory-line-endings-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            mission = workspace / "MissionCenter"
+            lf_fingerprint = compute_workspace_fingerprint(workspace)
+            for path in (mission / "project.md", mission / "tasks.md"):
+                lf_bytes = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+                path.write_bytes(lf_bytes.replace(b"\n", b"\r\n"))
+            self.assertEqual(compute_workspace_fingerprint(workspace)["value"], lf_fingerprint["value"])
 
     def test_brief_budget_has_explicit_truncation(self):
         with workspace_tempdir("memory-budget-") as temporary:

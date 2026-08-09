@@ -18,7 +18,7 @@ from visual_state import normalize_tasks
 
 
 SCHEMA_VERSION = "1.0"
-FINGERPRINT_FORMAT = "sha256-v1"
+FINGERPRINT_FORMAT = "sha256-v2-lf"
 DEFAULT_BRIEF_MAX_BYTES = 4096
 DERIVED_WARNING = "Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files."
 FINGERPRINT_SOURCES = ("project.md", "tasks.md", "guardrails.md", "daily-log.md")
@@ -92,9 +92,14 @@ def atomic_write_if_changed(path: Path, content: str) -> bool:
 atomic_write = atomic_write_if_changed
 
 
-def compute_content_hash(content: str | bytes) -> str:
+def canonicalize_hash_bytes(content: str | bytes) -> bytes:
+    """Normalize UTF-8 text line endings before cross-platform content hashing."""
     raw = content.encode("utf-8") if isinstance(content, str) else content
-    return hashlib.sha256(raw).hexdigest()
+    return raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
+def compute_content_hash(content: str | bytes) -> str:
+    return hashlib.sha256(canonicalize_hash_bytes(content)).hexdigest()
 
 
 def compute_workspace_fingerprint(
@@ -108,7 +113,7 @@ def compute_workspace_fingerprint(
     for name in sources_to_hash:
         path = root / name
         if path.is_file():
-            raw = path.read_bytes()
+            raw = canonicalize_hash_bytes(path.read_bytes())
             source_hash = hashlib.sha256(raw).hexdigest()
         else:
             raw = b"<missing>"
@@ -244,12 +249,13 @@ def organize_daily_log(root: Path, day: date, message: str | None = None) -> tup
     return atomic_write_if_changed(path, content), entries.get(day_key, [])
 
 
-def append_daily_log(path: Path, message: str, date_str: str | None = None) -> bool:
-    root = path.parent
+def append_daily_log(daily_log_path: Path, message: str, date_str: str | None = None) -> bool:
+    """Append one normalized event to the explicit canonical daily-log.md path."""
+    path = Path(daily_log_path)
     if path.name != "daily-log.md":
-        path = root / "daily-log.md"
+        raise ValueError("append_daily_log requires the canonical daily-log.md path")
     before = path.read_text(encoding="utf-8") if path.is_file() else None
-    organize_daily_log(root, local_date(date_str), message)
+    organize_daily_log(path.parent, local_date(date_str), message)
     after = path.read_text(encoding="utf-8")
     return before != after
 
@@ -383,9 +389,7 @@ def render_brief(
     project, goal, cycle = project_identity(root, language)
     none_label = "無" if language == "zh-TW" else "None"
     p0 = extract_focus_tasks(tasks)
-    active = [task for task in tasks if task.get("Status") in {"Ready", "In Progress"}]
-    blocked = [task for task in tasks if task.get("Status") == "Blocked"]
-    review = [task for task in tasks if task.get("Status") == "Review"]
+    # Both compact views intentionally expose only unfinished P0 task rows.
     active_guardrails = active_guardrail_ids(guardrails)
 
     def task_lines(rows: list[dict[str, str]], limit: int = 8) -> list[str]:
@@ -401,9 +405,6 @@ def render_brief(
         "goal": "北極星" if language == "zh-TW" else "North Star",
         "cycle": "週期" if language == "zh-TW" else "Cycle",
         "p0": "未完成 P0" if language == "zh-TW" else "Unfinished P0",
-        "active": "進行中／就緒" if language == "zh-TW" else "Active / Ready",
-        "blocked": "阻塞" if language == "zh-TW" else "Blocked",
-        "review": "審查" if language == "zh-TW" else "Review",
         "today": "今日摘要" if language == "zh-TW" else "Today's Summary",
         "guardrails": "重要護欄" if language == "zh-TW" else "Relevant Guardrails",
         "route": "需要時再讀" if language == "zh-TW" else "Read Next Only When Needed",
@@ -426,15 +427,7 @@ def render_brief(
         f"## {labels['p0']} ({len(p0)})",
         *task_lines(p0, 10),
         "",
-        f"## {labels['active']} ({len(active)})",
-        *task_lines(active),
-        "",
-        f"## {labels['blocked']} ({len(blocked)})",
-        *task_lines(blocked),
-        "",
-        f"## {labels['review']} ({len(review)})",
-        *task_lines(review),
-        "",
+
         f"## {labels['today']} · {day.isoformat()}",
         *_bounded_lines(daily_entries, 8, none_label),
         "",
@@ -453,9 +446,7 @@ def render_brief(
         "",
         "## Context counts",
         f"- P0: {len(p0)}",
-        f"- Active: {len(active)}",
-        f"- Blocked: {len(blocked)}",
-        f"- Review: {len(review)}",
+
         f"- Guardrails: {len(active_guardrails)}",
         "- [TRUNCATED] Brief exceeded its byte budget; read `focus.md` and canonical files.",
     ]
@@ -489,8 +480,7 @@ def run_sync(workspace: Path, force: bool = False, date_str: str | None = None, 
         (root / "focus.md").read_text(encoding="utf-8") if (root / "focus.md").is_file() else ""
     )
     stale_before = (
-        force
-        or is_fingerprint_stale(current_before, cached_before)
+        is_fingerprint_stale(current_before, cached_before)
         or is_fingerprint_stale(focus_before, cached_focus_before)
     )
     changed = ensure_memory_files(root, day)
@@ -513,6 +503,7 @@ def run_sync(workspace: Path, force: bool = False, date_str: str | None = None, 
         "organizedDate": day.isoformat(),
         "fingerprint": fingerprint,
         "staleBeforeSync": stale_before,
+        "forced": force,
         "changed": sorted(set(changed)),
         "focusCount": len(extract_focus_tasks(tasks)),
         "briefBytes": len(brief.encode("utf-8")),

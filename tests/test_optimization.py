@@ -27,6 +27,14 @@ class OptimizationTests(unittest.TestCase):
         self.assertEqual(route_profile(self.profile(parameterShape="continuous", differentiable=True))["mode"], "experimental")
         self.assertEqual(route_profile(self.profile(measurement="none"))["mode"], "research_spike")
 
+    def test_qualitative_discrete_routing_requires_comparable_evidence(self):
+        unsupported = route_profile(self.profile(measurement="subjective"))
+        self.assertEqual(unsupported["mode"], "research_spike")
+        self.assertEqual(unsupported["missingEvidence"], ["comparable_decision_evidence"])
+        supported = route_profile(self.profile(measurement="subjective", localCases=["prior-choice"]))
+        self.assertEqual(supported["mode"], "decision")
+        self.assertEqual(supported["strategy"], "trade_study_scenario_stress")
+
     def test_strategy_routing(self):
         cases = [
             ({"parameterShape": "categorical"}, "tpe"),
@@ -61,6 +69,40 @@ class OptimizationTests(unittest.TestCase):
         manifest["normalization"] = {"agreement": {"min": 0, "max": 1}}
         manifest["weights"] = {"agreement": 1}
         self.assertEqual(evaluate_observations(manifest, observations)["compositeLoss"]["independent"], 0.1)
+
+    def test_composite_weights_must_be_finite_aligned_nonnegative_and_positive(self):
+        manifest = json.loads((ROOT / "tests/fixtures/optimization/evaluator.json").read_text(encoding="utf-8"))
+        manifest["normalization"] = {"agreement": {"min": 0, "max": 1}}
+        for weights, error in (({"agreement": 0}, "invalid:weights_sum"), ({"agreement": -1}, "invalid:weight:agreement"), ({"other": 1}, "invalid:weights_alignment"), ({"agreement": float("inf")}, "invalid:weight:agreement")):
+            with self.subTest(weights=weights):
+                manifest["weights"] = weights
+                self.assertIn(error, validate_manifest(manifest))
+
+    def test_composite_rejects_duplicate_metric_names_and_overflowed_weight_sum(self):
+        manifest = json.loads((ROOT / "tests/fixtures/optimization/evaluator.json").read_text(encoding="utf-8"))
+        manifest["metrics"] = [
+            {"name": "agreement", "direction": "maximize"},
+            {"name": "agreement", "direction": "minimize"},
+        ]
+        self.assertIn("invalid:metrics", validate_manifest(manifest))
+
+        manifest = json.loads((ROOT / "tests/fixtures/optimization/routing.json").read_text(encoding="utf-8"))
+        manifest["normalization"] = {
+            "accuracy": {"min": 0, "max": 1},
+            "cost": {"min": 0, "max": 100},
+        }
+        manifest["weights"] = {"accuracy": 1e308, "cost": 1e308}
+        self.assertIn("invalid:weights_sum", validate_manifest(manifest))
+
+    def test_composite_normalization_must_be_aligned_finite_and_ordered(self):
+        manifest = json.loads((ROOT / "tests/fixtures/optimization/evaluator.json").read_text(encoding="utf-8"))
+        manifest["weights"] = {"agreement": 1}
+        observations = [{"candidate": "independent", "metrics": {"agreement": 0.9}}]
+        for normalization, error in (({}, "invalid:normalization_alignment"), ({"agreement": {"min": 0, "max": float("inf")}}, "invalid:normalization:agreement"), ({"agreement": {"min": False, "max": 1}}, "invalid:normalization:agreement"), ({"agreement": {"min": 1, "max": 1}}, "invalid:normalization:agreement")):
+            with self.subTest(normalization=normalization):
+                manifest["normalization"] = normalization
+                self.assertIn(error, validate_manifest(manifest))
+                self.assertEqual(evaluate_observations(manifest, observations)["status"], "invalid")
 
     def test_budget_retry_and_fixture_contracts(self):
         fixture_dir = ROOT / "tests/fixtures/optimization"

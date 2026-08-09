@@ -16,7 +16,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from optimization_core import atomic_write_json
-from runtime_protocol import age_runtime_state, empty_runtime_state, load_last_valid, normalize_codex_message, reduce_event, validate_initialize_response, write_runtime_state
+from runtime_protocol import age_runtime_state, empty_runtime_state, load_last_valid, normalize_codex_message, reduce_event, touch_runtime_state, validate_initialize_response, write_runtime_state
 
 
 def runtime_path(workspace: Path) -> Path:
@@ -163,10 +163,13 @@ async def connect_live(workspace: Path, url: str, token_env: str | None) -> None
         connect(url, additional_headers=headers, origin=None), timeout=10
     )
     initialized = False
+    has_persisted_live_event = False
     try:
         socket = socket_client
         await socket.send(json.dumps({"id": 1, "method": "initialize", "params": {"clientInfo": {"name": "mission-center-runtime", "version": "0.2.0"}}}))
-        initialize_response = json.loads(await asyncio.wait_for(socket.recv(), timeout=10))
+        initialize_raw = await asyncio.wait_for(socket.recv(), timeout=10)
+        state = touch_runtime_state(state)
+        initialize_response = json.loads(initialize_raw)
         validate_initialize_response(initialize_response, 1)
         await socket.send(json.dumps({"method": "initialized", "params": {}}))
         initialized = True
@@ -178,14 +181,20 @@ async def connect_live(workspace: Path, url: str, token_env: str | None) -> None
                 write_runtime_state(runtime_path(workspace), state)
                 continue
             sequence += 1
-            message = json.loads(raw)
+            state = touch_runtime_state(state)
+            try:
+                message = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
             events = normalize_codex_message(message, sequence, links)
+            if not events:
+                continue
             for event in events:
                 state = reduce_event(state, event)
-            if events:
-                write_runtime_state(runtime_path(workspace), state)
+            write_runtime_state(runtime_path(workspace), state)
+            has_persisted_live_event = True
     finally:
-        if initialized:
+        if initialized and has_persisted_live_event:
             write_runtime_state(runtime_path(workspace), age_runtime_state(state, socket_closed=True))
         await socket_client.close()
 

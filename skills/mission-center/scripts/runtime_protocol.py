@@ -124,7 +124,7 @@ def normalize_codex_message(message: dict[str, Any], sequence: int, task_links: 
         "sequence": sequence,
         "state": state,
     }
-    if method.casefold() == "item/started" and str(item.get("type", "")).casefold() == "collabtoolcall":
+    if method.casefold() == "item/started" and _is_collab_tool_call(item):
         sender = str(item.get("senderThreadId") or agent_id)
         receivers = item.get("receiverThreadIds") if isinstance(item.get("receiverThreadIds"), list) else []
         if receivers:
@@ -156,7 +156,7 @@ def _map_codex_method(method: str, params: dict[str, Any], item: dict[str, Any])
     if lower == "thread/tokenusage/updated":
         return "usage_updated", "working", "Usage updated", "none"
     if lower == "item/started":
-        if item_type == "collabtoolcall":
+        if item_type in {"collabagenttoolcall", "collabtoolcall"}:
             return "subagent_started", "working", "Collaborating with subagent", "none"
         labels = {
             "commandexecution": "Running command",
@@ -173,11 +173,20 @@ def _map_codex_method(method: str, params: dict[str, Any], item: dict[str, Any])
     return "", "idle", "", "none"
 
 
+def _is_collab_tool_call(item: dict[str, Any]) -> bool:
+    return str(item.get("type") or "").casefold() in {
+        "collabagenttoolcall",
+        "collabtoolcall",
+    }
+
+
 def reduce_event(state: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
     """Apply one event without changing any MissionCenter task file."""
     event = sanitize(event)
     if event.get("state") not in RUNTIME_STATES:
         raise ValueError(f"Unsupported runtime state: {event.get('state')}")
+    if event.get("eventType") == "turn_finished" and not event.get("taskIds"):
+        event = {**event, "activity": "Turn completed", "attention": "none"}
     agents = {agent["agentId"]: dict(agent) for agent in state.get("agents", []) if agent.get("agentId")}
     agent_id = str(event["agentId"])
     current = agents.get(agent_id)
@@ -223,13 +232,18 @@ def age_runtime_state(state: dict[str, Any], now: datetime | None = None, socket
         agent = dict(original)
         seen = _parse_time(agent.get("lastSeenAt"))
         age = (now - seen).total_seconds() if seen else float("inf")
-        if socket_closed or age >= 180:
+        if socket_closed:
             agent.update(state="disconnected", activity="Disconnected", attention="blocked", requiresAttention=True)
         elif age >= 60:
-            agent.update(state="stale", activity="No recent heartbeat", attention="blocked", requiresAttention=True)
+            agent.update(
+                state="stale",
+                activity="No recent provider activity",
+                attention="none",
+                requiresAttention=False,
+            )
         agents.append(agent)
     aged["agents"] = agents
-    aged["sourceStatus"] = "disconnected" if socket_closed else ("stale" if any(a["state"] == "stale" for a in agents) else state.get("sourceStatus", "connected"))
+    aged["sourceStatus"] = "disconnected" if socket_closed else state.get("sourceStatus", "connected")
     aged["updatedAt"] = utc_now()
     aged["attention"] = [{"agentId": a["agentId"], "kind": a["attention"], "activity": a["activity"], "taskIds": a.get("taskIds", [])} for a in agents if a.get("requiresAttention")]
     return aged

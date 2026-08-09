@@ -78,11 +78,27 @@ def route_profile(profile: dict[str, Any]) -> dict[str, Any]:
     reasons: list[str] = []
     missing: list[str] = []
 
-    if measurement in {"none", "subjective"} and profile.get("taskType") != "deterministic":
-        missing.append("repeatable_metric")
-        return _decision("research_spike", "evidence_collection", ["No repeatable measurement is available"], missing)
     if profile.get("taskType") == "deterministic" or shape == "none":
         return _decision("skip", "direct_verification", ["The task is deterministic or has no tunable parameters"], [])
+    if shape == "discrete" and measurement in {"none", "subjective"}:
+        local_cases = profile.get("localCases")
+        if isinstance(local_cases, list) and local_cases:
+            return _decision(
+                "decision",
+                "trade_study_scenario_stress",
+                ["Comparable qualitative evidence supports a discrete trade study"],
+                [],
+            )
+        missing.append("comparable_decision_evidence")
+        return _decision(
+            "research_spike",
+            "evidence_collection",
+            ["Discrete qualitative choices need comparable decision evidence"],
+            missing,
+        )
+    if measurement in {"none", "subjective"}:
+        missing.append("repeatable_metric")
+        return _decision("research_spike", "evidence_collection", ["No repeatable measurement is available"], missing)
     if int(budget.get("trials", 0) or 0) < 1:
         return _decision("research_spike", "budget_definition", ["Experiment budget is missing"], ["positive_trial_budget"])
 
@@ -148,6 +164,50 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
         for metric in (metrics if isinstance(metrics, list) else [])
     ):
         errors.append("invalid:metrics")
+        return errors
+    metric_names = {metric["name"] for metric in metrics}
+    if len(metric_names) != len(metrics):
+        errors.append("invalid:metrics")
+        return errors
+
+    normalization = manifest.get("normalization")
+    weights = manifest.get("weights")
+    if normalization is None and weights is None:
+        return errors  # Backward compatible: independent metrics need no composite score.
+    if not isinstance(normalization, dict) or not isinstance(weights, dict):
+        errors.append("invalid:composite_configuration")
+        return errors
+
+    weight_names = set(weights)
+    if weight_names != metric_names:
+        errors.append("invalid:weights_alignment")
+        return errors
+    if set(normalization) != metric_names:
+        errors.append("invalid:normalization_alignment")
+        return errors
+    for name, bounds in normalization.items():
+        if not isinstance(bounds, dict):
+            errors.append(f"invalid:normalization:{name}")
+            continue
+        low, high = bounds.get("min"), bounds.get("max")
+        if (
+            not isinstance(low, (int, float))
+            or isinstance(low, bool)
+            or not math.isfinite(low)
+            or not isinstance(high, (int, float))
+            or isinstance(high, bool)
+            or not math.isfinite(high)
+            or high <= low
+        ):
+            errors.append(f"invalid:normalization:{name}")
+    total_weight = 0.0
+    for name, value in weights.items():
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value < 0:
+            errors.append(f"invalid:weight:{name}")
+            continue
+        total_weight += float(value)
+    if not errors and (not math.isfinite(total_weight) or total_weight <= 0):
+        errors.append("invalid:weights_sum")
     return errors
 
 

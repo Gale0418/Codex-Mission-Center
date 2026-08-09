@@ -1,9 +1,9 @@
 <!-- Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files. -->
-<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v1 source-fingerprint=9f2a19abe11daab4d11176bcf628a4aa7e6b9e5730b7ef7b8740780b8394a74f -->
+<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=5427826f30c74fbc8e58cd1eb9de2fcf34e1b8c0ea09a52b76d72afde0bc03d6 -->
 # 任務簡報
 
 - Last organized: 2026-08-09
-- Source fingerprint: `9f2a19abe11daab4d11176bcf628a4aa7e6b9e5730b7ef7b8740780b8394a74f`
+- Source fingerprint: `5427826f30c74fbc8e58cd1eb9de2fcf34e1b8c0ea09a52b76d72afde0bc03d6`
 - Source of truth: `tasks.md`
 - 專案: Codex Mission Center
 - 北極星: 將 Mission Center 升級為研究驅動的自適應 Project OS，並提供可選的本機 Live Agent HUD
@@ -12,16 +12,8 @@
 ## 未完成 P0 (0)
 - 無
 
-## 進行中／就緒 (0)
-- 無
-
-## 阻塞 (0)
-- 無
-
-## 審查 (0)
-- 無
-
 ## 今日摘要 · 2026-08-09
+- 完成 Stabilization and Contract Fix Pass：修正跨平台 fingerprint、P0 compact views、qualitative routing、composite validation、Codex collab 事件、transport/activity 分離與低噪音 attention；CodeRabbit 2 issues 經重現後修正。
 - 第 3 次 CodeRabbit 聚焦審查因臨時 repo 無法判定 base branch 而回傳 error；遵守每小時三次限制未重試，狀態記為 unavailable，不宣稱通過。
 - 發布 Mission Center 至個人 Skill 與本機 marketplace，重新註冊 plugin 並驗證 personal／marketplace／cache 三方一致。
 - 新增 Dynamic Expert Council Gate：保留前期 Creative Council，另為中後期重大決策提供依複雜度啟動的專家契約、盲點、異議與 handoff 收斂。

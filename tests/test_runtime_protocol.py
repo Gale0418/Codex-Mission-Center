@@ -79,19 +79,32 @@ class RuntimeProtocolTests(unittest.TestCase):
         self.assertLess(datetime.fromisoformat(event["timestamp"].replace("Z", "+00:00")), datetime(2999, 1, 1, tzinfo=timezone.utc))
 
     def test_collab_tool_call_creates_parent_linked_subagent(self):
-        message = {"method": "item/started", "params": {"threadId": "parent", "item": {"id": "i", "type": "collabToolCall", "senderThreadId": "parent", "receiverThreadIds": ["child"], "prompt": "must not persist"}}}
+        for item_type in ("collabAgentToolCall", "collabToolCall"):
+            with self.subTest(item_type=item_type):
+                message = {"method": "item/started", "params": {"threadId": "parent", "item": {"id": "i", "type": item_type, "senderThreadId": "parent", "receiverThreadIds": ["child-a", "child-b"], "prompt": "must not persist"}}}
+                events = normalize_codex_message(message, 1)
+                self.assertEqual([event["agentId"] for event in events], ["child-a", "child-b"])
+                self.assertTrue(all(event["parentAgentId"] == "parent" for event in events))
+                self.assertNotIn("prompt", json.dumps(events))
+
+    def test_collab_tool_call_does_not_infer_unverified_singular_receiver(self):
+        message = {"method": "item/started", "params": {"threadId": "parent", "item": {"id": "i", "type": "collabAgentToolCall", "newThreadId": "child"}}}
         event = normalize_codex_message(message, 1)[0]
-        self.assertEqual(event["agentId"], "child")
-        self.assertEqual(event["parentAgentId"], "parent")
-        self.assertNotIn("prompt", json.dumps(event))
+        self.assertEqual(event["agentId"], "parent")
 
     def test_stale_disconnect_and_reconnect(self):
         state = reduce_event(empty_runtime_state("connected"), self.event())
         now = datetime(2026, 8, 9, 0, 1, 1, tzinfo=timezone.utc)
         self.assertEqual(age_runtime_state(state, now)["agents"][0]["state"], "stale")
         later = datetime(2026, 8, 9, 0, 3, 1, tzinfo=timezone.utc)
-        self.assertEqual(age_runtime_state(state, later)["agents"][0]["state"], "disconnected")
-        reconnected = reduce_event(age_runtime_state(state, later), self.event(2, state="working"))
+        aged = age_runtime_state(state, later)
+        self.assertEqual(aged["agents"][0]["state"], "stale")
+        self.assertEqual(aged["sourceStatus"], "connected")
+        self.assertFalse(aged["agents"][0]["requiresAttention"])
+        self.assertEqual(aged["attention"], [])
+        disconnected = age_runtime_state(state, later, socket_closed=True)
+        self.assertEqual(disconnected["agents"][0]["state"], "disconnected")
+        reconnected = reduce_event(aged, self.event(2, state="working"))
         self.assertEqual(reconnected["agents"][0]["state"], "working")
 
     def test_naive_timestamp_is_treated_as_utc(self):
@@ -106,6 +119,27 @@ class RuntimeProtocolTests(unittest.TestCase):
         self.assertEqual(touched["agents"][0]["state"], "waiting_approval")
         self.assertEqual(touched["sourceStatus"], "connected")
         self.assertEqual(touched["agents"][0]["lastSeenAt"], state["agents"][0]["lastSeenAt"])
+
+    def test_unlinked_completion_is_silent_but_linked_completion_requires_verification(self):
+        unlinked = normalize_codex_message(
+            {"method": "turn/completed", "params": {"threadId": "t", "agentId": "a", "status": "completed"}},
+            1,
+        )[0]
+        silent = reduce_event(empty_runtime_state("connected"), unlinked)
+        self.assertFalse(silent["agents"][0]["requiresAttention"])
+        self.assertEqual(silent["attention"], [])
+        linked = normalize_codex_message(
+            {"method": "turn/completed", "params": {"threadId": "t", "agentId": "a", "status": "completed", "taskIds": ["MC-009"]}},
+            2,
+        )[0]
+        attention = reduce_event(silent, linked)
+        self.assertTrue(attention["agents"][0]["requiresAttention"])
+        self.assertEqual(attention["attention"][0]["kind"], "verification")
+
+    def test_runtime_reference_limits_visibility_until_attach_contract_is_verified(self):
+        reference = (ROOT / "skills/mission-center/references/runtime-agent-protocol.md").read_text(encoding="utf-8")
+        for phrase in ("configured endpoint", "never global Codex Desktop monitoring", "thread/list", "thread/loaded/list", "thread/resume", "explicitly declared and tested"):
+            self.assertIn(phrase, reference)
 
     def test_runtime_state_size_and_reducer_latency_budget(self):
         import time
@@ -164,6 +198,50 @@ class RuntimeProtocolTests(unittest.TestCase):
                 with self.assertRaisesRegex(ConnectionError, "offline"):
                     asyncio.run(connect_live(workspace, "ws://127.0.0.1:9999", None))
             self.assertEqual(load_last_valid(path), original)
+
+    def test_invalid_or_unsupported_live_payload_preserves_last_valid_runtime_state(self):
+        class FakeSocket:
+            def __init__(self, payload):
+                self.payloads = iter([
+                    json.dumps({"id": 1, "result": {}}),
+                    payload,
+                ])
+
+            async def send(self, message):
+                return None
+
+            async def recv(self):
+                try:
+                    return next(self.payloads)
+                except StopIteration as exc:
+                    raise ConnectionError("closed") from exc
+
+            async def close(self):
+                return None
+
+        async def fake_connect(*args, **kwargs):
+            return FakeSocket(payload)
+
+        websockets = types.ModuleType("websockets")
+        websockets.__version__ = "16.1"
+        asyncio_module = types.ModuleType("websockets.asyncio")
+        client_module = types.ModuleType("websockets.asyncio.client")
+        client_module.connect = fake_connect
+        modules = {
+            "websockets": websockets,
+            "websockets.asyncio": asyncio_module,
+            "websockets.asyncio.client": client_module,
+        }
+        for payload in ("{broken", json.dumps({"method": "unsupported/event", "params": {}})):
+            with self.subTest(payload=payload), workspace_tempdir() as temp:
+                workspace = Path(temp)
+                path = workspace / "output/mission-center-runtime/runtime-state.json"
+                original = empty_runtime_state("file")
+                write_runtime_state(path, original)
+                with mock.patch.dict(sys.modules, modules):
+                    with self.assertRaisesRegex(ConnectionError, "closed"):
+                        asyncio.run(connect_live(workspace, "ws://127.0.0.1:9999", None))
+                self.assertEqual(load_last_valid(path), original)
 
     def test_loopback_host_validation_and_server_family(self):
         for value in ("127.0.0.1:8765", "localhost", "[::1]:8765"):
