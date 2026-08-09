@@ -5,7 +5,8 @@ on:
   pull_request:
 
 jobs:
-  test:
+  matrix:
+    name: matrix (${{ matrix.os }}, ${{ matrix.runtime }})
     strategy:
       fail-fast: false
       matrix:
@@ -35,3 +36,12 @@ jobs:
           python skills/mission-center/scripts/normalize_mission_center.py "$workspace"
           python skills/mission-center/scripts/sync_mission_center.py "$workspace"
           python skills/mission-center/scripts/doctor_mission_center.py "$workspace"
+
+  test:
+    name: test
+    needs: matrix
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every matrix job to succeed
+        run: test "${{ needs.matrix.result }}" = "success"

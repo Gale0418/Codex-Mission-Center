@@ -3,7 +3,7 @@
 - 最後整理： 2026-08-09
 
 ## 2026-08-09
-- 完成 Stabilization and Contract Fix Pass：修正跨平台 fingerprint、P0 compact views、qualitative routing、composite validation、Codex collab 事件、transport/activity 分離與低噪音 attention；CodeRabbit 2 issues 經重現後修正；Windows CI 另修正 8.3 短路徑 alias 的測試誤判。
+- 完成 Stabilization and Contract Fix Pass：修正跨平台 fingerprint、P0 compact views、qualitative routing、composite validation、Codex collab 事件、transport/activity 分離與低噪音 attention；CodeRabbit 2 issues 經重現後修正；Windows CI 另修正 8.3 短路徑 alias，並新增固定 `test` 聚合 job 對齊 main branch protection。
 - 第 3 次 CodeRabbit 聚焦審查因臨時 repo 無法判定 base branch 而回傳 error；遵守每小時三次限制未重試，狀態記為 unavailable，不宣稱通過。
 - 發布 Mission Center 至個人 Skill 與本機 marketplace，重新註冊 plugin 並驗證 personal／marketplace／cache 三方一致。
 - 新增 Dynamic Expert Council Gate：保留前期 Creative Council，另為中後期重大決策提供依複雜度啟動的專家契約、盲點、異議與 handoff 收斂。

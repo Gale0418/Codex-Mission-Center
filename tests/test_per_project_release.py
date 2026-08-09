@@ -83,6 +83,12 @@ class PerProjectReleaseTests(unittest.TestCase):
             self.assertIn(phrase, workflow)
         self.assertIn("os: [ubuntu-latest, windows-latest]", workflow)
         self.assertIn("runtime: [core, websocket]", workflow)
+        for phrase in (
+            "  matrix:\n    name: matrix (${{ matrix.os }}, ${{ matrix.runtime }})",
+            "  test:\n    name: test\n    needs: matrix\n    if: always()",
+            'test "${{ needs.matrix.result }}" = "success"',
+        ):
+            self.assertIn(phrase, workflow)
 
     def test_release_checklist_repeats_product_boundaries(self):
         checklist = (ROOT / "RELEASE_CHECKLIST.md").read_text(encoding="utf-8").lower()
