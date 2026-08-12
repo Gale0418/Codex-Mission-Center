@@ -21,9 +21,23 @@ MissionCenter/
   snapshot.md
   closeout.md
   visual-hub.md
+  legacy-done-audit.json  # optional migration record
 ```
 
 `brief.md` and `focus.md` are disposable derived views. All other listed files are canonical records.
+
+`legacy-done-audit.json` is optional and only records pre-policy Done tasks whose standardized smoke evidence cannot be reconstructed without fabrication. It never counts as passing evidence. Use exact task IDs and a concrete migration reason:
+
+```json
+{
+  "schemaVersion": "1.0",
+  "recordedAt": "2026-08-12",
+  "reason": "Imported before smoke evidence enforcement; no pass was fabricated.",
+  "taskIds": ["LEGACY-T1"]
+}
+```
+
+Doctor reports these IDs as warnings. Unknown IDs, non-Done IDs, malformed dates, duplicates, or newly completed tasks without smoke evidence still fail validation.
 
 ## File Roles
 

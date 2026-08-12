@@ -100,6 +100,8 @@ python skills/mission-center/scripts/sync_mission_center.py .
 python skills/mission-center/scripts/doctor_mission_center.py .
 ```
 
+同步預設採安全遷移模式：既有、未標記的 `project.md` 與 `progress.md` 不會被覆寫，只更新 HUD 與 `brief.md`／`focus.md`。只有明確希望任務中心接管這兩份摘要時才使用 `--rewrite-summaries`。若舊工作區在證據政策建立前已有 Done 任務，可用逐項 `MissionCenter/legacy-done-audit.json` 記錄；doctor 仍會顯示未驗證警告，不會把它冒充成通過的 smoke test。
+
 恢復任務時先檢查短摘要，或用純規則記一筆今日事件：
 
 ```bash

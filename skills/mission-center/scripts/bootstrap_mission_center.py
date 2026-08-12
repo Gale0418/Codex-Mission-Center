@@ -25,7 +25,8 @@ Automation must not add, promote, or retire guardrails without explicit human ap
 
 - Last organized: 1970-01-01
 """,
-    "project.md": """# Project
+    "project.md": """<!-- mission-center-managed-summary v=1 -->
+# Project
 
 - Goal:
 - Cycle:
@@ -33,7 +34,8 @@ Automation must not add, promote, or retire guardrails without explicit human ap
 - Activity log:
 - Open comments:
 """,
-    "progress.md": """# Progress
+    "progress.md": """<!-- mission-center-managed-summary v=1 -->
+# Progress
 
 - Project:
 - Objective:
@@ -109,7 +111,8 @@ FILES_ZH_TW = {
 
 - 最後整理：1970-01-01
 """,
-    "project.md": """# 專案
+    "project.md": """<!-- mission-center-managed-summary v=1 -->
+# 專案
 
 - 目標：
 - 週期：
@@ -117,7 +120,8 @@ FILES_ZH_TW = {
 - 活動紀錄：
 - 開放問題：
 """,
-    "progress.md": """# 進度
+    "progress.md": """<!-- mission-center-managed-summary v=1 -->
+# 進度
 
 - 專案：
 - 目標：

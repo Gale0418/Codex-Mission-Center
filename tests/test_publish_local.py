@@ -159,7 +159,7 @@ class PublishLocalTests(unittest.TestCase):
                 actual_command = actual_call.args[0]
                 self.assertEqual(len(actual_command), len(expected_command))
                 for index, (actual, expected) in enumerate(zip(actual_command, expected_command)):
-                    if sys.platform == "win32" and index in path_indexes:
+                    if index in path_indexes:
                         self.assertTrue(Path(actual).samefile(Path(expected)))
                     else:
                         self.assertEqual(actual, expected)

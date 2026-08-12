@@ -165,6 +165,7 @@ def main() -> int:
     project = root / "project.md"
     if args.force or project_goal_is_blank(project):
         project.write_text(
+            "<!-- mission-center-managed-summary v=1 -->\n"
             f"# {labels['project_title']}\n\n"
             f"- {labels['project']}: {args.project}\n"
             f"- {labels['goal']}: {args.goal}\n"

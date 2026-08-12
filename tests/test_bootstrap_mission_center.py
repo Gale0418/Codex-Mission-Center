@@ -84,10 +84,14 @@ class BootstrapMissionCenterTests(unittest.TestCase):
             }
             for language, expected in headings.items():
                 for name, heading in expected.items():
-                    self.assertTrue(
+                    first_lines = (
                         (root / language / "MissionCenter" / name)
                         .read_text(encoding="utf-8")
-                        .startswith(heading),
+                        .splitlines()[:2]
+                    )
+                    self.assertIn(
+                        heading,
+                        first_lines,
                         f"{language}/{name} should begin with {heading}",
                     )
 

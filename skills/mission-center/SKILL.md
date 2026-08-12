@@ -82,6 +82,8 @@ Use Superpowers-style gates: `Brainstorm -> Spec -> Plan -> TDD -> Verify -> Clo
 
 Follow [visual-hub.md](references/visual-hub.md) and [runtime-agent-protocol.md](references/runtime-agent-protocol.md). One helper represents one task on the map. The helper name, order, zone, and count come from `tasks.md`, never runtime agents or execution parallelism. Optional runtime agents render in a separate Live Agents surface and cannot modify Task status. Run `scripts/sync_mission_center.py` after task-state changes.
 
+`sync_mission_center.py` is non-destructive for legacy workspaces: unmarked `project.md` and `progress.md` are preserved while HUD state and materialized views update. Use `--rewrite-summaries` only when intentionally adopting those two files as generated summaries. A fresh bootstrap marks them automatically. Historical Done tasks without standardized smoke evidence may be listed explicitly in `legacy-done-audit.json`; doctor reports each as warning-level unverified debt, never as a passing test. New Done tasks still require passing smoke evidence.
+
 ### 11. Optional Final CodeRabbit Review
 
 After implementation and local verification, use [coderabbit-review-gate.md](references/coderabbit-review-gate.md) when the user requests independent code review or the change is large or high risk. CodeRabbit checks implementation, security, and regression risks before experience critics inspect the resulting artifact. Obtain upload consent, scope out irrelevant large files, verify every issue, and never report a failed or rate-limited review as passed.

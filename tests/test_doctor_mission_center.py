@@ -11,7 +11,7 @@ SCRIPTS = ROOT / "skills" / "mission-center" / "scripts"
 FIXTURE = ROOT / "tests" / "fixtures" / "demo-workspace"
 sys.path.insert(0, str(SCRIPTS))
 
-from doctor_mission_center import inspect_workspace
+from doctor_mission_center import inspect_workspace, inspect_workspace_report
 
 
 class DoctorMissionCenterTests(unittest.TestCase):
@@ -52,11 +52,55 @@ class DoctorMissionCenterTests(unittest.TestCase):
                 any("Done task DEMO-003" in error for error in inspect_workspace(workspace))
             )
 
+    def test_explicit_legacy_done_audit_is_warning_not_fabricated_pass(self):
+        with workspace_tempdir("doctor-legacy-done-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            mission = workspace / "MissionCenter"
+            smoke = mission / "smoke-tests.md"
+            smoke.write_text(
+                smoke.read_text(encoding="utf-8").replace("| 通過 |", "| 失敗 |"),
+                encoding="utf-8",
+            )
+            (mission / "legacy-done-audit.json").write_text(
+                '{\n'
+                '  "schemaVersion": "1.0",\n'
+                '  "recordedAt": "2026-08-12",\n'
+                '  "reason": "Imported before smoke evidence enforcement; no pass was fabricated.",\n'
+                '  "taskIds": ["DEMO-003"]\n'
+                '}\n',
+                encoding="utf-8",
+            )
+
+            errors, warnings = inspect_workspace_report(workspace)
+
+            self.assertEqual(errors, [])
+            self.assertTrue(any("DEMO-003" in warning for warning in warnings))
+            self.assertFalse(any("passing smoke-test" in warning for warning in warnings))
+
+    def test_legacy_done_audit_rejects_unknown_or_non_done_tasks(self):
+        with workspace_tempdir("doctor-invalid-legacy-done-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            mission = workspace / "MissionCenter"
+            (mission / "legacy-done-audit.json").write_text(
+                '{"schemaVersion":"1.0","recordedAt":"2026-08-12",'
+                '"reason":"migration","taskIds":["UNKNOWN","DEMO-001"]}\n',
+                encoding="utf-8",
+            )
+
+            errors, _ = inspect_workspace_report(workspace)
+
+            self.assertTrue(any("UNKNOWN" in error for error in errors))
+            self.assertTrue(any("DEMO-001" in error for error in errors))
+
     def test_stale_progress_fails(self):
         with workspace_tempdir("doctor-progress-") as temporary:
             workspace = self.copy_fixture(Path(temporary))
             progress = workspace / "MissionCenter" / "progress.md"
-            progress.write_text("# 進度\n\n- 進度條：[----------] 0%\n", encoding="utf-8")
+            progress.write_text(
+                "<!-- mission-center-managed-summary v=1 -->\n"
+                "# 進度\n\n- 進度條：[----------] 0%\n",
+                encoding="utf-8",
+            )
             self.assertTrue(
                 any("progress.md is stale" in error for error in inspect_workspace(workspace))
             )

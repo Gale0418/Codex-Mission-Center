@@ -44,6 +44,6 @@ Show the first 10 unfinished tasks. Completed tasks do not consume those slots. 
 
 ## Bootstrap Output
 
-Copy the bundled HUD into `output/mission-center-assets/` and create `MissionCenter/visual-hub.md` with a direct link to `visual-summary.html`. Run `scripts/sync_mission_center.py` after task changes so the JSON state and Markdown summaries stay aligned.
+Copy the bundled HUD into `output/mission-center-assets/` and create `MissionCenter/visual-hub.md` with a direct link to `visual-summary.html`. Run `scripts/sync_mission_center.py` after task changes so JSON state and materialized views stay aligned. Legacy `project.md` and `progress.md` files without the managed-summary marker are preserved; use `--rewrite-summaries` only for an intentional one-time adoption into generated summaries.
 
 If task parsing fails, report the exact error and keep the previous state file. Do not invent tasks to make the HUD look populated.

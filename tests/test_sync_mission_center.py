@@ -18,6 +18,48 @@ from sync_mission_center import compute_progress, parse_table
 
 
 class SyncMissionCenterTests(unittest.TestCase):
+    def test_sync_preserves_unmanaged_legacy_summaries_by_default(self):
+        with workspace_tempdir("sync-legacy-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            shutil.copytree(FIXTURE, workspace)
+            project = workspace / "MissionCenter" / "project.md"
+            progress = workspace / "MissionCenter" / "progress.md"
+            project.write_text("# Legacy project\n\nKeep every historical line.\n", encoding="utf-8")
+            progress.write_text("# Legacy progress\n\nKeep the curated current lane.\n", encoding="utf-8")
+
+            result = subprocess.run(
+                [sys.executable, str(SYNC), str(workspace)],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(project.read_text(encoding="utf-8"), "# Legacy project\n\nKeep every historical line.\n")
+            self.assertEqual(progress.read_text(encoding="utf-8"), "# Legacy progress\n\nKeep the curated current lane.\n")
+            self.assertTrue(
+                (workspace / "output" / "mission-center-assets" / "visual-state.json").is_file()
+            )
+
+    def test_rewrite_summaries_marks_files_as_managed(self):
+        with workspace_tempdir("sync-managed-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            shutil.copytree(FIXTURE, workspace)
+
+            result = subprocess.run(
+                [sys.executable, str(SYNC), str(workspace), "--rewrite-summaries"],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for name in ("project.md", "progress.md"):
+                text = (workspace / "MissionCenter" / name).read_text(encoding="utf-8")
+                self.assertIn("<!-- mission-center-managed-summary v=1 -->", text)
+
     def test_sync_writes_visual_state_json(self):
         with workspace_tempdir("sync-state-") as temporary:
             workspace = Path(temporary) / "workspace"

@@ -133,6 +133,8 @@ python skills/mission-center/scripts/sync_mission_center.py .
 python skills/mission-center/scripts/doctor_mission_center.py .
 ```
 
+Sync is migration-safe by default. Existing unmarked `project.md` and `progress.md` files are left unchanged while HUD state and `brief.md`/`focus.md` refresh. Pass `--rewrite-summaries` only when you intentionally want Mission Center to adopt and regenerate those two files. Doctor can acknowledge pre-policy Done tasks through an explicit `MissionCenter/legacy-done-audit.json`; those entries remain visible warnings and are never reported as passing smoke tests.
+
 Resume with compact context or record one daily event without a model call:
 
 ```bash

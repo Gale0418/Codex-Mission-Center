@@ -11,6 +11,9 @@ from pathlib import Path
 from visual_state import build_visual_state, normalize_tasks
 
 
+MANAGED_SUMMARY_MARKER = "<!-- mission-center-managed-summary v=1 -->"
+
+
 TEXT = {
     "en": {
         "progress_title": "Progress",
@@ -287,6 +290,7 @@ def update_progress(
     active_lines = "".join(f"  - {item}\n" for item in active) or f"  - {labels['none']}\n"
     blocked_lines = "".join(f"  - {item}\n" for item in blocked) or f"  - {labels['none']}\n"
     content = (
+        f"{MANAGED_SUMMARY_MARKER}\n"
         f"# {labels['progress_title']}\n\n"
         f"- {labels['project_label']}: {project}\n"
         f"- {labels['objective_label']}: {objective}\n"
@@ -332,6 +336,7 @@ def update_project(
     custom_bullet_lines = "".join(f"{line}\n" for line in custom_bullets)
     custom_section_block = "\n\n".join(section for section in custom_sections if section)
     content = (
+        f"{MANAGED_SUMMARY_MARKER}\n"
         f"# {labels['project_title']}\n\n"
         f"- {labels['project_label']}: {project}\n"
         f"- {labels['goal_label']}: {goal}\n"
@@ -346,6 +351,12 @@ def update_project(
     if custom_section_block:
         content = content.rstrip() + "\n\n" + custom_section_block + "\n"
     path.write_text(content, encoding="utf-8")
+
+
+def is_managed_summary(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    return MANAGED_SUMMARY_MARKER in path.read_text(encoding="utf-8")
 
 
 def update_visual_state(workspace_root: Path, state: dict[str, object]) -> None:
@@ -369,6 +380,14 @@ def main() -> int:
     parser.add_argument("--labels")
     parser.add_argument("--milestone")
     parser.add_argument(
+        "--rewrite-summaries",
+        action="store_true",
+        help=(
+            "Adopt and rewrite project.md/progress.md as generated summaries. "
+            "Without this flag, unmarked legacy summaries are preserved."
+        ),
+    )
+    parser.add_argument(
         "--activity", default="",
         help="Optional event written to daily-log.md, not project.md.",
     )
@@ -388,8 +407,22 @@ def main() -> int:
     tasks = normalize_tasks(raw_tasks)
     smoke_tests = parse_table(root / "smoke-tests.md")
     percent, mode, active, blocked = compute_progress(tasks)
-    update_project(root / "project.md", project, cycle, goal, labels_text, "", language)
-    update_progress(root / "progress.md", project, goal, milestone, percent, mode, active, blocked, language)
+    project_path = root / "project.md"
+    progress_path = root / "progress.md"
+    if args.rewrite_summaries or is_managed_summary(project_path):
+        update_project(project_path, project, cycle, goal, labels_text, "", language)
+    if args.rewrite_summaries or is_managed_summary(progress_path):
+        update_progress(
+            progress_path,
+            project,
+            goal,
+            milestone,
+            percent,
+            mode,
+            active,
+            blocked,
+            language,
+        )
     update_visual_state(root.parent, build_visual_state(tasks, goal, percent))
     from mission_maintenance import run_daily, run_sync
 
