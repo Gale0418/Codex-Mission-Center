@@ -60,6 +60,31 @@ class InstallGitHookTests(unittest.TestCase):
         finally:
             shutil.rmtree(repo)
 
+    def test_existing_generated_crlf_hook_is_upgraded_to_lf(self):
+        installer = load_installer()
+        repo = fresh_test_dir("hook-tool-crlf")
+        try:
+            hook = repo / ".git" / "hooks" / "post-commit"
+            hook.parent.mkdir(parents=True)
+            legacy = (
+                "#!/bin/sh\n"
+                f"{installer.TOOL_MARKER}\n"
+                "python skills/mission-center/scripts/sync_mission_center.py 2>/dev/null || true\n"
+            )
+            hook.write_bytes(legacy.replace("\n", "\r\n").encode("utf-8"))
+
+            self.assertTrue(installer.install_git_hook(repo))
+
+            self.assertEqual(
+                hook.read_bytes(),
+                installer.POST_COMMIT_HOOK_SCRIPT.encode("utf-8"),
+            )
+            self.assertNotIn(b"\r\n", hook.read_bytes())
+            if sys.platform != "win32":
+                self.assertTrue(hook.stat().st_mode & 0o100)
+        finally:
+            shutil.rmtree(repo)
+
 
 if __name__ == "__main__":
     unittest.main()
