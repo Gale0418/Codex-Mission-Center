@@ -1,9 +1,9 @@
 <!-- Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files. -->
-<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=95734e2e908c40a53b94064f37ce50500b7f0ccb997befbf4157e3a8c1543ca1 -->
+<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=ccd000da584b810b512fcf9fd46e10c0b4d09bd099b8f13a4448bfa73050a75e -->
 # 任務簡報
 
 - 最後整理: 2026-08-13
-- 來源指紋: `95734e2e908c40a53b94064f37ce50500b7f0ccb997befbf4157e3a8c1543ca1`
+- 來源指紋: `ccd000da584b810b512fcf9fd46e10c0b4d09bd099b8f13a4448bfa73050a75e`
 - 唯一真實來源: `tasks.md`
 - 專案: Codex Mission Center
 - 北極星: 將 Mission Center 升級為研究驅動的自適應 Project OS，並提供可選的本機 Live Agent HUD
@@ -13,6 +13,7 @@
 - 完成 v0.3 記憶核心、續航防呆、正確性與薄路由整合，進入最終審查。
 - 完成 v0.3 全量驗證、本機 Skill 與 marketplace source 發布、GitHub draft PR #6；舊 Plugin cache refresh 因 WindowsApps 權限改列已知限制。
 - 完成 v0.3 CodeRabbit 三輪收斂：初審 10 findings 全修、delta 1 Minor 補實跑 hook 測試、最終 0 findings；完整 209 tests、Doctor、Skill 與 Plugin validation 全綠，準備快轉推送 main。
+- 修正 PR #6 首輪 CI 的兩個跨平台邊界：POSIX 淺路徑 fixture 與零任務 working-set Doctor 契約；新增回歸後完整 210 tests 全綠。
 
 ## 重要護欄 (7)
 - GR-001

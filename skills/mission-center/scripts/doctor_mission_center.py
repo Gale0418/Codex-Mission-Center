@@ -250,9 +250,13 @@ def inspect_workspace_report(workspace: Path) -> tuple[list[str], list[str]]:
             errors.append(
                 f"working-set.md exceeds hard limit ({ws_byte_count} > {WORKING_SET_MAX_BYTES} bytes)"
             )
-        ws_rows, ws_errors = parse_table_strict(ws_path, "working-set.md")
-        errors.extend(ws_errors)
         expected_ws_ids = [task["ID"] for task in extract_working_set_tasks(tasks, limit=6)]
+        ws_rows, ws_errors = parse_table_strict(ws_path, "working-set.md")
+        if not expected_ws_ids and ws_errors == [
+            "working-set.md does not contain a Markdown table"
+        ]:
+            ws_errors = []
+        errors.extend(ws_errors)
         actual_ws_ids = [row.get("ID", "").strip() for row in ws_rows]
         truncated = "[TRUNCATED]" in ws_path.read_text(encoding="utf-8")
         expected_visible_ids = expected_ws_ids[:len(actual_ws_ids)] if truncated else expected_ws_ids

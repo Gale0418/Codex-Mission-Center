@@ -1,4 +1,5 @@
 import shutil
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -23,6 +24,23 @@ class DoctorMissionCenterTests(unittest.TestCase):
     def test_valid_demo_workspace_has_no_errors(self):
         with workspace_tempdir("doctor-valid-") as temporary:
             workspace = self.copy_fixture(Path(temporary))
+            self.assertEqual(inspect_workspace(workspace), [])
+
+    def test_bootstrap_empty_working_set_without_table_is_valid(self):
+        with workspace_tempdir("doctor-empty-working-set-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            for script, extra_args in (
+                ("bootstrap_mission_center.py", ["--language", "zh-TW"]),
+                ("normalize_mission_center.py", []),
+                ("sync_mission_center.py", []),
+            ):
+                subprocess.run(
+                    [sys.executable, str(SCRIPTS / script), str(workspace), *extra_args],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
             self.assertEqual(inspect_workspace(workspace), [])
 
     def test_missing_required_file_fails(self):
