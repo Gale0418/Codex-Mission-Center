@@ -33,7 +33,7 @@ class InstallGitHookTests(unittest.TestCase):
         installer = load_installer()
         repo = fresh_test_dir("hook-non-tool")
         try:
-            hook = repo / ".git" / "hooks" / "post-commit"
+            hook = repo / ".git" / "hooks" / "pre-commit"
             hook.parent.mkdir(parents=True)
             hook.write_text("#!/bin/sh\necho user-hook\n", encoding="utf-8")
 
@@ -49,13 +49,25 @@ class InstallGitHookTests(unittest.TestCase):
         finally:
             shutil.rmtree(repo)
 
+    def test_existing_post_commit_is_never_changed(self):
+        repo = fresh_test_dir("hook-post-commit-preserved")
+        try:
+            post_commit = repo / ".git" / "hooks" / "post-commit"
+            post_commit.parent.mkdir(parents=True)
+            post_commit.write_text("#!/bin/sh\necho user-post-commit\n", encoding="utf-8")
+            self.assertTrue(load_installer().install_git_hook(repo))
+            self.assertEqual(post_commit.read_text(encoding="utf-8"), "#!/bin/sh\necho user-post-commit\n")
+            self.assertTrue((repo / ".git" / "hooks" / "pre-commit").exists())
+        finally:
+            shutil.rmtree(repo)
+
     def test_existing_tool_hook_is_idempotent(self):
         installer = load_installer()
         repo = fresh_test_dir("hook-tool")
         try:
-            hook = repo / ".git" / "hooks" / "post-commit"
+            hook = repo / ".git" / "hooks" / "pre-commit"
             hook.parent.mkdir(parents=True)
-            hook.write_text(installer.POST_COMMIT_HOOK_SCRIPT, encoding="utf-8")
+            hook.write_text(installer.PRE_COMMIT_HOOK_SCRIPT, encoding="utf-8")
             self.assertTrue(installer.install_git_hook(repo))
         finally:
             shutil.rmtree(repo)
@@ -64,7 +76,7 @@ class InstallGitHookTests(unittest.TestCase):
         installer = load_installer()
         repo = fresh_test_dir("hook-tool-crlf")
         try:
-            hook = repo / ".git" / "hooks" / "post-commit"
+            hook = repo / ".git" / "hooks" / "pre-commit"
             hook.parent.mkdir(parents=True)
             legacy = (
                 "#!/bin/sh\n"
@@ -77,7 +89,7 @@ class InstallGitHookTests(unittest.TestCase):
 
             self.assertEqual(
                 hook.read_bytes(),
-                installer.POST_COMMIT_HOOK_SCRIPT.encode("utf-8"),
+                installer.PRE_COMMIT_HOOK_SCRIPT.encode("utf-8"),
             )
             self.assertNotIn(b"\r\n", hook.read_bytes())
             if sys.platform != "win32":

@@ -132,6 +132,10 @@ class WorkspaceTemplateTests(unittest.TestCase):
             self.assertIn("| Ready |", rows[1])
             self.assertIn("| Backlog |", rows[2])
             self.assertNotIn("SmokeTest", tasks)
+            smoke_tests = (workspace / "MissionCenter" / "smoke-tests.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertNotIn("|  |  |  |  |  |  |  | manual |", smoke_tests)
             task_lines = tasks.splitlines()
             self.assertGreater(len(task_lines), 2, "tasks.md should have a header")
             self.assertNotIn("| Review |", task_lines[2])
@@ -442,9 +446,9 @@ class WorkspaceTemplateTests(unittest.TestCase):
             closeout = (workspace / "MissionCenter" / "closeout.md").read_text(
                 encoding="utf-8"
             )
-            self.assertIn("# 快照", snapshot)
-            self.assertIn("- 專案: 照護專案", snapshot)
-            self.assertIn("- 近期決策:", snapshot)
+            self.assertIn("# 執行檢查點", snapshot)
+            self.assertIn("- 狀態: Inactive", snapshot)
+            self.assertIn("- 指紋:", snapshot)
             self.assertIn("# 收尾", closeout)
             self.assertIn("- 摘要: 本輪完成同步與驗證", closeout)
             self.assertIn("- 冒煙測試: 2 項通過", closeout)

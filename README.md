@@ -22,7 +22,7 @@ It does not merge tasks across projects.
 - Presents approaches and writes only the user-approved rolling task draft.
 - Creates or reuses `MissionCenter/` in the current workspace.
 - Tracks project summary, progress, tasks, decisions, notes, snapshots, and smoke tests.
-- Uses a model-free daily journal, approved guardrails, and disposable `brief.md` / `focus.md` views to reduce repeated context loading.
+- Uses a model-free daily journal, approved guardrails, `working-set.md`, and verified `critical-lessons.md` to reduce repeated context loading.
 - Keeps task state local and readable as Markdown.
 - Follows the user's language for generated workspace files, including Traditional Chinese.
 - Shows one animated HUD helper per task and moves it with the task lifecycle.
@@ -61,6 +61,8 @@ The skill will create files like:
 MissionCenter/
   brief.md
   focus.md
+  working-set.md
+  critical-lessons.md
   guardrails.md
   daily-log.md
   project.md
@@ -143,7 +145,7 @@ python skills/mission-center/scripts/mission_maintenance.py . daily --message "V
 python skills/mission-center/scripts/mission_maintenance.py . sync
 ```
 
-`tasks.md` remains the only task lifecycle source. `brief.md` and `focus.md` are content-fingerprinted materialized views and are safe to delete and rebuild. Guardrail changes require explicit human approval.
+`tasks.md` remains the only task lifecycle source. `brief.md` and `working-set.md` are content-fingerprinted materialized views and are safe to delete and rebuild. `focus.md` is a deprecated generated compatibility view, never a second truth source. Active critical lessons stay within a 6 KiB budget and point to detailed `incidents/` evidence. Guardrail changes require explicit human approval.
 
 ## Local Publishing
 

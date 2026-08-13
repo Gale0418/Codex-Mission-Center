@@ -2,7 +2,7 @@
 
 - 專案: Codex Mission Center
 - 目標: 將 Mission Center 升級為研究驅動的自適應 Project OS，並提供可選的本機 Live Agent HUD
-- 週期: Completion Adversarial Critic Council
+- 週期: v0.3 Lean Context and Execution Continuity
 - 標籤: mission-center, adaptive-optimization, runtime, hud-v2, memory, verification, critic-council
 - 活動紀錄:
   - 完成 69 項 unittest、CLI doctor、skill validation 與 publish dry-run。 已記錄 Smoke tests: 8.

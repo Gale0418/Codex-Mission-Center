@@ -152,6 +152,45 @@ class DoctorMissionCenterTests(unittest.TestCase):
             self.assertTrue(any("invalid status" in error for error in errors))
             self.assertTrue(any("Last organized" in error for error in errors))
 
+    def test_smoke_rows_require_known_task_and_valid_result(self):
+        with workspace_tempdir("doctor-smoke-contract-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            smoke = workspace / "MissionCenter" / "smoke-tests.md"
+            smoke.write_text(
+                "| Linked task ID | How it was tested | Expected result | Observed result | Pass / fail |\n"
+                "| --- | --- | --- | --- | --- |\n"
+                "| UNKNOWN | command | succeeds | succeeds | maybe |\n",
+                encoding="utf-8",
+            )
+            errors = inspect_workspace(workspace)
+            self.assertTrue(any("unknown task UNKNOWN" in error for error in errors))
+            self.assertTrue(any("invalid pass/fail result" in error for error in errors))
+
+    def test_passing_smoke_row_requires_action_expected_and_observed(self):
+        with workspace_tempdir("doctor-smoke-evidence-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            smoke = workspace / "MissionCenter" / "smoke-tests.md"
+            smoke.write_text(
+                "| Linked task ID | How it was tested | Expected result | Observed result | Pass / fail |\n"
+                "| --- | --- | --- | --- | --- |\n"
+                "| DEMO-003 |  |  |  | pass |\n",
+                encoding="utf-8",
+            )
+            errors = inspect_workspace(workspace)
+            self.assertTrue(any("passing result requires" in error for error in errors))
+
+    def test_legacy_empty_seed_smoke_row_is_a_warning(self):
+        with workspace_tempdir("doctor-smoke-legacy-row-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            smoke = workspace / "MissionCenter" / "smoke-tests.md"
+            smoke.write_text(
+                "| Linked task ID | How it was tested | Expected result | Observed result | Pass / fail | Run type |\n"
+                "| --- | --- | --- | --- | --- | --- |\n"
+                "|  |  |  |  |  | manual |\n",
+                encoding="utf-8",
+            )
+            _, warnings = inspect_workspace_report(workspace)
+            self.assertTrue(any("legacy empty seed row" in warning for warning in warnings))
 
 if __name__ == "__main__":
     unittest.main()

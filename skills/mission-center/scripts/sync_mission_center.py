@@ -8,6 +8,7 @@ import json
 import re
 from pathlib import Path
 
+from common.markdown_table import parse_table as _parse_table, split_cells
 from visual_state import build_visual_state, normalize_tasks
 
 
@@ -45,7 +46,7 @@ TEXT = {
         "active_label": "進行中任務",
         "blocked_label": "阻塞原因",
         "next_update_label": "下次更新",
-        "next_update_value": "任務或 smoke-test 有變動後請重新執行 sync。",
+        "next_update_value": "任務或冒煙測試有變動後請重新執行同步。",
         "none": "無",
         "project_title": "專案",
         "goal_label": "目標",
@@ -53,85 +54,38 @@ TEXT = {
         "labels_label": "標籤",
         "activity_log_label": "活動紀錄",
         "open_comments_label": "開放問題",
-        "smoke_note": "已記錄 Smoke tests",
+        "smoke_note": "已記錄冒煙測試",
     },
 }
 
 
-def split_cells(line: str) -> list[str]:
-    """Split one Markdown table row, honoring backslash-escaped pipes."""
-    text = line.strip()
-    if text.startswith("|"):
-        text = text[1:]
-    if text.endswith("|") and not text.endswith("\\|"):
-        text = text[:-1]
-    cells: list[str] = []
-    current: list[str] = []
-    escaped = False
-    for char in text:
-        if escaped:
-            if char not in ("|", "\\"):
-                current.append("\\")
-            current.append(char)
-            escaped = False
-        elif char == "\\":
-            escaped = True
-        elif char == "|":
-            cells.append("".join(current).strip())
-            current = []
-        else:
-            current.append(char)
-    if escaped:
-        raise ValueError("Markdown table row ends with an incomplete escape")
-    cells.append("".join(current).strip())
-    return cells
-
-
 def parse_table(path: Path) -> list[dict[str, str]]:
-    if not path.exists():
-        return []
-    rows = [line.rstrip() for line in path.read_text(encoding="utf-8").splitlines()]
-    table_lines = [line for line in rows if line.startswith("|")]
-    if len(table_lines) < 2:
-        return []
-    try:
-        headers = split_cells(table_lines[0])
-        separator = split_cells(table_lines[1])
-    except ValueError as exc:
-        raise ValueError(f"{path.name}: malformed Markdown table: {exc}") from exc
-    if not headers or len(separator) != len(headers):
-        raise ValueError(f"{path.name}: invalid table header")
-    if any(not re.fullmatch(r":?-{3,}:?", cell) for cell in separator):
-        raise ValueError(f"{path.name}: invalid table separator")
-    data = []
-    for row_number, line in enumerate(table_lines[2:], start=1):
-        try:
-            cells = split_cells(line)
-        except ValueError as exc:
-            raise ValueError(f"{path.name} row {row_number}: malformed Markdown table: {exc}") from exc
-        if len(cells) != len(headers):
-            raise ValueError(f"{path.name} row {row_number} has {len(cells)} cells; expected {len(headers)}")
-        item = dict(zip(headers, cells))
-        if any(value for value in item.values()):
-            data.append(item)
-    return data
-
-
+    """Compatibility wrapper for the shared top-level table parser."""
+    return _parse_table(path, include_indented=False, strict=True)
 def parse_int(value: str) -> int | None:
     match = re.search(r"\d+", value or "")
     return int(match.group(0)) if match else None
 
 
 def compute_progress(tasks: list[dict[str, str]]) -> tuple[int, str, list[str], list[str]]:
-    total = 0
-    done = 0
-    total_est = 0
-    done_est = 0
-    estimated_tasks = 0
+    """Report progress from executable leaf tasks, never container Epics."""
+    task_ids = {task.get("ID", "").strip() for task in tasks if task.get("ID", "").strip()}
+    parent_ids = {
+        task.get("Parent", "").strip()
+        for task in tasks
+        if task.get("Parent", "").strip() in task_ids
+    }
+    leaf_tasks = [
+        task
+        for task in tasks
+        if task.get("ID", "").strip() not in parent_ids
+        and task.get("Type", "").strip().casefold() != "epic"
+    ]
+    total = done = total_est = done_est = estimated_tasks = 0
     active: list[str] = []
     blocked: list[str] = []
 
-    for task in tasks:
+    for task in leaf_tasks:
         title = task.get("Title", "").strip()
         status = task.get("Status", "").strip().lower()
         estimate = parse_int(task.get("Estimate", ""))
@@ -158,10 +112,7 @@ def compute_progress(tasks: list[dict[str, str]]) -> tuple[int, str, list[str], 
     else:
         percent = 0
         mode = "0/0 tasks"
-
     return percent, mode, active, blocked
-
-
 def render_bar(percent: int) -> str:
     filled = max(0, min(10, round(percent / 10)))
     return f"[{'#' * filled}{'-' * (10 - filled)}] {percent}%"

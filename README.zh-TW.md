@@ -24,7 +24,7 @@ Mission Center 僅服務目前這一個專案。它只建立或讀取目前 repo
 - **動態專家會議 Gate**：依決策複雜度選擇跳過、精簡會議或完整會議；只在真正需要時搜尋最新資料與召集多角度觀點，避免讓例行工作變成額度焚化爐。
 - **有預算上限的 Shadow 實驗**：只產出人工審查建議，不會自動採用候選方案。
 - **可選 Live Agent HUD**：透過本機 companion 顯示已連接 Codex app-server endpoint 的 Agent；與 Task 小人完全分層，Runtime 永遠不修改 Task 狀態。
-- **低額度熱區記憶**：以零模型呼叫的每日紀錄、人工護欄與可重建的 `brief.md`／`focus.md`，避免每次都重讀整座任務中心。
+- **低額度熱區記憶**：以零模型呼叫的每日紀錄、人工護欄、`working-set.md` 與經驗證的 `critical-lessons.md`，避免每次都重讀整座任務中心。
 
 ---
 
@@ -54,7 +54,9 @@ Codex-Mission-Center/
 ```text
 MissionCenter/
 ├── brief.md                 # 可重建的短摘要熱區
-├── focus.md                 # 僅列未完成 P0 的可重建視圖
+├── working-set.md           # 有界、可重建的當前執行工作集
+├── critical-lessons.md      # 經驗證的重大教訓熱區
+├── focus.md                 # 已棄用的遷移期相容視圖（僅列未完成 P0）
 ├── guardrails.md            # 人工核准的重要踩坑護欄
 ├── daily-log.md             # 一天一區塊的日誌
 ├── project.md               # 專案 North Star 目標與範圍
@@ -110,7 +112,7 @@ python skills/mission-center/scripts/mission_maintenance.py . daily --message "�
 python skills/mission-center/scripts/mission_maintenance.py . sync
 ```
 
-`tasks.md` 仍是唯一 Task lifecycle 真實來源；`brief.md` 與 `focus.md` 只是有內容指紋的可重建快取。`guardrails.md` 的新增、升格、停用一律需要人工明確核准。
+`tasks.md` 仍是唯一 Task lifecycle 真實來源；`brief.md` 與 `working-set.md` 是有內容指紋的可重建快取。`focus.md` 僅為遷移期相容的衍生檢視，絕不可成為第二個真實來源。主動重大教訓上限為 6 KiB，詳細證據放在 `incidents/`。`guardrails.md` 的新增、升格、停用一律需要人工明確核准。
 
 最佳化與 Runtime CLI：
 

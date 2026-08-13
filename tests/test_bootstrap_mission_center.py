@@ -25,7 +25,8 @@ class BootstrapMissionCenterTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             target = workspace / "MissionCenter"
             self.assertTrue((target / "brief.md").is_file())
-            self.assertTrue((target / "focus.md").is_file())
+            self.assertTrue((target / "working-set.md").is_file())
+            self.assertTrue((target / "critical-lessons.md").is_file())
 
     def test_both_languages_create_exact_canonical_file_set(self):
         with workspace_tempdir("bootstrap-contract-") as temporary:

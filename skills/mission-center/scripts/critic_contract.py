@@ -67,6 +67,31 @@ def _valid_acceptance(value: Any) -> bool:
     )
 
 
+
+def _validate_state_record(record: dict[str, Any]) -> list[str]:
+    """Validate schema 1.1 lifecycle states without inventing dispatch evidence."""
+    errors: list[str] = []
+    route = record.get("selectedRoute")
+    status = record.get("executionStatus")
+    if route not in ROUTES: errors.append("selectedRoute must be skip, critic_lite, or critic_full")
+    if status not in {"skipped", "not_dispatched", "completed"}: errors.append("executionStatus must be skipped, not_dispatched, or completed")
+    if not isinstance(record.get("requiredByPolicy"), bool): errors.append("requiredByPolicy must be boolean")
+    if not _text(record.get("taskId")): errors.append("taskId is required")
+    if not _text(record.get("chairRecordLocator")): errors.append("chairRecordLocator is required")
+    elif not record["chairRecordLocator"].replace("\\", "/").startswith(
+        "output/mission-center-critique/"
+    ):
+        errors.append("chairRecordLocator must use output/mission-center-critique/")
+    if record.get("requiredByPolicy") is True and status in {"skipped", "not_dispatched"}:
+        errors.append("requiredByPolicy records must be completed")
+    if status in {"skipped", "not_dispatched"}:
+        if not _text(record.get("reason")): errors.append(f"{status} requires reason")
+        return errors
+    # Completed records use the established full contract after an explicit v1.1-to-v1.0 projection.
+    projected = dict(record); projected["schemaVersion"]="1.0"; projected["route"]=route
+    errors.extend(validate_critic_record(projected))
+    return errors
+
 def validate_critic_record(record: Any) -> list[str]:
     """Return contract errors; never raise for malformed, untrusted input."""
     try:
@@ -74,8 +99,11 @@ def validate_critic_record(record: Any) -> list[str]:
         if not _mapping(record):
             return ["record must be an object"]
 
-        if record.get("schemaVersion") != "1.0":
-            errors.append("schemaVersion must be 1.0")
+        schema_version = record.get("schemaVersion")
+        if schema_version == "1.1":
+            return _validate_state_record(record)
+        if schema_version != "1.0":
+            errors.append("schemaVersion must be 1.0 or 1.1")
         route = record.get("route")
         if route not in ROUTES:
             errors.append("route must be skip, critic_lite, or critic_full")
@@ -293,6 +321,8 @@ def validate_critic_record(record: Any) -> list[str]:
                     errors.append(f"finding {index}: Critical cannot be human accepted")
                 if severity == "Critical" and disposition not in {"fixed", "rejected-with-counterevidence"}:
                     errors.append(f"finding {index}: unresolved Critical finding")
+                if severity == "High" and disposition == "deferred" and not _valid_acceptance(finding.get("humanAcceptance")):
+                    errors.append(f"finding {index}: deferred High finding needs complete humanAcceptance")
                 if _requires_human_acceptance(finding) and not _valid_acceptance(finding.get("humanAcceptance")):
                     errors.append(f"finding {index}: accepted finding needs complete humanAcceptance")
         return errors

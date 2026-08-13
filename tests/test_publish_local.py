@@ -26,6 +26,7 @@ def make_fake_repo(root: Path) -> Path:
     write(repo / "LICENSE", "license\n")
     write(repo / "NOTICE.md", "notice\n")
     write(repo / "PRIVACY.md", "privacy\n")
+    write(repo / "requirements-runtime.txt", "websockets>=16.1,<17\n")
     write(repo / "skills" / "mission-center" / "SKILL.md", "canonical\n")
     write(
         repo / "skills" / "mission-center" / "references" / "rules.md",
@@ -92,6 +93,10 @@ class PublishLocalTests(unittest.TestCase):
             self.assertEqual(
                 (marketplace / "PRIVACY.md").read_text(encoding="utf-8"),
                 "privacy\n",
+            )
+            self.assertEqual(
+                (marketplace / "requirements-runtime.txt").read_text(encoding="utf-8"),
+                "websockets>=16.1,<17\n",
             )
             self.assertEqual(
                 main(

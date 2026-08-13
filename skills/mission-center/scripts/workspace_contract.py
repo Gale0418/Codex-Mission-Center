@@ -3,7 +3,8 @@
 
 REQUIRED_FILES = (
     "brief.md",
-    "focus.md",
+    "working-set.md",
+    "critical-lessons.md",
     "guardrails.md",
     "daily-log.md",
     "project.md",
@@ -17,7 +18,7 @@ REQUIRED_FILES = (
     "visual-hub.md",
 )
 
-DERIVED_FILES = ("brief.md", "focus.md")
+DERIVED_FILES = ("brief.md", "working-set.md")
 
 CANONICAL_STATUSES = (
     "Backlog",

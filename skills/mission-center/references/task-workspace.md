@@ -10,6 +10,8 @@ This is a per-project contract. Do not scan, register, or merge any other reposi
 MissionCenter/
   brief.md
   focus.md
+  working-set.md
+  critical-lessons.md
   guardrails.md
   daily-log.md
   project.md
@@ -24,7 +26,7 @@ MissionCenter/
   legacy-done-audit.json  # optional migration record
 ```
 
-`brief.md` and `focus.md` are disposable derived views. All other listed files are canonical records.
+`brief.md` and `working-set.md` are disposable derived views. `focus.md` is a deprecated, generated compatibility view during migration only; it must never become a second lifecycle source. All other listed files are canonical records. `critical-lessons.md` stores verified experience memory and keeps detailed evidence in bounded `incidents/INC-xxx.md` records.
 
 `legacy-done-audit.json` is optional and only records pre-policy Done tasks whose standardized smoke evidence cannot be reconstructed without fabrication. It never counts as passing evidence. Use exact task IDs and a concrete migration reason:
 
@@ -41,9 +43,9 @@ Doctor reports these IDs as warnings. Unknown IDs, non-Done IDs, malformed dates
 
 ## File Roles
 
-### `brief.md` and `focus.md`
+### `brief.md`, `working-set.md`, and legacy `focus.md`
 
-Read these compact, generated views first when resuming. `focus.md` contains only unfinished P0 tasks; neither file may update task status or replace canonical evidence.
+Read `brief.md`, `working-set.md`, and Active Lessons first when resuming. `working-set.md` contains at most six prioritized unfinished tasks; no derived file may update task status or replace canonical evidence. `focus.md` only contains unfinished P0 tasks and exists solely for migration compatibility.
 
 ### `guardrails.md` and `daily-log.md`
 
@@ -166,7 +168,7 @@ Link to the HUD generated from this project's `tasks.md` only.
 - If a task becomes obsolete, move the reason into `decisions.md` or `notes.md` before removing it.
 - If a new task appears during execution, assign it an ID immediately and link it to its parent.
 - If a task is reopened, append the new work to the existing entry instead of creating a duplicate.
-- Keep `project.md`, `progress.md`, and `tasks.md` aligned when scope or cycle changes, then rebuild `brief.md` and `focus.md`.
+- Keep `project.md`, `progress.md`, and `tasks.md` aligned when scope or cycle changes, then rebuild `brief.md` and `working-set.md` (plus legacy `focus.md` only while compatibility is needed).
 
 ## Smoke Test Standard
 

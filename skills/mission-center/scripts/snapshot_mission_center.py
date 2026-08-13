@@ -1,92 +1,147 @@
 #!/usr/bin/env python3
-"""Create a reopenable MissionCenter snapshot."""
-
+"""Create a bounded, canonical Execution Checkpoint for MissionCenter."""
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
+import re
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+from common.markdown_table import parse_table
+MAX_RECENT_ATTEMPTS = 5
+CANONICAL_ATTEMPT_FIELDS = {"phase", "errorSignature", "hypothesis", "evidence"}
+ATTEMPTS_METADATA_PREFIX = "- Recent attempts JSON: "
+DIAGNOSIS_METADATA_PREFIX = "- Diagnosis evidence JSON: "
+SECRET_PATTERN = re.compile(r"(?i)(password|secret|api[_-]?key|token|authorization|bearer)\s*[:=]")
 
 TEXT = {
-    "en": {
-        "title": "Snapshot",
-        "captured_at": "Captured at",
-        "project": "Project",
-        "cycle": "Cycle",
-        "goal": "Goal",
-        "progress": "Progress",
-        "active": "Active tasks",
-        "blocked": "Blocked tasks",
-        "decisions": "Recent decisions",
-        "questions": "Open questions",
-        "none": "None",
-    },
-    "zh-TW": {
-        "title": "快照",
-        "captured_at": "建立時間",
-        "project": "專案",
-        "cycle": "週期",
-        "goal": "目標",
-        "progress": "進度",
-        "active": "進行中任務",
-        "blocked": "阻塞任務",
-        "decisions": "近期決策",
-        "questions": "開放問題",
-        "none": "無",
-    },
+    "en": {"title": "Execution Checkpoint", "captured_at": "Captured at", "active": "Active task", "status": "Status", "revision": "Revision", "fingerprint": "Fingerprint", "dependencies": "Dependencies", "verification": "Verification", "resume": "Resume", "attempts": "Recent attempts", "none": "None", "inactive": "No active task; resume from canonical task selection."},
+    "zh-TW": {"title": "執行檢查點", "captured_at": "建立時間", "active": "進行中任務", "status": "狀態", "revision": "版本", "fingerprint": "指紋", "dependencies": "依賴", "verification": "驗證", "resume": "恢復", "attempts": "近期嘗試", "none": "無", "inactive": "目前沒有進行中任務；請從 canonical 任務清單重新選取。"},
 }
 
 
 def detect_language(root: Path) -> str:
-    markers = ("# 專案", "# 進度", "# 任務", "- 目標:", "- 目標：")
     for name in ("project.md", "progress.md", "tasks.md"):
         path = root / name
-        if path.exists():
-            text = path.read_text(encoding="utf-8")
-            if any(marker in text for marker in markers):
-                return "zh-TW"
+        if path.exists() and any(x in path.read_text(encoding="utf-8") for x in ("# 專案", "# 進度", "# 任務", "- 目標:", "- 目標：")):
+            return "zh-TW"
     return "en"
 
 
+def _task_rows(tasks: Path) -> list[dict[str, str]]:
+    if not tasks.exists(): return []
+    try: return parse_table(tasks)
+    except ValueError: return []
+
+
+def _field(row: dict[str,str], *names: str) -> str:
+    lowered={key.lower():value for key,value in row.items()}
+    for name in names:
+        if name in row: return row[name]
+        if name.lower() in lowered: return lowered[name.lower()]
+    return ""
+
+
+def canonical_facts(workspace: Path) -> dict[str, str]:
+    root=workspace.resolve()/"MissionCenter"; rows=_task_rows(root/"tasks.md")
+    active=[r for r in rows if _field(r,"Status","狀態") in {"In Progress","Blocked","進行中","阻塞"}]
+    task=active[0] if active else None
+    try:
+        revision=subprocess.run(["git","-C",str(workspace.resolve()),"rev-parse","HEAD"],capture_output=True,text=True,check=True,timeout=10).stdout.strip()
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired): revision="unavailable"
+    sources=[]
+    for path in (root/"tasks.md", root/"project.md"):
+        if path.exists(): sources.append(path.read_bytes())
+    fingerprint=hashlib.sha256(b"\0".join(sources)+revision.encode()).hexdigest()
+    if not task:
+        return {"active":"None","status":"Inactive","state":"inactive","revision":revision,"fingerprint":fingerprint,"dependencies":"None","verification":"None"}
+    task_id=_field(task,"ID","Id")
+    title=_field(task,"Title","標題")
+    return {"active":" ".join(x for x in (task_id,title) if x),"status":_field(task,"Status","狀態") or "Unknown","state":"active","revision":revision,"fingerprint":fingerprint,"dependencies":_field(task,"Depends on","依賴") or "None","verification":_field(task,"Verification","驗證方式") or "None"}
+
+
+def sanitize_attempt(value: Any) -> dict[str,str]:
+    if not isinstance(value,dict) or set(value) - CANONICAL_ATTEMPT_FIELDS or not {"phase","errorSignature"} <= set(value): raise ValueError("attempt needs only phase, errorSignature, optional hypothesis/evidence")
+    result={key:str(item).strip() for key,item in value.items()}
+    if any(not item or len(item)>280 or SECRET_PATTERN.search(item) for item in result.values()): raise ValueError("attempt contains empty, oversized, or secret-like data")
+    return result
+
+
+def read_recent_attempts(snapshot_text: str) -> list[dict[str, str]]:
+    """Load only writer-produced, bounded attempt metadata; historical prose is ignored."""
+    match = re.search(r"^" + re.escape(ATTEMPTS_METADATA_PREFIX) + r"(.+)$", snapshot_text, re.MULTILINE)
+    if not match:
+        return []
+    try:
+        attempts = json.loads(match.group(1))
+        return [sanitize_attempt(item) for item in attempts][-MAX_RECENT_ATTEMPTS:] if isinstance(attempts, list) else []
+    except (json.JSONDecodeError, ValueError):
+        return []
+
+
+def read_diagnosis_evidence(snapshot_text: str) -> list[dict[str, str]]:
+    match = re.search(r"^" + re.escape(DIAGNOSIS_METADATA_PREFIX) + r"(.+)$", snapshot_text, re.MULTILINE)
+    if not match:
+        return []
+    try:
+        values = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(values, list):
+        return []
+    return [
+        {"hypothesis": str(item.get("hypothesis", "")).strip(), "evidence": str(item.get("evidence", "")).strip()}
+        for item in values
+        if isinstance(item, dict) and item.get("hypothesis") and item.get("evidence")
+    ][-MAX_RECENT_ATTEMPTS:]
+
+
+def retry_gate(attempts: list[dict[str,str]]) -> dict[str, Any]:
+    clean=[sanitize_attempt(item) for item in attempts][-MAX_RECENT_ATTEMPTS:]
+    signatures={}; phases={}
+    for item in clean:
+        signatures[item["errorSignature"]]=signatures.get(item["errorSignature"],0)+1
+        phases[item["phase"]]=phases.get(item["phase"],0)+1
+    diagnosis=any(count>=2 for count in signatures.values()) or any(count>=3 for count in phases.values())
+    return {"mode":"diagnosis" if diagnosis else "retry","stopModifyingAndDeploying":diagnosis,"recentAttempts":clean}
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("workspace", nargs="?", default=".")
-    parser.add_argument("--project", default="MissionCenter")
-    parser.add_argument("--cycle", default="Unassigned")
-    parser.add_argument("--goal", default="MissionCenter workspace")
-    parser.add_argument("--progress", default="Unknown")
-    parser.add_argument("--active", default="")
-    parser.add_argument("--blocked", default="")
-    parser.add_argument("--decisions", default="")
-    parser.add_argument("--questions", default="")
-    args = parser.parse_args()
+    parser=argparse.ArgumentParser()
+    parser.add_argument("workspace",nargs="?",default=".")
+    # Deprecated compatibility flags are deliberately ignored: facts are canonical.
+    for name in ("project","cycle","goal","progress","active","blocked","decisions","questions"): parser.add_argument(f"--{name}")
+    parser.add_argument("--note", action="append", default=[]); parser.add_argument("--hypothesis",action="append",default=[]); parser.add_argument("--evidence",action="append",default=[]); parser.add_argument("--change",action="append",default=[])
+    parser.add_argument("--attempt",action="append",default=[]); parser.add_argument("--resume",action="store_true")
+    args=parser.parse_args(); workspace=Path(args.workspace); root=workspace.resolve()/"MissionCenter"; root.mkdir(parents=True,exist_ok=True)
+    prior_text=(root/"snapshot.md").read_text(encoding="utf-8") if (root/"snapshot.md").is_file() else ""
+    prior_attempts=read_recent_attempts(prior_text)
+    try: gate=retry_gate(prior_attempts + [json.loads(raw) for raw in args.attempt])
+    except (json.JSONDecodeError,ValueError) as error: parser.error(str(error))
+    if len(args.hypothesis) != len(args.evidence): parser.error("--hypothesis and --evidence must be supplied in matching pairs")
+    diagnosis_evidence=read_diagnosis_evidence(prior_text)
+    new_pairs=[{"hypothesis": h.strip(), "evidence": e.strip()} for h,e in zip(args.hypothesis,args.evidence)]
+    if any(not item["hypothesis"] or not item["evidence"] or SECRET_PATTERN.search(item["hypothesis"]) or SECRET_PATTERN.search(item["evidence"]) for item in new_pairs): parser.error("diagnosis hypothesis/evidence is empty or secret-like")
+    unseen=[item for item in new_pairs if item not in diagnosis_evidence]
+    if gate["mode"] == "diagnosis" and unseen:
+        gate={"mode":"retry","stopModifyingAndDeploying":False,"recentAttempts":[]}
+        diagnosis_evidence=(diagnosis_evidence+unseen)[-MAX_RECENT_ATTEMPTS:]
+    labels=TEXT[detect_language(root)]; facts=canonical_facts(workspace); now=datetime.now().isoformat(timespec="seconds")
+    state=facts.get("state", "inactive" if facts["status"] == "Inactive" else "active")
+    lines=[f"# {labels['title']}","",f"- State: {state}",f"- {labels['captured_at']}: {now}",f"- {labels['active']}: {facts['active']}",f"- {labels['status']}: {facts['status']}",f"- {labels['revision']}: {facts['revision']}",f"- {labels['fingerprint']}: {facts['fingerprint']}"]
+    if state == "inactive" and args.resume: lines += [f"- {labels['resume']}: {labels['inactive']}"]
+    else: lines += [f"- {labels['dependencies']}: {facts['dependencies']}",f"- {labels['verification']}: {facts['verification']}",f"- Retry gate: {gate['mode']}",ATTEMPTS_METADATA_PREFIX + json.dumps(gate["recentAttempts"], ensure_ascii=False, separators=(",",":")),DIAGNOSIS_METADATA_PREFIX + json.dumps(diagnosis_evidence, ensure_ascii=False, separators=(",",":")),f"- {labels['attempts']}:"] + ([f"  - {item['phase']} | {item['errorSignature']}" for item in gate['recentAttempts']] if gate['recentAttempts'] else [f"  - {labels['none']}"])
+    for heading, values in (("Notes",args.note),("Hypotheses",args.hypothesis),("Evidence",args.evidence),("Changes",args.change)):
+        if values: lines += [f"- {heading}:"]+[f"  - {value}" for value in values]
+    (root/"snapshot.md").write_text("\n".join(lines)+"\n",encoding="utf-8"); print(root/"snapshot.md"); return 0
 
-    root = Path(args.workspace).resolve() / "MissionCenter"
-    root.mkdir(parents=True, exist_ok=True)
-    labels = TEXT[detect_language(root)]
-    snapshot = root / "snapshot.md"
-    now = datetime.now().isoformat(timespec="seconds")
-    content = f"""# {labels['title']}
-
-- {labels['captured_at']}: {now}
-- {labels['project']}: {args.project}
-- {labels['cycle']}: {args.cycle}
-- {labels['goal']}: {args.goal}
-- {labels['progress']}: {args.progress}
-- {labels['active']}:
-  - {args.active or labels['none']}
-- {labels['blocked']}:
-  - {args.blocked or labels['none']}
-- {labels['decisions']}:
-  - {args.decisions or labels['none']}
-- {labels['questions']}:
-  - {args.questions or labels['none']}
-"""
-    snapshot.write_text(content, encoding="utf-8")
-    print(snapshot)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+if __name__ == "__main__": raise SystemExit(main())

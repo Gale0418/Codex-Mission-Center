@@ -23,6 +23,7 @@
 | 用 one-shot Prompt 在完成後無限召喚分身互相批評 | https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents | Adapt：組合不同 grader 職能、保留多輪互動與證據；加入固定快照、能力宣告、預算與停止條件 | 官方工程文章；僅採 eval 方法概念 |
 | 多個 AI 評審一致就視為品質保證 | https://openai.com/index/gdpval/ | Learn：自動 grader 不能取代真正專家；採 rubric、盲評式獨立初稿與人工風險接受 | OpenAI 官方研究說明；僅採評估方法 |
 | 只靠平均分判斷長流程互動品質 | https://deepmind.google/blog/evaluating-multimodal-interactive-agents/ | Adapt：以時間延伸的情境、可觀察 continuation 與人工標註概念建立 journey coverage；不把主觀感受偽裝成總分 | Google DeepMind 官方研究；僅採方法概念 |
+| 永久維護自製 Skill 搬運流程 | https://learn.chatgpt.com/docs/changelog、https://learn.chatgpt.com/docs/plugins | Adapt：Codex CLI 0.147.0 已支援 portable Agent Plugins 與多層 catalog；正式 plugin manifest 作主要發布契約，現有 publisher 降為離線／舊版相容層，另開相容性 spike 驗證後再移除任何路徑 | OpenAI 官方文件；不改動核心 workspace 契約 |
 
 ## Evolution 邊界
 

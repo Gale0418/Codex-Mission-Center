@@ -6,13 +6,13 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-
-def split_cells(line: str) -> list[str]:
-    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+from common.markdown_table import parse_table_rows, split_cells
 
 
 def join_cells(cells: list[str]) -> str:
-    return "| " + " | ".join(cells) + " |"
+    return "| " + " | ".join(
+        cell.replace("\\", "\\\\").replace("|", "\\|") for cell in cells
+    ) + " |"
 
 
 def suggest(type_: str, labels: str, title: str) -> str:
@@ -48,6 +48,12 @@ def main() -> int:
     if header_index is None:
         print("no table")
         return 1
+    parsed_rows, errors = parse_table_rows(
+        lines[header_index:], table_name=path.name, strict=False
+    )
+    if errors:
+        print(errors[0])
+        return 1
     headers = split_cells(lines[header_index])
     try:
         verification_idx = headers.index("Verification")
@@ -60,14 +66,16 @@ def main() -> int:
 
     changed = False
     output = lines[: header_index + 2]
+    row_index = 0
     for line in lines[header_index + 2 :]:
         if not line.startswith("|"):
             output.append(line)
             continue
-        cells = split_cells(line)
-        if len(cells) != len(headers):
+        if row_index >= len(parsed_rows):
             output.append(line)
             continue
+        cells = [parsed_rows[row_index].get(header, "") for header in headers]
+        row_index += 1
         if not cells[verification_idx].strip():
             cells[verification_idx] = suggest(cells[type_idx], cells[labels_idx], cells[title_idx])
             changed = True

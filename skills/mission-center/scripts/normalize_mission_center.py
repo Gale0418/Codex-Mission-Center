@@ -7,6 +7,8 @@ import argparse
 import re
 from pathlib import Path
 
+from common.markdown_table import first_table_block, split_cells
+
 
 STATUS_MAP = {
     "todo": "Backlog",
@@ -36,10 +38,6 @@ HEADER_ALIASES = {
     "狀態": "Status",
     "標籤": "Labels",
 }
-
-
-def split_cells(line: str) -> list[str]:
-    return [cell.strip() for cell in line.strip().strip("|").split("|")]
 
 
 def normalize_labels(text: str) -> str:
@@ -77,24 +75,19 @@ def normalize_tasks(path: Path) -> bool:
     if not path.exists():
         return False
     lines = path.read_text(encoding="utf-8").splitlines()
-    table_indexes = [i for i, line in enumerate(lines) if line.startswith("|")]
-    if len(table_indexes) < 3:
+    block = first_table_block(lines, include_indented=False)
+    if len(block) < 3:
         return False
-    header_index = table_indexes[0]
-    separator_index = table_indexes[1]
+    header_index = block[0][0] - 1
+    separator_index = block[1][0] - 1
     headers = split_cells(lines[header_index])
     priority_header = find_header(headers, "Priority")
     status_header = find_header(headers, "Status")
     labels_header = find_header(headers, "Labels")
     changed = False
-    new_lines = lines[: separator_index + 1]
-    for line in lines[separator_index + 1 :]:
-        if not line.startswith("|"):
-            new_lines.append(line)
-            continue
+    for line_number, line in block[2:]:
         cells = split_cells(line)
         if len(cells) != len(headers):
-            new_lines.append(line)
             continue
         row = dict(zip(headers, cells))
         if priority_header is not None:
@@ -109,13 +102,10 @@ def normalize_tasks(path: Path) -> bool:
             normalized = normalize_labels(row[labels_header])
             changed |= normalized != row[labels_header]
             row[labels_header] = normalized
-        rebuilt = "| " + " | ".join(row.get(header, "") for header in headers) + " |"
-        new_lines.append(rebuilt)
+        lines[line_number - 1] = "| " + " | ".join(row.get(header, "") for header in headers) + " |"
     if changed:
-        path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return changed
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("workspace", nargs="?", default=".")
