@@ -74,6 +74,7 @@ def compute_progress(tasks: list[dict[str, str]]) -> tuple[int, str, list[str], 
         task.get("Parent", "").strip()
         for task in tasks
         if task.get("Parent", "").strip() in task_ids
+        and task.get("Parent", "").strip() != task.get("ID", "").strip()
     }
     leaf_tasks = [
         task
@@ -360,9 +361,9 @@ def main() -> int:
     percent, mode, active, blocked = compute_progress(tasks)
     project_path = root / "project.md"
     progress_path = root / "progress.md"
-    if args.rewrite_summaries or is_managed_summary(project_path):
+    if args.rewrite_summaries or not project_path.exists() or is_managed_summary(project_path):
         update_project(project_path, project, cycle, goal, labels_text, "", language)
-    if args.rewrite_summaries or is_managed_summary(progress_path):
+    if args.rewrite_summaries or not progress_path.exists() or is_managed_summary(progress_path):
         update_progress(
             progress_path,
             project,

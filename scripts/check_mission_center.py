@@ -10,9 +10,12 @@ def _normalization_required(root: Path) -> bool:
     sys.path.insert(0, str(script.parent))
     from normalize_mission_center import find_header, normalize_labels, normalize_priority, normalize_status
     from common.markdown_table import first_table_block, split_cells
-    task=root/'MissionCenter/tasks.md'
-    if not task.exists(): return False
-    lines=task.read_text(encoding='utf-8').splitlines(); block=first_table_block(lines, include_indented=False)
+    staged=subprocess.run(
+        ['git','-C',str(root),'show',':MissionCenter/tasks.md'],
+        capture_output=True,text=True,encoding='utf-8',check=False,
+    )
+    if staged.returncode != 0: return False
+    lines=staged.stdout.splitlines(); block=first_table_block(lines, include_indented=False)
     if len(block)<3: return False
     headers=split_cells(lines[block[0][0]-1]); columns=((find_header(headers,'Priority'),normalize_priority),(find_header(headers,'Status'),normalize_status),(find_header(headers,'Labels'),normalize_labels))
     for _, line in block[2:]:

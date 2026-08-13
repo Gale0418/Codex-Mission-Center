@@ -193,6 +193,37 @@ class SyncMissionCenterTests(unittest.TestCase):
         self.assertEqual(active, ["T2 Open (Ready)"])
         self.assertEqual(blocked, [])
 
+    def test_progress_does_not_hide_self_parent_task(self):
+        tasks = [
+            {"ID": "T1", "Title": "Self parent", "Type": "Task", "Parent": "T1", "Status": "Ready", "Estimate": "1"},
+        ]
+        percent, mode, active, blocked = compute_progress(tasks)
+        self.assertEqual((percent, mode), (0, "0/1 estimated"))
+        self.assertEqual(active, ["T1 Self parent (Ready)"])
+        self.assertEqual(blocked, [])
+
+    def test_sync_creates_each_missing_summary_without_rewriting_existing_legacy_file(self):
+        with workspace_tempdir("sync-missing-summary-") as temporary:
+            workspace = Path(temporary)
+            mission = workspace / "MissionCenter"
+            mission.mkdir()
+            (mission / "tasks.md").write_text(
+                "| ID | Title | Status |\n| --- | --- | --- |\n| T1 | Work | Ready |\n",
+                encoding="utf-8",
+            )
+            (mission / "smoke-tests.md").write_text(
+                "| ID | Result |\n| --- | --- |\n", encoding="utf-8"
+            )
+            legacy = mission / "project.md"
+            legacy.write_text("# Legacy project\n\nKeep this.\n", encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(SYNC), str(workspace)],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(legacy.read_text(encoding="utf-8"), "# Legacy project\n\nKeep this.\n")
+            self.assertTrue((mission / "progress.md").is_file())
+
     def test_shared_parser_uses_first_top_level_table_and_can_read_indented_table(self):
         lines = [
             "| ID | Title |", "| --- | --- |", "| A | first |", "",

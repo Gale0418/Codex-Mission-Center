@@ -57,6 +57,10 @@ class RuntimeProtocolTests(unittest.TestCase):
             requirements.write_text("websockets\n", encoding="utf-8")
             self.assertEqual(packaged_runtime_requirements(script), requirements.resolve())
 
+    def test_packaged_runtime_requirements_has_safe_shallow_fallback(self):
+        shallow = Path("C:/mission_runtime.py")
+        self.assertEqual(packaged_runtime_requirements(shallow), shallow.resolve().parent / "requirements-runtime.txt")
+
     def test_task_link_parser_handles_escaped_pipe_and_crlf(self):
         with workspace_tempdir() as temp:
             workspace = Path(temp)

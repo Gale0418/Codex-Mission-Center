@@ -8,6 +8,7 @@ import json
 import re
 import subprocess
 import sys
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -60,7 +61,8 @@ def canonical_facts(workspace: Path) -> dict[str, str]:
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired): revision="unavailable"
     sources=[]
     for path in (root/"tasks.md", root/"project.md"):
-        if path.exists(): sources.append(path.read_bytes())
+        if path.exists():
+            sources.append(path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n"))
     fingerprint=hashlib.sha256(b"\0".join(sources)+revision.encode()).hexdigest()
     if not task:
         return {"active":"None","status":"Inactive","state":"inactive","revision":revision,"fingerprint":fingerprint,"dependencies":"None","verification":"None"}
@@ -83,9 +85,17 @@ def read_recent_attempts(snapshot_text: str) -> list[dict[str, str]]:
         return []
     try:
         attempts = json.loads(match.group(1))
-        return [sanitize_attempt(item) for item in attempts][-MAX_RECENT_ATTEMPTS:] if isinstance(attempts, list) else []
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError:
         return []
+    if not isinstance(attempts, list):
+        return []
+    valid: list[dict[str, str]] = []
+    for index, item in enumerate(attempts):
+        try:
+            valid.append(sanitize_attempt(item))
+        except ValueError as error:
+            warnings.warn(f"discarded invalid recent attempt at index {index}: {error}", RuntimeWarning)
+    return valid[-MAX_RECENT_ATTEMPTS:]
 
 
 def read_diagnosis_evidence(snapshot_text: str) -> list[dict[str, str]]:
@@ -142,6 +152,6 @@ def main() -> int:
     else: lines += [f"- {labels['dependencies']}: {facts['dependencies']}",f"- {labels['verification']}: {facts['verification']}",f"- Retry gate: {gate['mode']}",ATTEMPTS_METADATA_PREFIX + json.dumps(gate["recentAttempts"], ensure_ascii=False, separators=(",",":")),DIAGNOSIS_METADATA_PREFIX + json.dumps(diagnosis_evidence, ensure_ascii=False, separators=(",",":")),f"- {labels['attempts']}:"] + ([f"  - {item['phase']} | {item['errorSignature']}" for item in gate['recentAttempts']] if gate['recentAttempts'] else [f"  - {labels['none']}"])
     for heading, values in (("Notes",args.note),("Hypotheses",args.hypothesis),("Evidence",args.evidence),("Changes",args.change)):
         if values: lines += [f"- {heading}:"]+[f"  - {value}" for value in values]
-    (root/"snapshot.md").write_text("\n".join(lines)+"\n",encoding="utf-8"); print(root/"snapshot.md"); return 0
+    (root/"snapshot.md").write_text("\n".join(lines)+"\n",encoding="utf-8",newline="\n"); print(root/"snapshot.md"); return 0
 
 if __name__ == "__main__": raise SystemExit(main())

@@ -72,6 +72,88 @@ class InstallGitHookTests(unittest.TestCase):
         finally:
             shutil.rmtree(repo)
 
+    def test_generated_hook_selects_python_fallbacks_and_fails_without_python(self):
+        installer = load_installer()
+        sh = shutil.which("sh")
+        if not sh and sys.platform == "win32":
+            git = shutil.which("git")
+            candidate = Path(git).parents[1] / "bin" / "sh.exe" if git else None
+            sh = str(candidate) if candidate and candidate.is_file() else None
+        if not sh:
+            self.skipTest("POSIX shell unavailable")
+
+        root = fresh_test_dir("hook-python-fallbacks")
+        try:
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            hook = root / "pre-commit"
+            hook.write_text(
+                installer.PRE_COMMIT_HOOK_SCRIPT.replace(
+                    "REPO_ROOT=$(git rev-parse --show-toplevel)",
+                    f'REPO_ROOT="{root.as_posix()}"',
+                ),
+                encoding="utf-8",
+                newline="\n",
+            )
+            checker = root / "scripts" / "check_mission_center.py"
+            checker.parent.mkdir()
+            checker.write_text("# test placeholder\n", encoding="utf-8")
+
+            def run_with(*names):
+                for child in fake_bin.iterdir():
+                    child.unlink()
+                log = root / "invocation.log"
+                if log.exists():
+                    log.unlink()
+                for name in names:
+                    executable = fake_bin / name
+                    executable.write_text(
+                        '#!/bin/sh\nprintf "%s\\n" "$0 $*" > '
+                        f'"{log.as_posix()}"\n',
+                        encoding="utf-8",
+                        newline="\n",
+                    )
+                    executable.chmod(0o755)
+                env = {"PATH": str(fake_bin)}
+                return subprocess.run(
+                    [sh, str(hook)],
+                    cwd=root,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                ), log
+
+            for available, selected, expected_prefix in (
+                (("python3", "python", "py"), "python3", ""),
+                (("python", "py"), "python", ""),
+                (("py",), "py", "-3 "),
+            ):
+                result, log = run_with(*available)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                invocation = log.read_text(encoding="utf-8")
+                self.assertIn(f"/{selected} ", invocation.replace("\\", "/"))
+                self.assertIn(
+                    expected_prefix + str(checker).replace("\\", "/"),
+                    invocation.replace("\\", "/"),
+                )
+
+            result, log = run_with()
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("commit blocked", result.stderr)
+            self.assertFalse(log.exists())
+        finally:
+            shutil.rmtree(root)
+
+    def test_git_file_is_rejected_without_creating_hooks(self):
+        repo = fresh_test_dir("hook-git-file")
+        try:
+            (repo / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+            self.assertFalse(load_installer().install_git_hook(repo))
+            self.assertFalse((repo / ".git" / "hooks").exists())
+        finally:
+            shutil.rmtree(repo)
+
     def test_existing_generated_crlf_hook_is_upgraded_to_lf(self):
         installer = load_installer()
         repo = fresh_test_dir("hook-tool-crlf")

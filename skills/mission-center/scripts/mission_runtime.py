@@ -66,7 +66,7 @@ def packaged_runtime_requirements(script_path: Path | None = None) -> Path:
         candidate = directory / "requirements-runtime.txt"
         if candidate.is_file():
             return candidate
-    return script.parents[3] / "requirements-runtime.txt"
+    return script.parent / "requirements-runtime.txt"
 
 
 def link_task(workspace: Path, agent_id: str, task_ids: list[str]) -> dict:

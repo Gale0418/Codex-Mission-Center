@@ -32,6 +32,29 @@ class ExecutionContinuityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             module.sanitize_attempt({'phase': 'deploy', 'errorSignature': 'token=bad'})
 
+    def test_recent_attempt_reader_keeps_valid_entries_around_invalid_one(self):
+        payload = [
+            {"phase": "test", "errorSignature": "E1"},
+            {"phase": "deploy", "errorSignature": "token=bad"},
+            {"phase": "build", "errorSignature": "E2"},
+        ]
+        text = module.ATTEMPTS_METADATA_PREFIX + json.dumps(payload)
+        with self.assertWarns(RuntimeWarning):
+            attempts = module.read_recent_attempts(text)
+        self.assertEqual([item["errorSignature"] for item in attempts], ["E1", "E2"])
+
+    def test_canonical_fingerprint_normalizes_line_endings(self):
+        row = {"ID": "T-1", "Title": "Test", "Status": "In Progress"}
+        fingerprints = []
+        for contents in ((b"a\r\nb", b"c\rd"), (b"a\nb", b"c\nd")):
+            with patch.object(module, '_task_rows', return_value=[row]), \
+                 patch.object(module.Path, 'exists', return_value=True), \
+                 patch.object(module.Path, 'read_bytes', side_effect=contents), \
+                 patch.object(module.subprocess, 'run') as run:
+                run.return_value.stdout = 'revision\n'
+                fingerprints.append(module.canonical_facts(ROOT)["fingerprint"])
+        self.assertEqual(fingerprints[0], fingerprints[1])
+
     def test_canonical_facts_uses_null_separator_and_canonical_dependencies(self):
         row = {'ID': 'T-1', 'Title': 'Test', 'Status': 'In Progress', 'Depends on': 'T-0', '依賴': 'legacy', 'Verification': 'pytest'}
         with patch.object(module, '_task_rows', return_value=[row]), \
@@ -137,6 +160,7 @@ class ExecutionContinuityTests(unittest.TestCase):
         content = write_text.call_args.args[0]
         self.assertIn('\n', content)
         self.assertNotIn('\\n', content)
+        self.assertEqual(write_text.call_args.kwargs["newline"], "\n")
 
 
 if __name__ == '__main__':
