@@ -13,7 +13,23 @@ from workspace_contract import REQUIRED_FILES
 
 FILES_EN = {
     "brief.md": "# Mission Brief\n\nGenerated after bootstrap.\n",
-    "focus.md": "# P0 Focus\n\nGenerated after bootstrap.\n",
+    "working-set.md": "# Active Working Set\n\nGenerated after bootstrap.\n",
+    "critical-lessons.md": """# Critical Lessons
+
+> Only recorded issues that have occurred, are likely to recur, and have verified solutions.
+> Detailed evidence is stored in incidents/.
+> Keep this file compact.
+
+## Active Lessons
+
+| ID | Applies when | Symptoms | Root cause | Correct action | Avoid | Verification | Incident | Last confirmed |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+## Resolved Index
+
+| ID | Status | Resolved by | Incident |
+| --- | --- | --- | --- |
+""",
     "guardrails.md": """# Guardrails
 
 Automation must not add, promote, or retire guardrails without explicit human approval.
@@ -25,7 +41,8 @@ Automation must not add, promote, or retire guardrails without explicit human ap
 
 - Last organized: 1970-01-01
 """,
-    "project.md": """# Project
+    "project.md": """<!-- mission-center-managed-summary v=1 -->
+# Project
 
 - Goal:
 - Cycle:
@@ -33,7 +50,8 @@ Automation must not add, promote, or retire guardrails without explicit human ap
 - Activity log:
 - Open comments:
 """,
-    "progress.md": """# Progress
+    "progress.md": """<!-- mission-center-managed-summary v=1 -->
+# Progress
 
 - Project:
 - Objective:
@@ -97,7 +115,23 @@ Automation must not add, promote, or retire guardrails without explicit human ap
 
 FILES_ZH_TW = {
     "brief.md": "# 任務簡報\n\nBootstrap 後產生。\n",
-    "focus.md": "# P0 焦點\n\nBootstrap 後產生。\n",
+    "working-set.md": "# 當前工作集\n\nBootstrap 後產生。\n",
+    "critical-lessons.md": """# 重大教訓
+
+> 只收錄已發生、具有再次發生價值，且解法已有證據支持的重大問題。
+> 詳細事故資料位於 incidents/。
+> 此文件必須保持精簡。
+
+## 主動教訓
+
+| ID | 適用情境 | 症狀 | 根因 | 正確處理 | 禁止重犯 | 驗證方式 | Incident | 最後確認 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+## 已解決索引
+
+| ID | 狀態 | Resolved by | Incident |
+| --- | --- | --- | --- |
+""",
     "guardrails.md": """# 重要護欄
 
 自動化不得新增、升格或停用護欄；變更必須經人工明確核准。
@@ -109,7 +143,8 @@ FILES_ZH_TW = {
 
 - 最後整理：1970-01-01
 """,
-    "project.md": """# 專案
+    "project.md": """<!-- mission-center-managed-summary v=1 -->
+# 專案
 
 - 目標：
 - 週期：
@@ -117,7 +152,8 @@ FILES_ZH_TW = {
 - 活動紀錄：
 - 開放問題：
 """,
-    "progress.md": """# 進度
+    "progress.md": """<!-- mission-center-managed-summary v=1 -->
+# 進度
 
 - 專案：
 - 目標：
@@ -232,6 +268,7 @@ def main() -> int:
     root = Path(args.workspace).resolve()
     target = root / "MissionCenter"
     target.mkdir(parents=True, exist_ok=True)
+    (target / "incidents").mkdir(parents=True, exist_ok=True)
     files = FILES_ZH_TW if choose_language(args.language) == "zh-TW" else FILES_EN
 
     for name, content in files.items():
@@ -239,6 +276,11 @@ def main() -> int:
         if path.exists() and not args.force:
             continue
         path.write_text(content, encoding="utf-8")
+
+    from mission_maintenance import INCIDENTS_README
+    incident_readme = target / "incidents" / "README.md"
+    if not incident_readme.exists() or args.force:
+        incident_readme.write_text(INCIDENTS_README, encoding="utf-8")
 
     copy_visual_assets(root, args.force)
 

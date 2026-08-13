@@ -13,6 +13,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from common.markdown_table import parse_table_blocks
 from sync_mission_center import TEXT, _find_summary_value, detect_language, parse_table
 from visual_state import normalize_tasks
 
@@ -21,6 +22,7 @@ SCHEMA_VERSION = "1.0"
 FINGERPRINT_FORMAT = "sha256-v2-lf"
 DEFAULT_BRIEF_MAX_BYTES = 4096
 DERIVED_WARNING = "Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files."
+FOCUS_DEPRECATION = "Deprecated compatibility view: focus.md is generated from tasks.md only and must never be edited or treated as a second lifecycle source."
 FINGERPRINT_SOURCES = ("project.md", "tasks.md", "guardrails.md", "daily-log.md")
 FOCUS_FINGERPRINT_SOURCES = ("tasks.md",)
 DONE_STATUS = "done"
@@ -66,11 +68,11 @@ def local_date(value: str | date | None = None) -> date:
     return date.fromisoformat(value)
 
 
-def atomic_write_if_changed(path: Path, content: str) -> bool:
-    """Atomically write UTF-8 text only when bytes changed."""
+def atomic_write_if_changed(path: Path, content: str, *, force: bool = False) -> bool:
+    """Atomically write UTF-8 text, optionally replacing equal content too."""
     path = Path(path)
     try:
-        if path.read_text(encoding="utf-8") == content:
+        if not force and path.read_text(encoding="utf-8") == content:
             return False
     except FileNotFoundError:
         pass
@@ -351,6 +353,7 @@ def render_focus(tasks: list[dict[str, str]], fingerprint: dict[str, Any], langu
     )
     header_lines = [
         f"<!-- {DERIVED_WARNING} -->",
+        f"<!-- {FOCUS_DEPRECATION} -->",
         f"<!-- mission-center-derived schema={SCHEMA_VERSION} fingerprint-format={FINGERPRINT_FORMAT} source-fingerprint={fingerprint['value']} -->",
         f"# {title}",
         "",
@@ -388,23 +391,18 @@ def render_brief(
     guardrails = guardrails if guardrails is not None else read_guardrails(root / "guardrails.md")
     project, goal, cycle = project_identity(root, language)
     none_label = "無" if language == "zh-TW" else "None"
-    p0 = extract_focus_tasks(tasks)
-    # Both compact views intentionally expose only unfinished P0 task rows.
+    working_set_count = len(extract_working_set_tasks(tasks))
     active_guardrails = active_guardrail_ids(guardrails)
-
-    def task_lines(rows: list[dict[str, str]], limit: int = 8) -> list[str]:
-        return _bounded_lines(
-            [f"{_escape_cell(row.get('ID'))} · {_escape_cell(row.get('Title'))} · {row.get('Status')}" for row in rows],
-            limit,
-            none_label,
-        )
 
     labels = {
         "title": "任務簡報" if language == "zh-TW" else "Mission Brief",
         "project": "專案" if language == "zh-TW" else "Project",
         "goal": "北極星" if language == "zh-TW" else "North Star",
         "cycle": "週期" if language == "zh-TW" else "Cycle",
-        "p0": "未完成 P0" if language == "zh-TW" else "Unfinished P0",
+        "organized": "最後整理" if language == "zh-TW" else "Last organized",
+        "fingerprint": "來源指紋" if language == "zh-TW" else "Source fingerprint",
+        "truth": "唯一真實來源" if language == "zh-TW" else "Source of truth",
+        "working_set": "當前工作集" if language == "zh-TW" else "Active working set",
         "today": "今日摘要" if language == "zh-TW" else "Today's Summary",
         "guardrails": "重要護欄" if language == "zh-TW" else "Relevant Guardrails",
         "route": "需要時再讀" if language == "zh-TW" else "Read Next Only When Needed",
@@ -414,9 +412,9 @@ def render_brief(
         f"<!-- mission-center-derived schema={SCHEMA_VERSION} fingerprint-format={FINGERPRINT_FORMAT} source-fingerprint={fingerprint['value']} -->",
         f"# {labels['title']}",
         "",
-        f"- Last organized: {day.isoformat()}",
-        f"- Source fingerprint: `{fingerprint['value']}`",
-        "- Source of truth: `tasks.md`",
+        f"- {labels['organized']}: {day.isoformat()}",
+        f"- {labels['fingerprint']}: `{fingerprint['value']}`",
+        f"- {labels['truth']}: `tasks.md`",
         f"- {labels['project']}: {project}",
         f"- {labels['goal']}: {goal or none_label}",
         f"- {labels['cycle']}: {cycle or none_label}",
@@ -424,10 +422,6 @@ def render_brief(
     lines = [
         *header_lines,
         "",
-        f"## {labels['p0']} ({len(p0)})",
-        *task_lines(p0, 10),
-        "",
-
         f"## {labels['today']} · {day.isoformat()}",
         *_bounded_lines(daily_entries, 8, none_label),
         "",
@@ -435,9 +429,21 @@ def render_brief(
         *_bounded_lines(active_guardrails, 20, none_label),
         "",
         f"## {labels['route']}",
-        "- Modify task lifecycle/order → `tasks.md`",
-        "- Need rationale/evidence → `decisions.md`, `notes.md`, `smoke-tests.md`",
-        "- Brief/focus stale or truncated → run `mission_maintenance.py sync` and open canonical files",
+        *(
+            [
+                f"- 目前工作（{working_set_count} 項）→ `working-set.md`",
+                "- 修改任務生命週期／順序 → `tasks.md`",
+                "- 查閱理由／證據 → `decisions.md`、`notes.md`、`smoke-tests.md`",
+                "- 簡報／工作集過期或截斷 → 執行 `mission_maintenance.py sync` 後再讀 canonical files",
+            ]
+            if language == "zh-TW"
+            else [
+                f"- Current work ({working_set_count} items) → `working-set.md`",
+                "- Modify task lifecycle/order → `tasks.md`",
+                "- Need rationale/evidence → `decisions.md`, `notes.md`, `smoke-tests.md`",
+                "- Brief/working set stale or truncated → run `mission_maintenance.py sync` and open canonical files",
+            ]
+        ),
     ]
     content = "\n".join(lines).rstrip() + "\n"
     if len(content.encode("utf-8")) <= max_bytes:
@@ -445,15 +451,235 @@ def render_brief(
     minimal = header_lines + [
         "",
         "## Context counts",
-        f"- P0: {len(p0)}",
-
+        f"- Working set: {working_set_count}",
         f"- Guardrails: {len(active_guardrails)}",
-        "- [TRUNCATED] Brief exceeded its byte budget; read `focus.md` and canonical files.",
+        "- [TRUNCATED] Brief exceeded its byte budget; read `working-set.md` and canonical files.",
     ]
     content = "\n".join(minimal).rstrip() + "\n"
     if len(content.encode("utf-8")) > max_bytes:
         raise ValueError("brief byte budget is too small for required metadata")
     return content
+
+
+WORKING_SET_FINGERPRINT_SOURCES = ("tasks.md",)
+WORKING_SET_MAX_BYTES = 4096
+CRITICAL_LESSONS_MAX_BYTES = 6144
+RESUME_MAX_BYTES = 16384
+
+
+def _priority_key(task: dict[str, str]) -> tuple[int, str]:
+    priority = task.get("Priority", "").strip().upper()
+    value = int(priority[1:]) if re.fullmatch(r"P\d+", priority) else 99
+    return value, task.get("ID", "").strip()
+
+
+def _dependency_ids(task: dict[str, str]) -> set[str]:
+    """Extract task IDs from a compact Depends on cell without a second parser."""
+    return set(re.findall(r"\b[A-Za-z][A-Za-z0-9_]*-\d+\b", task.get("Depends on", "")))
+
+
+def _dependencies_satisfied(task: dict[str, str], done_ids: set[str]) -> bool:
+    return _dependency_ids(task).issubset(done_ids)
+
+
+def extract_working_set_tasks(tasks: list[dict[str, str]], limit: int = 6) -> list[dict[str, str]]:
+    """Select the bounded derived view; tasks.md remains lifecycle truth."""
+    unfinished = [t for t in tasks if t.get("Status", "").strip().casefold() != DONE_STATUS]
+    done_ids = {
+        t.get("ID", "").strip()
+        for t in tasks
+        if t.get("Status", "").strip().casefold() == DONE_STATUS
+    }
+    status = lambda task: task.get("Status", "").strip().casefold()
+    categories = (
+        [t for t in unfinished if status(t) == "blocked"],
+        [t for t in unfinished if status(t) == "in progress"],
+        [t for t in unfinished if status(t) == "review"],
+        [t for t in unfinished if t.get("Priority", "").strip().casefold() == "p0"],
+        sorted((t for t in unfinished if status(t) == "ready"), key=_priority_key),
+        sorted(
+            (t for t in unfinished if _dependencies_satisfied(t, done_ids)),
+            key=_priority_key,
+        ),
+    )
+    selected: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for category in categories:
+        for task in category:
+            task_id = task.get("ID", "").strip()
+            if task_id and task_id not in seen:
+                seen.add(task_id)
+                selected.append(task)
+                if len(selected) >= limit:
+                    return selected
+    return selected
+
+
+def render_working_set(tasks: list[dict[str, str]], fingerprint: dict[str, Any], language: str) -> str:
+    items = extract_working_set_tasks(tasks, limit=6)
+    title = "當前工作集" if language == "zh-TW" else "Active Working Set"
+    source_label = "唯一真實來源" if language == "zh-TW" else "Source of truth"
+    count_label = "可執行項目數" if language == "zh-TW" else "Unfinished working set count"
+    headers = (
+        "| ID | 標題 | 優先級 | 狀態 | 下一步 | 依賴 | 驗證方式 | 阻塞原因 |"
+        if language == "zh-TW"
+        else "| ID | Title | Priority | Status | Next action | Depends on | Verification | Blocker reason |"
+    )
+    header_lines = [
+        f"<!-- {DERIVED_WARNING} -->",
+        f"<!-- mission-center-derived schema={SCHEMA_VERSION} fingerprint-format={FINGERPRINT_FORMAT} source-fingerprint={fingerprint['value']} -->",
+        f"# {title}",
+        "",
+        f"- {source_label}: `tasks.md`",
+        f"- {count_label}: {len(items)}",
+    ]
+    if not items:
+        all_done = all(t.get("Status", "").strip().casefold() == DONE_STATUS for t in tasks) if tasks else True
+        statuses = {t.get("Status", "").strip().casefold() for t in tasks}
+        if all_done:
+            reason = "all work complete"
+        elif "blocked" in statuses:
+            reason = "blocked"
+        elif "awaiting approval" in statuses:
+            reason = "awaiting approval"
+        else:
+            reason = "dependency unresolved"
+        header_lines.extend([f"- Status: {reason}", ""])
+        return "\n".join(header_lines).rstrip() + "\n"
+
+    header_lines.extend([
+        "",
+        headers,
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ])
+    lines = list(header_lines)
+    for task in items:
+        blocker = task.get("Blocker reason", "") or (task.get("Comments", "") if task.get("Status", "").strip().casefold() == "blocked" else "")
+        lines.append(
+            "| " + " | ".join(
+                _escape_cell(task.get(field, ""))
+                for field in ("ID", "Title", "Priority", "Status", "Next action", "Depends on", "Verification")
+            ) + f" | {_escape_cell(blocker)} |"
+        )
+    content = "\n".join(lines).rstrip() + "\n"
+    if len(content.encode("utf-8")) <= WORKING_SET_MAX_BYTES:
+        return content
+
+    marker = "- [TRUNCATED] Working set exceeded its byte budget; rebuild from `tasks.md`."
+    bounded_lines = list(header_lines)
+    bounded_lines.extend(["", headers, "| --- | --- | --- | --- | --- | --- | --- | --- |"])
+    for line in lines[len(bounded_lines):]:
+        candidate = "\n".join([*bounded_lines, line, marker]).rstrip() + "\n"
+        if len(candidate.encode("utf-8")) > WORKING_SET_MAX_BYTES:
+            break
+        bounded_lines.append(line)
+    bounded_lines.append(marker)
+    return "\n".join(bounded_lines).rstrip() + "\n"
+
+
+def critical_lessons_template(language: str) -> str:
+    if language == "zh-TW":
+        return (
+            "# 重大教訓\n\n"
+            "> 只收錄已發生、具有再次發生價值，且解法已有證據支持的重大問題。\n"
+            "> 詳細事故資料位於 incidents/。\n"
+            "> 此文件必須保持精簡。\n\n"
+            "## 主動教訓\n\n"
+            "| ID | 適用情境 | 症狀 | 根因 | 正確處理 | 禁止重犯 | 驗證方式 | Incident | 最後確認 |\n"
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n\n"
+            "## 已解決索引\n\n"
+            "| ID | 狀態 | Resolved by | Incident |\n"
+            "| --- | --- | --- | --- |\n"
+        )
+    return (
+        "# Critical Lessons\n\n"
+        "> Only recorded issues that have occurred, are likely to recur, and have verified solutions.\n"
+        "> Detailed evidence is stored in incidents/.\n"
+        "> Keep this file compact.\n\n"
+        "## Active Lessons\n\n"
+        "| ID | Applies when | Symptoms | Root cause | Correct action | Avoid | Verification | Incident | Last confirmed |\n"
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n\n"
+        "## Resolved Index\n\n"
+        "| ID | Status | Resolved by | Incident |\n"
+        "| --- | --- | --- | --- |\n"
+    )
+
+
+INCIDENTS_README = """# Incidents
+
+Only create an `INC-xxx.md` record for a significant, evidenced event. Keep it bounded: summary, impact, symptoms, reproduction, root cause, rejected fixes, final fix, verification evidence, related task/decision/commit links, promoted lessons, and status. Do not store raw logs, secrets, or a second task lifecycle here.
+"""
+
+
+def validate_critical_lessons(path: Path, incidents_dir: Path | None = None) -> list[str]:
+    errors: list[str] = []
+    if not path.is_file():
+        errors.append("critical-lessons.md is missing")
+        return errors
+
+    content = path.read_text(encoding="utf-8")
+    byte_count = len(content.encode("utf-8"))
+    if byte_count > CRITICAL_LESSONS_MAX_BYTES:
+        errors.append(f"critical-lessons.md exceeds hard limit ({byte_count} > {CRITICAL_LESSONS_MAX_BYTES} bytes)")
+
+    tables, table_errors = parse_table_blocks(
+        content.splitlines(), table_name="critical-lessons.md", include_indented=True, strict=False
+    )
+    errors.extend(table_errors)
+    if not tables:
+        return errors
+
+    seen_ids: set[str] = set()
+    valid_resolved_statuses = {"Resolved", "Resolved-by-design", "Superseded", "已解決", "已由設計解決", "已取代"}
+    for table_idx, table_rows in enumerate(tables):
+        for number, row in enumerate(table_rows, start=1):
+            lesson_id = (row.get("ID") or "").strip()
+            if not lesson_id:
+                continue
+            if not re.fullmatch(r"CL-\d{3}", lesson_id):
+                errors.append(f"critical-lessons.md row {number} has invalid ID: {lesson_id}")
+                continue
+            if lesson_id in seen_ids:
+                errors.append(f"critical-lessons.md contains duplicate ID: {lesson_id}")
+            seen_ids.add(lesson_id)
+
+            symptoms = row.get("Symptoms") or row.get("症狀")
+            root_cause = row.get("Root cause") or row.get("根因")
+            correct_action = row.get("Correct action") or row.get("正確處理")
+            verification = row.get("Verification") or row.get("驗證方式")
+
+            is_active_lesson = symptoms is not None or "Applies when" in row or "適用情境" in row
+            if is_active_lesson:
+                applies_when = row.get("Applies when") or row.get("適用情境")
+                if not (symptoms and symptoms.strip()):
+                    errors.append(f"critical-lessons.md {lesson_id} is missing Symptoms")
+                if not (applies_when and applies_when.strip()):
+                    errors.append(f"critical-lessons.md {lesson_id} is missing Applies when")
+                if not (root_cause and root_cause.strip()):
+                    errors.append(f"critical-lessons.md {lesson_id} is missing Root cause")
+                if not (correct_action and correct_action.strip()):
+                    errors.append(f"critical-lessons.md {lesson_id} is missing Correct action")
+                if not (verification and verification.strip()):
+                    errors.append(f"critical-lessons.md {lesson_id} is missing Verification")
+
+            incident = (row.get("Incident") or "").strip()
+            if is_active_lesson and not incident:
+                errors.append(f"critical-lessons.md {lesson_id} is missing Incident evidence pointer")
+            if incident and incident not in {"-", "None", "無"} and incidents_dir is not None:
+                match = re.fullmatch(r"(?:incidents/)?(INC-\d{3})\.md|(?:INC-\d{3})", incident)
+                if not match:
+                    errors.append(f"critical-lessons.md {lesson_id} has invalid Incident pointer: {incident}")
+                    continue
+                incident_id = match.group(1) or incident
+                target_path = (incidents_dir / f"{incident_id}.md").resolve()
+                if incidents_dir.resolve() not in target_path.parents or not target_path.is_file():
+                    errors.append(f"critical-lessons.md {lesson_id} references missing incident file: {incident}")
+            if not is_active_lesson:
+                resolved_status = (row.get("Status") or row.get("狀態") or "").strip()
+                if resolved_status and resolved_status not in valid_resolved_statuses:
+                    errors.append(f"critical-lessons.md {lesson_id} has invalid resolved status: {resolved_status}")
+
+    return errors
 
 
 def ensure_memory_files(root: Path, day: date) -> list[str]:
@@ -463,7 +689,16 @@ def ensure_memory_files(root: Path, day: date) -> list[str]:
         changed.append("guardrails.md")
     if not (root / "daily-log.md").is_file() and atomic_write_if_changed(root / "daily-log.md", daily_log_template(language, day.isoformat())):
         changed.append("daily-log.md")
+    if not (root / "critical-lessons.md").is_file() and atomic_write_if_changed(root / "critical-lessons.md", critical_lessons_template(language)):
+        changed.append("critical-lessons.md")
+    incidents_dir = root / "incidents"
+    incidents_dir.mkdir(parents=True, exist_ok=True)
+    if not (incidents_dir / "README.md").is_file() and atomic_write_if_changed(incidents_dir / "README.md", INCIDENTS_README):
+        changed.append("incidents/README.md")
     return changed
+
+
+STATUS_REQUIRED_FILES = ("brief.md", "working-set.md", "guardrails.md", "daily-log.md", "critical-lessons.md")
 
 
 def run_sync(workspace: Path, force: bool = False, date_str: str | None = None, max_bytes: int = DEFAULT_BRIEF_MAX_BYTES) -> dict[str, Any]:
@@ -472,16 +707,17 @@ def run_sync(workspace: Path, force: bool = False, date_str: str | None = None, 
         raise FileNotFoundError(f"MissionCenter directory not found: {root}")
     day = local_date(date_str)
     current_before = compute_workspace_fingerprint(root)
+    ws_before = compute_workspace_fingerprint(root, WORKING_SET_FINGERPRINT_SOURCES)
     focus_before = compute_workspace_fingerprint(root, FOCUS_FINGERPRINT_SOURCES)
     cached_before = parse_derived_fingerprint(
         (root / "brief.md").read_text(encoding="utf-8") if (root / "brief.md").is_file() else ""
     )
-    cached_focus_before = parse_derived_fingerprint(
-        (root / "focus.md").read_text(encoding="utf-8") if (root / "focus.md").is_file() else ""
+    cached_ws_before = parse_derived_fingerprint(
+        (root / "working-set.md").read_text(encoding="utf-8") if (root / "working-set.md").is_file() else ""
     )
     stale_before = (
         is_fingerprint_stale(current_before, cached_before)
-        or is_fingerprint_stale(focus_before, cached_focus_before)
+        or is_fingerprint_stale(ws_before, cached_ws_before)
     )
     changed = ensure_memory_files(root, day)
     daily_changed, today_entries = organize_daily_log(root, day)
@@ -490,13 +726,25 @@ def run_sync(workspace: Path, force: bool = False, date_str: str | None = None, 
     tasks = parse_tasks(root / "tasks.md")
     guardrails = read_guardrails(root / "guardrails.md")
     fingerprint = compute_workspace_fingerprint(root)
+    ws_fingerprint = compute_workspace_fingerprint(root, WORKING_SET_FINGERPRINT_SOURCES)
     focus_fingerprint = compute_workspace_fingerprint(root, FOCUS_FINGERPRINT_SOURCES)
+
+    working_set = render_working_set(tasks, ws_fingerprint, detect_language(root))
     focus = render_focus(tasks, focus_fingerprint, detect_language(root))
     brief = render_brief(root, tasks, fingerprint, day, today_entries, guardrails, max_bytes)
-    if atomic_write_if_changed(root / "focus.md", focus):
-        changed.append("focus.md")
-    if atomic_write_if_changed(root / "brief.md", brief):
+
+    def write_derived(path: Path, content: str) -> bool:
+        # --force is an explicit atomic materialized-view rebuild, even if equal.
+        return atomic_write_if_changed(path, content, force=force)
+
+    if write_derived(root / "working-set.md", working_set):
+        changed.append("working-set.md")
+    if force or (root / "focus.md").is_file():
+        if write_derived(root / "focus.md", focus):
+            changed.append("focus.md")
+    if write_derived(root / "brief.md", brief):
         changed.append("brief.md")
+
     return {
         "schemaVersion": SCHEMA_VERSION,
         "workspace": str(root.parent),
@@ -506,6 +754,7 @@ def run_sync(workspace: Path, force: bool = False, date_str: str | None = None, 
         "forced": force,
         "changed": sorted(set(changed)),
         "focusCount": len(extract_focus_tasks(tasks)),
+        "workingSetCount": len(extract_working_set_tasks(tasks)),
         "briefBytes": len(brief.encode("utf-8")),
     }
 
@@ -528,27 +777,160 @@ def run_daily(workspace: Path, message: str | None = None, date_str: str | None 
 def run_status(workspace: Path, date_str: str | None = None) -> dict[str, Any]:
     root = mission_root(workspace)
     current = compute_workspace_fingerprint(root)
-    current_focus = compute_workspace_fingerprint(root, FOCUS_FINGERPRINT_SOURCES)
+    current_ws = compute_workspace_fingerprint(root, WORKING_SET_FINGERPRINT_SOURCES)
+
     brief_text = (root / "brief.md").read_text(encoding="utf-8") if (root / "brief.md").is_file() else ""
-    focus_text = (root / "focus.md").read_text(encoding="utf-8") if (root / "focus.md").is_file() else ""
+    ws_text = (root / "working-set.md").read_text(encoding="utf-8") if (root / "working-set.md").is_file() else ""
+
     brief_fp = parse_derived_fingerprint(brief_text)
-    focus_fp = parse_derived_fingerprint(focus_text)
-    tasks = parse_tasks(root / "tasks.md") if (root / "tasks.md").is_file() else []
-    missing = [name for name in ("brief.md", "focus.md", "guardrails.md", "daily-log.md") if not (root / name).is_file()]
-    stale = (
-        bool(missing)
-        or is_fingerprint_stale(current, brief_fp)
-        or is_fingerprint_stale(current_focus, focus_fp)
+    ws_fp = parse_derived_fingerprint(ws_text)
+
+    missing = [name for name in STATUS_REQUIRED_FILES if not (root / name).is_file()]
+
+    source_fresh = (
+        not bool(missing)
+        and not is_fingerprint_stale(current, brief_fp)
+        and not is_fingerprint_stale(current_ws, ws_fp)
     )
+
+    target_date = local_date(date_str)
+    daily_text = (root / "daily-log.md").read_text(encoding="utf-8") if (root / "daily-log.md").is_file() else ""
+    last_organized, _ = parse_daily_log(daily_text) if daily_text else (None, {})
+    date_fresh = (last_organized == target_date.isoformat())
+
+    stale_reasons: list[str] = []
+    if missing:
+        stale_reasons.append("missing_required_files")
+    if not source_fresh and "missing_required_files" not in stale_reasons:
+        stale_reasons.append("source_fingerprint_mismatch")
+    if not date_fresh:
+        stale_reasons.append("organized_date_mismatch")
+
+    stale = not (source_fresh and date_fresh)
+    tasks = parse_tasks(root / "tasks.md") if (root / "tasks.md").is_file() else []
+    ws_tasks = extract_working_set_tasks(tasks, limit=6)
+    focus_tasks = extract_focus_tasks(tasks)
+
     return {
         "schemaVersion": SCHEMA_VERSION,
         "workspace": str(root.parent),
-        "date": local_date(date_str).isoformat(),
+        "date": target_date.isoformat(),
         "fingerprint": current,
+        "sourceFresh": source_fresh,
+        "dateFresh": date_fresh,
         "stale": stale,
+        "staleReasons": stale_reasons,
         "missing": missing,
-        "focusTasks": [task.get("ID", "") for task in extract_focus_tasks(tasks)],
+        "workingSetTasks": [task.get("ID", "") for task in ws_tasks],
+        "focusTasks": [task.get("ID", "") for task in focus_tasks],
         "briefBytes": len(brief_text.encode("utf-8")),
+    }
+
+
+def _active_lessons_text(content: str) -> str:
+    """Keep resolved history out of the permanently loaded resume packet."""
+    marker = re.search(r"^## (?:Resolved Index|已解決索引)\s*$", content, re.MULTILINE)
+    return content[:marker.start()] if marker else content
+
+
+def _bounded_resume_sections(sections: list[tuple[str, int]], max_bytes: int) -> tuple[dict[str, int], list[str]]:
+    remaining = max(0, max_bytes)
+    included: dict[str, int] = {}
+    read_next: list[str] = []
+    for name, size in sections:
+        included[name] = min(size, remaining)
+        remaining -= included[name]
+        if included[name] < size:
+            read_next.append(name)
+    return included, read_next
+
+
+def run_resume(workspace: Path, date_str: str | None = None, max_bytes: int = RESUME_MAX_BYTES) -> dict[str, Any]:
+    root = mission_root(workspace)
+    status_res = run_status(root, date_str=date_str)
+
+    files_read = [
+        "MissionCenter/brief.md",
+        "MissionCenter/working-set.md",
+        "MissionCenter/critical-lessons.md",
+    ]
+
+    snapshot_path = root / "snapshot.md"
+    if snapshot_path.is_file():
+        snap_text = snapshot_path.read_text(encoding="utf-8")
+        if re.search(r"^\s*-\s*State:\s*active\b", snap_text, re.MULTILINE | re.IGNORECASE):
+            files_read.append("MissionCenter/snapshot.md")
+
+    brief_bytes = len((root / "brief.md").read_bytes()) if (root / "brief.md").is_file() else 0
+    ws_bytes = len((root / "working-set.md").read_bytes()) if (root / "working-set.md").is_file() else 0
+    cl_text = (root / "critical-lessons.md").read_text(encoding="utf-8") if (root / "critical-lessons.md").is_file() else ""
+    cl_bytes = len(_active_lessons_text(cl_text).encode("utf-8"))
+    snap_bytes = len(snapshot_path.read_bytes()) if "MissionCenter/snapshot.md" in files_read else 0
+    sections = [
+        ("MissionCenter/brief.md", brief_bytes),
+        ("MissionCenter/working-set.md", ws_bytes),
+        ("MissionCenter/critical-lessons.md#Active Lessons", cl_bytes),
+    ]
+    if snap_bytes:
+        sections.append(("MissionCenter/snapshot.md", snap_bytes))
+    included_bytes, read_next = _bounded_resume_sections(sections, max_bytes)
+    total_bytes = sum(included_bytes.values())
+
+    canonical_fallback = False
+    fallback_reason = None
+
+    if not status_res["sourceFresh"] or not status_res["dateFresh"]:
+        canonical_fallback = True
+        fallback_reason = "derived view stale"
+    # Budget overflow remains a bounded hot packet, not a canonical fallback.
+
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "route": "resume",
+        "sourceFresh": status_res["sourceFresh"],
+        "dateFresh": status_res["dateFresh"],
+        "staleReasons": status_res["staleReasons"],
+        "filesRead": files_read,
+        "context": {
+            "briefBytes": brief_bytes,
+            "workingSetBytes": ws_bytes,
+            "criticalLessonsBytes": cl_bytes,
+            "snapshotBytes": snap_bytes,
+            "totalBytes": total_bytes,
+            "includedBytes": included_bytes,
+        },
+        "bytes": total_bytes,
+        "maxBytes": max_bytes,
+        "canonicalFallback": canonical_fallback,
+        "fallbackReason": fallback_reason,
+        "truncated": bool(read_next),
+        "truncatedMarker": "[TRUNCATED]" if read_next else None,
+        "readNext": read_next,
+    }
+
+
+def run_task_info(workspace: Path, task_id: str) -> dict[str, Any]:
+    root = mission_root(workspace)
+    tasks = parse_tasks(root / "tasks.md") if (root / "tasks.md").is_file() else []
+    matched = [t for t in tasks if t.get("ID", "").strip().casefold() == task_id.strip().casefold()]
+    if matched:
+        return {
+            "schemaVersion": SCHEMA_VERSION,
+            "route": "task",
+            "taskId": task_id,
+            "found": True,
+            "task": matched[0],
+            "canonicalFallback": False,
+            "fallbackReason": None,
+        }
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "route": "task",
+        "taskId": task_id,
+        "found": False,
+        "task": None,
+        "canonicalFallback": True,
+        "fallbackReason": "requested task not present",
     }
 
 
@@ -556,26 +938,48 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("workspace", nargs="?", default=".")
     commands = parser.add_subparsers(dest="command", required=True)
+
     sync = commands.add_parser("sync")
     sync.add_argument("--date")
     sync.add_argument("--force", action="store_true")
     sync.add_argument("--max-brief-bytes", type=int, default=DEFAULT_BRIEF_MAX_BYTES)
+
     daily = commands.add_parser("daily")
     daily.add_argument("--date")
     daily.add_argument("--message", "-m")
     daily.add_argument("--max-brief-bytes", type=int, default=DEFAULT_BRIEF_MAX_BYTES)
+
     status = commands.add_parser("status")
     status.add_argument("--date")
+
+    resume = commands.add_parser("resume")
+    resume.add_argument("--json", action="store_true", default=True)
+    resume.add_argument("--date")
+    resume.add_argument("--max-bytes", type=int, default=RESUME_MAX_BYTES)
+
+    task_cmd = commands.add_parser("task")
+    task_cmd.add_argument("task_id")
+    task_cmd.add_argument("--json", action="store_true", default=True)
+
     args = parser.parse_args(argv)
     workspace = Path(args.workspace)
     if args.command == "sync":
         result = run_sync(workspace, args.force, args.date, args.max_brief_bytes)
     elif args.command == "daily":
         result = run_daily(workspace, args.message, args.date, args.max_brief_bytes)
-    else:
+    elif args.command == "status":
         result = run_status(workspace, args.date)
+    elif args.command == "resume":
+        result = run_resume(workspace, args.date, args.max_bytes)
+    elif args.command == "task":
+        result = run_task_info(workspace, args.task_id)
+
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 1 if args.command == "status" and result["stale"] else 0
+    if args.command == "status":
+        return 1 if result["stale"] else 0
+    if args.command == "task":
+        return 0 if result["found"] else 1
+    return 0
 
 
 if __name__ == "__main__":

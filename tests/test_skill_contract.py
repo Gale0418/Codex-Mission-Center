@@ -10,49 +10,30 @@ SKILL_PATH = SKILL_ROOT / "SKILL.md"
 
 
 class SkillContractTests(unittest.TestCase):
-    def test_post_commit_hook_is_explicitly_maintainer_only(self):
+    def test_skill_is_a_small_intent_and_risk_router(self):
         text = SKILL_PATH.read_text(encoding="utf-8")
-        self.assertIn("Maintainer-only", text)
-        self.assertIn("not a normal target-workspace command", text)
-        self.assertNotIn("In the **Codex-Mission-Center repo root**", text)
+        self.assertLessEqual(len(text.encode("utf-8")), 6144)
+        self.assertRegex(text, r"^---\nname: mission-center\n", re.MULTILINE)
+        self.assertIn("Use when ", text)
 
-    def test_frontmatter_description_is_trigger_only(self):
-        text = SKILL_PATH.read_text(encoding="utf-8")
-        match = re.search(r"^description:\s*[\"']?(.+?)[\"']?$", text, re.MULTILINE)
-        self.assertIsNotNone(match)
-        self.assertTrue(match.group(1).startswith("Use when "))
+        required_behaviors = (
+            "唯一真實來源",
+            "至多一個",
+            "使用者核准",
+            "working-set.md",
+            "critical-lessons.md",
+            "snapshot.md",
+            "Runtime",
+            "不得 Done",
+            "check-only",
+            "git commit",
+            "不執行 sync 或 normalize",
+        )
+        for behavior in required_behaviors:
+            with self.subTest(behavior=behavior):
+                self.assertIn(behavior, text)
 
-    def test_core_skill_is_concise_and_routes_to_required_protocols(self):
-        text = SKILL_PATH.read_text(encoding="utf-8")
-        self.assertLess(len(text.splitlines()), 500)
-        normalized = text.casefold()
-        for phrase in (
-            "north star intake",
-            "creative cross-domain council",
-            "prior art gate",
-            "approved task draft",
-            "one helper represents one task",
-            "references/research-protocol.md",
-        ):
-            self.assertIn(phrase, normalized)
-
-    def test_old_roster_and_pseudo_status_rules_are_absent(self):
-        text = SKILL_PATH.read_text(encoding="utf-8").lower()
-        for phrase in (
-            "active agent count",
-            "one visible helper per active agent",
-            "smoketest",
-        ):
-            self.assertNotIn(phrase, text)
-
-    def test_all_linked_references_exist(self):
-        text = SKILL_PATH.read_text(encoding="utf-8")
-        linked = re.findall(r"\]\((references/[^)]+)\)", text)
-        self.assertGreater(len(linked), 0)
-        for relative in linked:
-            self.assertTrue((SKILL_ROOT / relative).is_file(), relative)
-
-    def test_all_reference_files_are_routed_from_skill(self):
+    def test_skill_routes_every_reference_in_one_markdown_hop(self):
         text = SKILL_PATH.read_text(encoding="utf-8")
         linked = set(re.findall(r"\]\((references/[^)]+)\)", text))
         reference_files = {
@@ -60,7 +41,18 @@ class SkillContractTests(unittest.TestCase):
             for path in (SKILL_ROOT / "references").glob("*.md")
         }
         self.assertEqual(reference_files, linked)
+        for relative in linked:
+            self.assertTrue((SKILL_ROOT / relative).is_file(), relative)
 
+    def test_skill_does_not_encode_large_protocols_or_bad_runtime_model(self):
+        text = SKILL_PATH.read_text(encoding="utf-8").casefold()
+        for phrase in (
+            "active agent count",
+            "one visible helper per active agent",
+            "smoketest",
+            "hook automatically runs",
+        ):
+            self.assertNotIn(phrase, text)
     def test_dynamic_expert_council_uses_complexity_evidence_and_approval_gates(self):
         council = (
             SKILL_ROOT / "references" / "dynamic-expert-council.md"
@@ -225,10 +217,11 @@ class SkillContractTests(unittest.TestCase):
         closeout = (SKILL_ROOT / "references" / "closeout-format.md").read_text(
             encoding="utf-8"
         ).casefold()
-        self.assertIn("completion adversarial critic council gate", skill)
+        self.assertIn("references/coderabbit-review-gate.md", skill)
+        self.assertIn("references/completion-critic-council.md", skill)
         self.assertLess(
-            skill.index("optional final coderabbit review"),
-            skill.index("completion adversarial critic council"),
+            skill.index("references/coderabbit-review-gate.md"),
+            skill.index("references/completion-critic-council.md"),
         )
         self.assertIn("run applicable coderabbit technical review first", gates)
         self.assertIn("before `done` or closeout", gates)
@@ -273,11 +266,11 @@ class SkillContractTests(unittest.TestCase):
         agent = (SKILL_ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
         normalized = agent.casefold()
         for phrase in (
-            "one question",
-            "prior art",
-            "approved task",
-            "normalize task state",
-            "record verification",
+            "bounded local context",
+            "intent and risk",
+            "tasks.md",
+            "only lifecycle truth",
+            "evidence before done",
         ):
             self.assertIn(phrase, normalized)
 

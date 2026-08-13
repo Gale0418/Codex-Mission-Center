@@ -15,7 +15,7 @@ ROOT = Path(__file__).parents[1]
 SCRIPTS = ROOT / "skills" / "mission-center" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from mission_runtime import HudHandler, RecoverableTransportError, StdioTransport, codex_stdio_command, connect_live, is_loopback_host_header, link_task, loopback_server_type, replay, validate_websockets_version
+from mission_runtime import HudHandler, RecoverableTransportError, StdioTransport, codex_stdio_command, connect_live, is_loopback_host_header, link_task, loopback_server_type, packaged_runtime_requirements, replay, task_ids_from_workspace, validate_websockets_version
 from runtime_protocol import age_runtime_state, empty_runtime_state, load_last_valid, normalize_codex_message, reduce_event, sanitize, touch_runtime_state, validate_initialize_response, write_runtime_state
 
 
@@ -46,6 +46,34 @@ class RuntimeProtocolTests(unittest.TestCase):
             validate_websockets_version("16.0")
         with self.assertRaises(RuntimeError):
             validate_websockets_version("17.0")
+
+    def test_packaged_runtime_requirements_is_resolved_from_script_ancestors(self):
+        with workspace_tempdir() as temp:
+            root = Path(temp) / "plugin"
+            script = root / "skills" / "mission-center" / "scripts" / "mission_runtime.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("# placeholder\n", encoding="utf-8")
+            requirements = root / "requirements-runtime.txt"
+            requirements.write_text("websockets\n", encoding="utf-8")
+            self.assertEqual(packaged_runtime_requirements(script), requirements.resolve())
+
+    def test_packaged_runtime_requirements_has_safe_shallow_fallback(self):
+        with workspace_tempdir() as temp:
+            shallow = Path(temp) / "mission_runtime.py"
+            self.assertEqual(
+                packaged_runtime_requirements(shallow),
+                shallow.resolve().parent / "requirements-runtime.txt",
+            )
+
+    def test_task_link_parser_handles_escaped_pipe_and_crlf(self):
+        with workspace_tempdir() as temp:
+            workspace = Path(temp)
+            mission = workspace / "MissionCenter"
+            mission.mkdir()
+            (mission / "tasks.md").write_bytes(
+                b"| ID | Title | Status |\r\n| --- | --- | --- |\r\n| MC-009 | a\\|b | Ready |\r\n"
+            )
+            self.assertEqual(task_ids_from_workspace(workspace), {"MC-009"})
 
     def test_duplicate_and_out_of_order_events_are_ignored(self):
         state = reduce_event(empty_runtime_state(), self.event(2, event_id="same"))

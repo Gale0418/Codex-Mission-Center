@@ -94,7 +94,7 @@ TASK_LABELS = {
         "verification_next": "執行驗證並整理成果",
         "clarify": "釐清範圍",
         "acceptance": "定義驗收標準",
-        "recorded": "smoke tests 已記錄",
+        "recorded": "已記錄冒煙測試",
         "smoke_columns": [
             "日期",
             "對應任務 ID",
@@ -165,6 +165,7 @@ def main() -> int:
     project = root / "project.md"
     if args.force or project_goal_is_blank(project):
         project.write_text(
+            "<!-- mission-center-managed-summary v=1 -->\n"
             f"# {labels['project_title']}\n\n"
             f"- {labels['project']}: {args.project}\n"
             f"- {labels['goal']}: {args.goal}\n"
@@ -195,7 +196,7 @@ def main() -> int:
         smoke_tests.write_text(
             f"# {labels['smoke_title']}\n\n"
             + "\n".join(table_header(labels["smoke_columns"]))
-            + "\n|  |  |  |  |  |  |  | manual |\n",
+            + "\n",
             encoding="utf-8",
         )
 

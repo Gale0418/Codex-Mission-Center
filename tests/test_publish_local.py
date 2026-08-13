@@ -26,6 +26,7 @@ def make_fake_repo(root: Path) -> Path:
     write(repo / "LICENSE", "license\n")
     write(repo / "NOTICE.md", "notice\n")
     write(repo / "PRIVACY.md", "privacy\n")
+    write(repo / "requirements-runtime.txt", "websockets>=16.1,<17\n")
     write(repo / "skills" / "mission-center" / "SKILL.md", "canonical\n")
     write(
         repo / "skills" / "mission-center" / "references" / "rules.md",
@@ -94,6 +95,10 @@ class PublishLocalTests(unittest.TestCase):
                 "privacy\n",
             )
             self.assertEqual(
+                (marketplace / "requirements-runtime.txt").read_text(encoding="utf-8"),
+                "websockets>=16.1,<17\n",
+            )
+            self.assertEqual(
                 main(
                     [
                         "--repo",
@@ -159,7 +164,7 @@ class PublishLocalTests(unittest.TestCase):
                 actual_command = actual_call.args[0]
                 self.assertEqual(len(actual_command), len(expected_command))
                 for index, (actual, expected) in enumerate(zip(actual_command, expected_command)):
-                    if sys.platform == "win32" and index in path_indexes:
+                    if index in path_indexes:
                         self.assertTrue(Path(actual).samefile(Path(expected)))
                     else:
                         self.assertEqual(actual, expected)

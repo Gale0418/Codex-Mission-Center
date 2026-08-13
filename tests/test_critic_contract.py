@@ -150,6 +150,26 @@ class CriticContractTests(unittest.TestCase):
         ]
         self.assertEqual([], validate_critic_record(record))
 
+    def test_v11_state_machine_allows_honest_non_dispatch_and_requires_completed_contract(self):
+        skipped = {"schemaVersion": "1.1", "selectedRoute": "skip", "executionStatus": "skipped", "requiredByPolicy": False, "taskId": "MC-005", "chairRecordLocator": "output/mission-center-critique/MC-005.json", "reason": "not applicable"}
+        self.assertEqual([], validate_critic_record(skipped))
+        pending = {"schemaVersion": "1.1", "selectedRoute": "critic_full", "executionStatus": "not_dispatched", "requiredByPolicy": False, "taskId": "MC-005", "chairRecordLocator": "output/mission-center-critique/MC-005.json", "reason": "approval and budget absent"}
+        self.assertEqual([], validate_critic_record(pending))
+        self.assertTrue(validate_critic_record({**pending, "executionStatus": "completed"}))
+
+    def test_v11_enforces_locator_and_required_policy_completion(self):
+        record = {"schemaVersion": "1.1", "selectedRoute": "skip", "executionStatus": "skipped", "requiredByPolicy": True, "taskId": "MC-005", "chairRecordLocator": "outside/record.json", "reason": "not applicable"}
+        errors = validate_critic_record(record)
+        self.assertIn("chairRecordLocator must use output/mission-center-critique/", errors)
+        self.assertIn("requiredByPolicy records must be completed", errors)
+
+    def test_high_deferred_needs_human_acceptance(self):
+        record = valid_record()
+        record["findings"] = [self.finding("High", "deferred")]
+        self.assertTrue(validate_critic_record(record))
+        record["findings"][0]["humanAcceptance"] = {field: "x" for field in ("approverIdentity", "approvalTime", "scope", "reason", "expiry", "reopenTrigger")}
+        self.assertEqual([], validate_critic_record(record))
+
     def test_cli(self):
         with workspace_tempdir() as directory:
             path = Path(directory) / "record.json"

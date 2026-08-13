@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from common.markdown_table import parse_table
 from optimization_core import atomic_write_json
 from runtime_protocol import age_runtime_state, empty_runtime_state, load_last_valid, normalize_codex_message, reduce_event, touch_runtime_state, validate_initialize_response, write_runtime_state
 
@@ -52,13 +53,20 @@ def task_ids_from_workspace(workspace: Path) -> set[str]:
     path = workspace / "MissionCenter" / "tasks.md"
     if not path.is_file():
         return set()
-    ids = set()
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.startswith("|"):
-            cells = [cell.strip() for cell in line.strip("|").split("|")]
-            if cells and cells[0] not in {"ID", "---"} and not set(cells[0]) <= {"-", ":"}:
-                ids.add(cells[0])
-    return ids
+    try:
+        return {row.get("ID", "").strip() for row in parse_table(path) if row.get("ID", "").strip()}
+    except ValueError:
+        return set()
+
+
+def packaged_runtime_requirements(script_path: Path | None = None) -> Path:
+    """Locate the packaged runtime requirements relative to this script."""
+    script = (script_path or Path(__file__)).resolve()
+    for directory in (script.parent, *script.parents):
+        candidate = directory / "requirements-runtime.txt"
+        if candidate.is_file():
+            return candidate
+    return script.parent / "requirements-runtime.txt"
 
 
 def link_task(workspace: Path, agent_id: str, task_ids: list[str]) -> dict:
@@ -265,7 +273,10 @@ class WebSocketTransport(TransportAdapter):
             import websockets
             from websockets.asyncio.client import connect
         except ImportError as exc:
-            raise RuntimeError("Live runtime requires optional dependency: pip install -r requirements-runtime.txt") from exc
+            requirements = packaged_runtime_requirements()
+            raise RuntimeError(
+                f'Live runtime requires optional dependency: pip install -r "{requirements}"'
+            ) from exc
         validate_websockets_version(websockets.__version__)
         headers = None
         if self.token_env:

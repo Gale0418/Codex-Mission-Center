@@ -1,6 +1,12 @@
 # 每日紀錄
 
-- 最後整理： 2026-08-10
+- 最後整理： 2026-08-13
+
+## 2026-08-13
+- 完成 v0.3 記憶核心、續航防呆、正確性與薄路由整合，進入最終審查。
+- 完成 v0.3 全量驗證、本機 Skill 與 marketplace source 發布、GitHub draft PR #6；舊 Plugin cache refresh 因 WindowsApps 權限改列已知限制。
+- 完成 v0.3 CodeRabbit 三輪收斂：初審 10 findings 全修、delta 1 Minor 補實跑 hook 測試、最終 0 findings；完整 209 tests、Doctor、Skill 與 Plugin validation 全綠，準備快轉推送 main。
+- 修正 PR #6 首輪 CI 的兩個跨平台邊界：POSIX 淺路徑 fixture 與零任務 working-set Doctor 契約；新增回歸後完整 210 tests 全綠。
 
 ## 2026-08-10
 - [2026-08-10T03:09:43] 啟動 Completion Adversarial Critic Council 週期 | reason: 使用者要求在任務完成前由多個真實子代理對遊戲、文章、對話與其他可感知成果進行龜毛挑刺 | impact: 新增 MC-033 至 MC-036；評審唯讀、證據綁定 revision、最多兩波且不改 Task lifecycle

@@ -14,10 +14,13 @@ from mission_maintenance import (
     atomic_write_if_changed,
     compute_workspace_fingerprint,
     extract_focus_tasks,
+    extract_working_set_tasks,
     parse_daily_log,
     run_daily,
     run_status,
+    run_resume,
     run_sync,
+    validate_critical_lessons,
     validate_daily_log_text,
     validate_guardrails,
     normalize_guardrail_rows,
@@ -60,14 +63,11 @@ class MissionMaintenanceTests(unittest.TestCase):
                 workspace = make_workspace(Path(temporary), language)
                 result = run_sync(workspace, date_str="2026-08-09")
                 self.assertEqual(result["focusCount"], 1)
-                focus = (workspace / "MissionCenter" / "focus.md").read_text(encoding="utf-8")
-                self.assertIn("| T1 |", focus)
-                self.assertNotIn("| T2 |", focus)
-                self.assertNotIn("| T3 |", focus)
+                ws = (workspace / "MissionCenter" / "working-set.md").read_text(encoding="utf-8")
+                self.assertIn("| T1 |", ws)
                 brief = (workspace / "MissionCenter" / "brief.md").read_text(encoding="utf-8")
-                self.assertIn("T1", brief)
-                self.assertNotIn("T2", brief)
-                self.assertNotIn("T3", brief)
+                self.assertNotIn("| T1 |", brief)
+                self.assertIn("working-set.md", brief)
 
     def test_extract_focus_uses_priority_column_not_labels(self):
         tasks = [
@@ -123,7 +123,7 @@ class MissionMaintenanceTests(unittest.TestCase):
             workspace = make_workspace(Path(temporary))
             mission = workspace / "MissionCenter"
             run_sync(workspace, date_str="2026-08-09")
-            mtimes = {name: (mission / name).stat().st_mtime_ns for name in ("brief.md", "focus.md")}
+            mtimes = {name: (mission / name).stat().st_mtime_ns for name in ("brief.md", "working-set.md")}
             time.sleep(0.01)
             second = run_sync(workspace, date_str="2026-08-09")
             self.assertEqual(second["changed"], [])
@@ -131,7 +131,7 @@ class MissionMaintenanceTests(unittest.TestCase):
             (mission / "project.md").write_text("# Project\n\n- Project: Changed\n", encoding="utf-8")
             time.sleep(0.01)
             run_sync(workspace, date_str="2026-08-09")
-            self.assertEqual(mtimes["focus.md"], (mission / "focus.md").stat().st_mtime_ns)
+            self.assertEqual(mtimes["working-set.md"], (mission / "working-set.md").stat().st_mtime_ns)
             self.assertNotEqual(mtimes["brief.md"], (mission / "brief.md").stat().st_mtime_ns)
 
     def test_force_requests_a_rebuild_without_claiming_prior_staleness(self):
@@ -139,13 +139,14 @@ class MissionMaintenanceTests(unittest.TestCase):
             workspace = make_workspace(Path(temporary))
             mission = workspace / "MissionCenter"
             run_sync(workspace, date_str="2026-08-09")
-            mtimes = {name: (mission / name).stat().st_mtime_ns for name in ("brief.md", "focus.md")}
+            mtimes = {name: (mission / name).stat().st_mtime_ns for name in ("brief.md", "working-set.md")}
             time.sleep(0.01)
             result = run_sync(workspace, force=True, date_str="2026-08-09")
             self.assertFalse(result["staleBeforeSync"])
             self.assertTrue(result["forced"])
-            self.assertEqual(result["changed"], [])
-            self.assertEqual(mtimes, {name: (mission / name).stat().st_mtime_ns for name in mtimes})
+            self.assertEqual(result["changed"], ["brief.md", "focus.md", "working-set.md"])
+            self.assertTrue(all((mission / name).stat().st_mtime_ns > mtime for name, mtime in mtimes.items()))
+            self.assertTrue((mission / "focus.md").is_file())
 
     def test_status_detects_stale_then_sync_repairs_it(self):
         with workspace_tempdir("memory-stale-") as temporary:
@@ -186,6 +187,23 @@ class MissionMaintenanceTests(unittest.TestCase):
             self.assertLessEqual(result["briefBytes"], 800)
             self.assertIn("[TRUNCATED]", brief)
 
+    def test_working_set_budget_is_utf8_bounded_and_explicitly_truncated(self):
+        with workspace_tempdir("memory-working-set-budget-") as temporary:
+            workspace = make_workspace(Path(temporary), "zh-TW")
+            mission = workspace / "MissionCenter"
+            tasks = (mission / "tasks.md").read_text(encoding="utf-8")
+            tasks += "".join(
+                f"| X{i} | {'很長的工作內容' * 800}{i} | Task | | P0 | Ready | Codex | | 處理 | unittest | 1 | | |\n"
+                for i in range(6)
+            )
+            (mission / "tasks.md").write_text(tasks, encoding="utf-8")
+            run_sync(workspace, date_str="2026-08-09")
+            working_set = (mission / "working-set.md").read_text(encoding="utf-8")
+            self.assertLessEqual(len(working_set.encode("utf-8")), 4096)
+            self.assertIn("[TRUNCATED]", working_set)
+            self.assertIn("tasks.md", working_set)
+            self.assertFalse(run_status(workspace, "2026-08-09")["stale"])
+
     def test_atomic_write_preserves_mtime_when_unchanged(self):
         with workspace_tempdir("memory-atomic-") as temporary:
             path = Path(temporary) / "value.txt"
@@ -216,6 +234,115 @@ class MissionMaintenanceTests(unittest.TestCase):
             daily = (workspace / "MissionCenter/daily-log.md").read_text(encoding="utf-8")
             self.assertIn("- 最後整理： 2026-08-09", daily)
 
+    def test_working_set_prioritizes_blocked_in_progress_review_then_ready(self):
+        tasks = [
+            {"ID": "T-ready", "Priority": "P1", "Status": "Ready"},
+            {"ID": "T-review", "Priority": "P3", "Status": "Review"},
+            {"ID": "T-progress", "Priority": "P3", "Status": "In Progress"},
+            {"ID": "T-blocked", "Priority": "P3", "Status": "Blocked"},
+            {"ID": "T-backlog", "Priority": "P0", "Status": "Backlog"},
+        ]
+        self.assertEqual(
+            [task["ID"] for task in extract_working_set_tasks(tasks)],
+            ["T-blocked", "T-progress", "T-review", "T-backlog", "T-ready"],
+        )
+
+    def test_resume_includes_p1_ready_when_no_p0_and_honors_budget(self):
+        with workspace_tempdir("memory-resume-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            mission = workspace / "MissionCenter"
+            tasks = (mission / "tasks.md").read_text(encoding="utf-8").replace("| P0 | Ready |", "| P1 | Ready |", 1)
+            (mission / "tasks.md").write_text(tasks, encoding="utf-8")
+            run_sync(workspace, date_str="2026-08-09")
+            self.assertIn("T1", run_status(workspace, "2026-08-09")["workingSetTasks"])
+            (mission / "critical-lessons.md").write_text("# Critical Lessons\n\n" + ("x" * 7000), encoding="utf-8")
+            packet = run_resume(workspace, "2026-08-09", max_bytes=512)
+            self.assertLessEqual(packet["bytes"], 512)
+            self.assertTrue(packet["truncated"])
+            self.assertEqual(packet["truncatedMarker"], "[TRUNCATED]")
+
+    def test_status_is_date_stale_without_source_change(self):
+        with workspace_tempdir("memory-date-stale-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            run_sync(workspace, date_str="2026-08-09")
+            result = run_status(workspace, "2026-08-10")
+            self.assertTrue(result["sourceFresh"])
+            self.assertFalse(result["dateFresh"])
+            self.assertEqual(result["staleReasons"], ["organized_date_mismatch"])
+
+    def test_critical_lesson_requires_incident_and_verified_fields(self):
+        with workspace_tempdir("memory-lessons-") as temporary:
+            path = Path(temporary) / "critical-lessons.md"
+            path.write_text(
+                "# Critical Lessons\n\n## Active Lessons\n\n"
+                "| ID | Applies when | Symptoms | Root cause | Correct action | Avoid | Verification | Incident | Last confirmed |\n"
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+                "| CL-001 | resume | lost task | p0-only | use set | none | test | | 2026-08-13 |\n",
+                encoding="utf-8",
+            )
+            self.assertTrue(any("Incident evidence" in error for error in validate_critical_lessons(path, Path(temporary) / "incidents")))
+
+    def test_resume_and_task_info_return_json_structures(self):
+        from mission_maintenance import run_resume, run_task_info
+        with workspace_tempdir("memory-resume-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            run_sync(workspace, date_str="2026-08-09")
+            res = run_resume(workspace, date_str="2026-08-09")
+            self.assertEqual(res["schemaVersion"], "1.0")
+            self.assertEqual(res["route"], "resume")
+            self.assertTrue(res["sourceFresh"])
+            self.assertIn("MissionCenter/working-set.md", res["filesRead"])
+
+            task_data = run_task_info(workspace, "T1")
+            self.assertEqual(task_data["task"]["ID"], "T1")
+            self.assertEqual(task_data["task"]["Priority"], "P0")
+
+    def test_critical_lessons_validation(self):
+        from mission_maintenance import validate_critical_lessons
+        with workspace_tempdir("memory-lessons-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            mission = workspace / "MissionCenter"
+            mission.mkdir(parents=True)
+            lessons_file = mission / "critical-lessons.md"
+            inc_dir = mission / "incidents"
+            inc_dir.mkdir()
+
+            lessons_file.write_text(
+                "# Critical Lessons\n\n"
+                "## Active Lessons\n\n"
+                "| ID | Applies when | Symptoms | Root cause | Correct action | Avoid | Verification | Incident | Last confirmed |\n"
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+                "| BAD | general | s | r | c | a | v | - | 2026-08-09 |\n"
+                "| CL-001 | general | s | r | c | a | v | missing-inc.md | 2026-08-09 |\n",
+                encoding="utf-8"
+            )
+            errors = validate_critical_lessons(lessons_file, inc_dir)
+            self.assertTrue(any("invalid ID" in err for err in errors))
+            self.assertTrue(any("invalid Incident pointer" in err for err in errors))
+
+
+
+    def test_critical_lessons_only_accepts_incident_ids_or_incident_paths_inside_directory(self):
+        with workspace_tempdir("memory-incidents-") as temporary:
+            root = Path(temporary)
+            incidents = root / "incidents"
+            incidents.mkdir()
+            (incidents / "INC-123.md").write_text("evidence", encoding="utf-8")
+            (root / "README.md").write_text("not incident evidence", encoding="utf-8")
+            lessons = root / "critical-lessons.md"
+            header = (
+                "# Critical Lessons\n\n## Active Lessons\n\n"
+                "| ID | Applies when | Symptoms | Root cause | Correct action | Avoid | Verification | Incident | Last confirmed |\n"
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+            )
+            def validate(incident):
+                lessons.write_text(header + f"| CL-001 | general | s | r | c | a | v | {incident} | 2026-08-13 |\n", encoding="utf-8")
+                return validate_critical_lessons(lessons, incidents)
+
+            self.assertEqual(validate("INC-123"), [])
+            self.assertEqual(validate("incidents/INC-123.md"), [])
+            self.assertTrue(any("invalid Incident pointer" in error for error in validate("../README.md")))
+            self.assertTrue(any("invalid Incident pointer" in error for error in validate("README.md")))
 
 if __name__ == "__main__":
     unittest.main()

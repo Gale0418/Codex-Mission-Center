@@ -1,8 +1,13 @@
+import sys
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
+SCRIPTS = ROOT / "skills" / "mission-center" / "scripts"
+sys.path.insert(0, str(SCRIPTS))
+
+from workspace_contract import REQUIRED_FILES
 
 
 class PerProjectReleaseTests(unittest.TestCase):
@@ -14,24 +19,7 @@ class PerProjectReleaseTests(unittest.TestCase):
             for path in (ROOT / "MissionCenter").iterdir()
             if path.is_file()
         }
-        self.assertEqual(
-            actual,
-            {
-                "brief.md",
-                "focus.md",
-                "guardrails.md",
-                "daily-log.md",
-                "project.md",
-                "progress.md",
-                "tasks.md",
-                "decisions.md",
-                "smoke-tests.md",
-                "notes.md",
-                "snapshot.md",
-                "closeout.md",
-                "visual-hub.md",
-            },
-        )
+        self.assertTrue(set(REQUIRED_FILES).issubset(actual))
 
     def test_readme_declares_per_project_only_contract(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -45,21 +33,7 @@ class PerProjectReleaseTests(unittest.TestCase):
             self.assertIn(sentence, readme)
 
     def test_documented_layout_matches_canonical_contract(self):
-        expected = {
-            "brief.md",
-            "focus.md",
-            "guardrails.md",
-            "daily-log.md",
-            "project.md",
-            "progress.md",
-            "tasks.md",
-            "decisions.md",
-            "smoke-tests.md",
-            "notes.md",
-            "snapshot.md",
-            "closeout.md",
-            "visual-hub.md",
-        }
+        expected = set(REQUIRED_FILES)
         for relative in (
             "README.md",
             "skills/mission-center/references/task-workspace.md",

@@ -22,6 +22,7 @@ PLUGIN_ITEMS = (
     "LICENSE",
     "NOTICE.md",
     "PRIVACY.md",
+    "requirements-runtime.txt",
 )
 EXCLUDED_DIRS = {".git", "__pycache__", ".pytest_cache"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo"}

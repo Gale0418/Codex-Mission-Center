@@ -25,7 +25,8 @@ class BootstrapMissionCenterTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             target = workspace / "MissionCenter"
             self.assertTrue((target / "brief.md").is_file())
-            self.assertTrue((target / "focus.md").is_file())
+            self.assertTrue((target / "working-set.md").is_file())
+            self.assertTrue((target / "critical-lessons.md").is_file())
 
     def test_both_languages_create_exact_canonical_file_set(self):
         with workspace_tempdir("bootstrap-contract-") as temporary:
@@ -84,10 +85,14 @@ class BootstrapMissionCenterTests(unittest.TestCase):
             }
             for language, expected in headings.items():
                 for name, heading in expected.items():
-                    self.assertTrue(
+                    first_lines = (
                         (root / language / "MissionCenter" / name)
                         .read_text(encoding="utf-8")
-                        .startswith(heading),
+                        .splitlines()[:2]
+                    )
+                    self.assertIn(
+                        heading,
+                        first_lines,
                         f"{language}/{name} should begin with {heading}",
                     )
 
