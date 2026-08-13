@@ -22,6 +22,8 @@ MAX_RECENT_ATTEMPTS = 5
 CANONICAL_ATTEMPT_FIELDS = {"phase", "errorSignature", "hypothesis", "evidence"}
 ATTEMPTS_METADATA_PREFIX = "- Recent attempts JSON: "
 DIAGNOSIS_METADATA_PREFIX = "- Diagnosis evidence JSON: "
+VERIFICATION_METADATA_PREFIX = "- Verification evidence JSON: "
+LOW_COST_VERIFICATIONS = {"unit_test", "integration_test", "config_validation", "dry_run", "local_reproduction", "staging_smoke", "read_only_query"}
 SECRET_PATTERN = re.compile(r"(?i)(password|secret|api[_-]?key|token|authorization|bearer)\s*[:=]")
 
 TEXT = {
@@ -132,6 +134,9 @@ def main() -> int:
     for name in ("project","cycle","goal","progress","active","blocked","decisions","questions"): parser.add_argument(f"--{name}")
     parser.add_argument("--note", action="append", default=[]); parser.add_argument("--hypothesis",action="append",default=[]); parser.add_argument("--evidence",action="append",default=[]); parser.add_argument("--change",action="append",default=[])
     parser.add_argument("--attempt",action="append",default=[]); parser.add_argument("--resume",action="store_true")
+    parser.add_argument("--verification-result", choices=("pass", "fail"))
+    parser.add_argument("--verification-action", choices=sorted(LOW_COST_VERIFICATIONS))
+    parser.add_argument("--verification-evidence")
     args=parser.parse_args(); workspace=Path(args.workspace); root=workspace.resolve()/"MissionCenter"; root.mkdir(parents=True,exist_ok=True)
     prior_text=(root/"snapshot.md").read_text(encoding="utf-8") if (root/"snapshot.md").is_file() else ""
     prior_attempts=read_recent_attempts(prior_text)
@@ -142,14 +147,31 @@ def main() -> int:
     new_pairs=[{"hypothesis": h.strip(), "evidence": e.strip()} for h,e in zip(args.hypothesis,args.evidence)]
     if any(not item["hypothesis"] or not item["evidence"] or SECRET_PATTERN.search(item["hypothesis"]) or SECRET_PATTERN.search(item["evidence"]) for item in new_pairs): parser.error("diagnosis hypothesis/evidence is empty or secret-like")
     unseen=[item for item in new_pairs if item not in diagnosis_evidence]
-    if gate["mode"] == "diagnosis" and unseen:
+    prior_gate_match = re.search(r"^- Retry gate:\s*(\S+)\s*$", prior_text, re.MULTILINE)
+    prior_gate = prior_gate_match.group(1) if prior_gate_match else None
+    if prior_gate == "verification_required":
+        gate={"mode":"verification_required","stopModifyingAndDeploying":True,"recentAttempts":gate["recentAttempts"]}
+    if args.verification_result is not None and prior_gate != "verification_required":
+        parser.error("verification result is only valid after verification_required")
+    verification_record = None
+    if args.verification_result is not None:
+        evidence = (args.verification_evidence or "").strip()
+        if not args.verification_action or not evidence or len(evidence) > 280 or SECRET_PATTERN.search(evidence):
+            parser.error("verification result requires a low-cost action and bounded non-secret evidence")
+        verification_record = {"action": args.verification_action, "result": args.verification_result, "evidence": evidence}
+    if args.verification_result == "pass":
         gate={"mode":"retry","stopModifyingAndDeploying":False,"recentAttempts":[]}
+    elif args.verification_result == "fail":
+        gate={"mode":"diagnosis","stopModifyingAndDeploying":True,"recentAttempts":gate["recentAttempts"]}
+    elif gate["mode"] == "diagnosis" and unseen:
+        gate={"mode":"verification_required","stopModifyingAndDeploying":True,"recentAttempts":[]}
         diagnosis_evidence=(diagnosis_evidence+unseen)[-MAX_RECENT_ATTEMPTS:]
     labels=TEXT[detect_language(root)]; facts=canonical_facts(workspace); now=datetime.now().isoformat(timespec="seconds")
     state=facts.get("state", "inactive" if facts["status"] == "Inactive" else "active")
     lines=[f"# {labels['title']}","",f"- State: {state}",f"- {labels['captured_at']}: {now}",f"- {labels['active']}: {facts['active']}",f"- {labels['status']}: {facts['status']}",f"- {labels['revision']}: {facts['revision']}",f"- {labels['fingerprint']}: {facts['fingerprint']}"]
     if state == "inactive" and args.resume: lines += [f"- {labels['resume']}: {labels['inactive']}"]
     else: lines += [f"- {labels['dependencies']}: {facts['dependencies']}",f"- {labels['verification']}: {facts['verification']}",f"- Retry gate: {gate['mode']}",ATTEMPTS_METADATA_PREFIX + json.dumps(gate["recentAttempts"], ensure_ascii=False, separators=(",",":")),DIAGNOSIS_METADATA_PREFIX + json.dumps(diagnosis_evidence, ensure_ascii=False, separators=(",",":")),f"- {labels['attempts']}:"] + ([f"  - {item['phase']} | {item['errorSignature']}" for item in gate['recentAttempts']] if gate['recentAttempts'] else [f"  - {labels['none']}"])
+    if verification_record is not None: lines.append(VERIFICATION_METADATA_PREFIX + json.dumps(verification_record, ensure_ascii=False, separators=(",",":")))
     for heading, values in (("Notes",args.note),("Hypotheses",args.hypothesis),("Evidence",args.evidence),("Changes",args.change)):
         if values: lines += [f"- {heading}:"]+[f"  - {value}" for value in values]
     (root/"snapshot.md").write_text("\n".join(lines)+"\n",encoding="utf-8",newline="\n"); print(root/"snapshot.md"); return 0

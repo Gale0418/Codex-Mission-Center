@@ -17,8 +17,8 @@ Reduce repeated context loading without creating a second task truth source. The
 
 ## Progressive Read Route
 
-1. Run `python skills/mission-center/scripts/mission_maintenance.py . status`.
-2. When fresh, read `brief.md`, then `working-set.md`, then the Active Lessons section of `critical-lessons.md`. Read `snapshot.md` only for an active checkpoint; open `guardrails.md` when the work matches a listed situation.
+1. Run `python skills/mission-center/scripts/mission_maintenance.py . resume --json`.
+2. Prefer only the already bounded `packet.content`. Read another file only when `packet.readNext` or `packet.fallbackReason` explicitly names the need; never scan the whole `MissionCenter/` directory during resume.
 3. Read `tasks.md` before changing task lifecycle, ordering, priority, dependencies, or next actions.
 4. Read `decisions.md`, `notes.md`, and `smoke-tests.md` when rationale, research, risk, or verification evidence is needed.
 5. When stale or truncated, run `mission_maintenance.py . sync`. Canonical fallback is explicit and limited to a stale/corrupt derived view, requested missing task, lifecycle mutation, verification evidence, or an explicit request.
@@ -40,6 +40,6 @@ python skills/mission-center/scripts/mission_maintenance.py . sync
 - Organize routine events by day; deduplicate identical normalized messages.
 - Never auto-summarize away decisions, research provenance, smoke-test evidence, task history, or unresolved blockers.
 - Treat `brief.md`, `working-set.md`, and legacy `focus.md` as rebuildable caches. Do not edit them directly.
-- Resume packets have a 16 KiB hard budget. A truncated packet reports `[TRUNCATED]` and `readNext`; it must not silently load every canonical record.
+- Resume packets have a 16 KiB hard budget over their actual UTF-8 `content`. A truncated packet reports `[TRUNCATED]` and `readNext`; consumers must not bypass the fuse by rereading every hot or canonical record.
 - A compact brief must mark truncation explicitly and route the reader to canonical files.
 - `doctor_mission_center.py` must fail on stale derived fingerprints, inconsistent P0 focus, malformed daily dates, or invalid guardrail rows.

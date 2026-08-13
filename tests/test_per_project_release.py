@@ -21,6 +21,12 @@ class PerProjectReleaseTests(unittest.TestCase):
         }
         self.assertTrue(set(REQUIRED_FILES).issubset(actual))
 
+    def test_repo_snapshot_uses_current_checkpoint_format(self):
+        snapshot = (ROOT / "MissionCenter" / "snapshot.md").read_text(encoding="utf-8")
+        self.assertIn("- State: active", snapshot)
+        for field in ("進行中任務", "狀態", "版本", "指紋", "依賴", "驗證", "Retry gate"):
+            self.assertIn(field, snapshot)
+
     def test_readme_declares_per_project_only_contract(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         for sentence in (

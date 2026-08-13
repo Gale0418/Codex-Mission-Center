@@ -210,5 +210,40 @@ class DoctorMissionCenterTests(unittest.TestCase):
             _, warnings = inspect_workspace_report(workspace)
             self.assertTrue(any("legacy empty seed row" in warning for warning in warnings))
 
+    def test_doctor_warns_on_legacy_snapshot(self):
+        with workspace_tempdir("doctor-legacy-snapshot-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            snapshot = workspace / "MissionCenter" / "snapshot.md"
+            snapshot.write_text("# Snapshot\n\n- Project: old\n", encoding="utf-8")
+            errors, warnings = inspect_workspace_report(workspace)
+            self.assertEqual(errors, [])
+            self.assertIn("legacy snapshot format; regenerate execution checkpoint", warnings)
+
+    def test_doctor_validates_active_execution_checkpoint(self):
+        with workspace_tempdir("doctor-active-snapshot-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            snapshot = workspace / "MissionCenter" / "snapshot.md"
+            snapshot.write_text(
+                "# Execution Checkpoint\n\n- State: active\n- Captured at: 2026-08-13T00:00:00\n"
+                "- Active task: UNKNOWN Missing\n- Status: In Progress\n- Revision: abc\n- Fingerprint: hash\n"
+                "- Dependencies: None\n- Verification: unittest\n- Retry gate: retry\n",
+                encoding="utf-8",
+            )
+            self.assertTrue(any("unknown task UNKNOWN" in error for error in inspect_workspace(workspace)))
+
+    def test_doctor_rejects_stale_active_checkpoint_facts(self):
+        with workspace_tempdir("doctor-stale-active-snapshot-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            snapshot = workspace / "MissionCenter" / "snapshot.md"
+            snapshot.write_text(
+                "# Execution Checkpoint\n\n- State: active\n- Captured at: 2026-08-13T00:00:00\n"
+                "- Active task: DEMO-002 實作同步\n- Status: In Progress\n- Revision: stale\n- Fingerprint: stale\n"
+                "- Dependencies: wrong\n- Verification: wrong\n- Retry gate: retry\n",
+                encoding="utf-8",
+            )
+            errors = inspect_workspace(workspace)
+            for field in ("Revision", "Fingerprint", "Dependencies", "Verification"):
+                self.assertTrue(any(f"snapshot.md {field} is stale" in error for error in errors), field)
+
 if __name__ == "__main__":
     unittest.main()

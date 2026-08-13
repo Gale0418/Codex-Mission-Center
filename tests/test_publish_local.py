@@ -84,6 +84,10 @@ class PublishLocalTests(unittest.TestCase):
                 (personal / "SKILL.md").read_text(encoding="utf-8"),
                 "canonical\n",
             )
+            self.assertEqual(
+                (personal / "requirements-runtime.txt").read_text(encoding="utf-8"),
+                "websockets>=16.1,<17\n",
+            )
             self.assertFalse((personal / "obsolete.txt").exists())
             self.assertFalse((personal / "scripts" / "__pycache__").exists())
             self.assertTrue(

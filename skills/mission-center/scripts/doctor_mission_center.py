@@ -33,6 +33,7 @@ from mission_maintenance import (
     validate_daily_log_text,
     validate_guardrails,
 )
+from snapshot_mission_center import canonical_facts
 
 
 SMOKE_ID_HEADERS = ("Linked task ID", "對應任務 ID")
@@ -43,6 +44,64 @@ SMOKE_ACTION_HEADERS = ("How it was tested", "測試方式")
 SMOKE_EXPECTED_HEADERS = ("Expected result", "預期結果")
 SMOKE_OBSERVED_HEADERS = ("Observed result", "實際結果")
 LEGACY_DONE_AUDIT = "legacy-done-audit.json"
+
+
+def _snapshot_field(text: str, *labels: str) -> str | None:
+    for label in labels:
+        match = re.search(rf"^- {re.escape(label)}[：:][ \t]*([^\r\n]+)$", text, re.MULTILINE)
+        if match:
+            return match.group(1).strip()
+    return None
+
+
+def validate_snapshot(root: Path, tasks: list[dict[str, str]]) -> tuple[list[str], list[str]]:
+    path = root / "snapshot.md"
+    if not path.is_file():
+        return [], []
+    text = path.read_text(encoding="utf-8")
+    state = _snapshot_field(text, "State")
+    if state not in {"active", "inactive"}:
+        return [], ["legacy snapshot format; regenerate execution checkpoint"]
+    errors: list[str] = []
+    common = {
+        "Captured at": ("Captured at", "建立時間"),
+        "Revision": ("Revision", "版本"),
+        "Fingerprint": ("Fingerprint", "指紋"),
+    }
+    required = dict(common)
+    if state == "active":
+        required.update({
+            "Active task": ("Active task", "進行中任務"),
+            "Status": ("Status", "狀態"),
+            "Dependencies": ("Dependencies", "依賴"),
+            "Verification": ("Verification", "驗證"),
+            "Retry gate": ("Retry gate",),
+        })
+    values = {name: _snapshot_field(text, *labels) for name, labels in required.items()}
+    for name, value in values.items():
+        if not value:
+            errors.append(f"snapshot.md active execution checkpoint is missing {name}" if state == "active" else f"snapshot.md inactive checkpoint is missing {name}")
+    if state == "active" and values.get("Active task"):
+        task_id = values["Active task"].split(maxsplit=1)[0]
+        task = next((item for item in tasks if item.get("ID", "").strip() == task_id), None)
+        if task is None:
+            errors.append(f"snapshot.md Active task references unknown task {task_id}")
+        elif values.get("Status") != task.get("Status", "").strip():
+            errors.append(f"snapshot.md Status does not match task {task_id}")
+        if task is not None:
+            canonical = canonical_facts(root.parent)
+            comparisons = {
+                "Active task": canonical["active"],
+                "Status": canonical["status"],
+                "Revision": canonical["revision"],
+                "Fingerprint": canonical["fingerprint"],
+                "Dependencies": canonical["dependencies"],
+                "Verification": canonical["verification"],
+            }
+            for name, expected in comparisons.items():
+                if values.get(name) != expected:
+                    errors.append(f"snapshot.md {name} is stale; expected {expected}")
+    return errors, []
 
 
 def parse_table_strict(path: Path, table_name: str) -> tuple[list[dict[str, str]], list[str]]:
@@ -284,6 +343,10 @@ def inspect_workspace_report(workspace: Path) -> tuple[list[str], list[str]]:
     daily_path = root / "daily-log.md"
     if daily_path.is_file():
         errors.extend(validate_daily_log_text(daily_path.read_text(encoding="utf-8")))
+
+    snapshot_errors, snapshot_warnings = validate_snapshot(root, tasks)
+    errors.extend(snapshot_errors)
+    warnings.extend(snapshot_warnings)
 
     return errors, warnings
 
