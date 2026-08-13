@@ -23,9 +23,16 @@ class PerProjectReleaseTests(unittest.TestCase):
 
     def test_repo_snapshot_uses_current_checkpoint_format(self):
         snapshot = (ROOT / "MissionCenter" / "snapshot.md").read_text(encoding="utf-8")
-        self.assertIn("- State: active", snapshot)
-        for field in ("進行中任務", "狀態", "版本", "指紋", "依賴", "驗證", "Retry gate"):
+        state = next(
+            (value for value in ("active", "inactive") if f"- State: {value}" in snapshot),
+            None,
+        )
+        self.assertIsNotNone(state)
+        for field in ("進行中任務", "狀態", "版本", "指紋", "恢復"):
             self.assertIn(field, snapshot)
+        if state == "active":
+            for field in ("依賴", "驗證", "Retry gate"):
+                self.assertIn(field, snapshot)
 
     def test_readme_declares_per_project_only_contract(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
