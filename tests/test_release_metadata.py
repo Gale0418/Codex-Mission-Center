@@ -13,6 +13,10 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertTrue(url.endswith("/PRIVACY.md"))
         self.assertTrue((ROOT / "PRIVACY.md").is_file())
 
+    def test_plugin_version_is_final_maintenance_patch(self):
+        manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["version"], "0.3.1")
+
     def test_readme_does_not_end_with_test_marker(self):
         lines = (ROOT / "README.md").read_text(encoding="utf-8").splitlines()
         self.assertNotEqual(lines[-1].strip(), "123")

@@ -491,16 +491,13 @@ def extract_working_set_tasks(tasks: list[dict[str, str]], limit: int = 6) -> li
         if t.get("Status", "").strip().casefold() == DONE_STATUS
     }
     status = lambda task: task.get("Status", "").strip().casefold()
+    p0 = [t for t in unfinished if t.get("Priority", "").strip().casefold() == "p0" and status(t) != "backlog"]
     categories = (
         [t for t in unfinished if status(t) == "blocked"],
         [t for t in unfinished if status(t) == "in progress"],
         [t for t in unfinished if status(t) == "review"],
-        [t for t in unfinished if t.get("Priority", "").strip().casefold() == "p0"],
+        p0,
         sorted((t for t in unfinished if status(t) == "ready"), key=_priority_key),
-        sorted(
-            (t for t in unfinished if _dependencies_satisfied(t, done_ids)),
-            key=_priority_key,
-        ),
     )
     selected: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -515,8 +512,24 @@ def extract_working_set_tasks(tasks: list[dict[str, str]], limit: int = 6) -> li
     return selected
 
 
+def extract_next_candidates(tasks: list[dict[str, str]], limit: int = 2) -> list[dict[str, str]]:
+    """List dependency-ready Backlog work without granting execution permission."""
+    done_ids = {
+        task.get("ID", "").strip()
+        for task in tasks
+        if task.get("Status", "").strip().casefold() == DONE_STATUS
+    }
+    candidates = (
+        task for task in tasks
+        if task.get("Status", "").strip().casefold() == "backlog"
+        and _dependencies_satisfied(task, done_ids)
+    )
+    return sorted(candidates, key=_priority_key)[:max(0, limit)]
+
+
 def render_working_set(tasks: list[dict[str, str]], fingerprint: dict[str, Any], language: str) -> str:
     items = extract_working_set_tasks(tasks, limit=6)
+    candidates = extract_next_candidates(tasks, limit=2)
     title = "當前工作集" if language == "zh-TW" else "Active Working Set"
     source_label = "唯一真實來源" if language == "zh-TW" else "Source of truth"
     count_label = "可執行項目數" if language == "zh-TW" else "Unfinished working set count"
@@ -533,6 +546,18 @@ def render_working_set(tasks: list[dict[str, str]], fingerprint: dict[str, Any],
         f"- {source_label}: `tasks.md`",
         f"- {count_label}: {len(items)}",
     ]
+    candidate_lines = []
+    if candidates:
+        candidate_lines = ["", "## 下一步候選" if language == "zh-TW" else "## Next Candidates", ""]
+        candidate_lines.extend(
+            f"- {task.get('ID', '').strip()} — {task.get('Title', '').strip()}"
+            for task in candidates
+        )
+        candidate_lines.append(
+            "- 以上僅為候選，開始前仍須在 `tasks.md` 升格為 Ready。"
+            if language == "zh-TW"
+            else "- Candidates only; promote to Ready in `tasks.md` before starting."
+        )
     if not items:
         all_done = all(t.get("Status", "").strip().casefold() == DONE_STATUS for t in tasks) if tasks else True
         statuses = {t.get("Status", "").strip().casefold() for t in tasks}
@@ -544,7 +569,7 @@ def render_working_set(tasks: list[dict[str, str]], fingerprint: dict[str, Any],
             reason = "awaiting approval"
         else:
             reason = "dependency unresolved"
-        header_lines.extend([f"- Status: {reason}", ""])
+        header_lines.extend([f"- Status: {reason}", *candidate_lines, ""])
         return "\n".join(header_lines).rstrip() + "\n"
 
     header_lines.extend([
@@ -561,6 +586,7 @@ def render_working_set(tasks: list[dict[str, str]], fingerprint: dict[str, Any],
                 for field in ("ID", "Title", "Priority", "Status", "Next action", "Depends on", "Verification")
             ) + f" | {_escape_cell(blocker)} |"
         )
+    lines.extend(candidate_lines)
     content = "\n".join(lines).rstrip() + "\n"
     if len(content.encode("utf-8")) <= WORKING_SET_MAX_BYTES:
         return content
@@ -833,16 +859,50 @@ def _active_lessons_text(content: str) -> str:
     return content[:marker.start()] if marker else content
 
 
-def _bounded_resume_sections(sections: list[tuple[str, int]], max_bytes: int) -> tuple[dict[str, int], list[str]]:
+def _truncate_utf8(text: str, max_bytes: int, marker: str = "[TRUNCATED]") -> tuple[str, bool]:
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text, False
+    marker_bytes = marker.encode("utf-8")
+    if max_bytes < len(marker_bytes):
+        return "", True
+    prefix = encoded[: max_bytes - len(marker_bytes)]
+    while prefix:
+        try:
+            return prefix.decode("utf-8") + marker, True
+        except UnicodeDecodeError:
+            prefix = prefix[:-1]
+    return marker, True
+
+
+def _bounded_resume_content(
+    sections: list[tuple[str, str | None]], max_bytes: int
+) -> tuple[dict[str, str | None], dict[str, int], list[str]]:
     remaining = max(0, max_bytes)
+    content: dict[str, str | None] = {}
     included: dict[str, int] = {}
     read_next: list[str] = []
-    for name, size in sections:
-        included[name] = min(size, remaining)
-        remaining -= included[name]
-        if included[name] < size:
+    truncated_section = False
+    for name, value in sections:
+        if value is None:
+            content[name] = None
+            included[name] = 0
+            continue
+        if truncated_section:
+            content[name] = ""
+            included[name] = 0
+            if value:
+                read_next.append(name)
+            continue
+        bounded, truncated = _truncate_utf8(value, remaining)
+        content[name] = bounded
+        size = len(bounded.encode("utf-8"))
+        included[name] = size
+        remaining -= size
+        if truncated:
             read_next.append(name)
-    return included, read_next
+            truncated_section = True
+    return content, included, read_next
 
 
 def run_resume(workspace: Path, date_str: str | None = None, max_bytes: int = RESUME_MAX_BYTES) -> dict[str, Any]:
@@ -861,19 +921,21 @@ def run_resume(workspace: Path, date_str: str | None = None, max_bytes: int = RE
         if re.search(r"^\s*-\s*State:\s*active\b", snap_text, re.MULTILINE | re.IGNORECASE):
             files_read.append("MissionCenter/snapshot.md")
 
-    brief_bytes = len((root / "brief.md").read_bytes()) if (root / "brief.md").is_file() else 0
-    ws_bytes = len((root / "working-set.md").read_bytes()) if (root / "working-set.md").is_file() else 0
+    brief_text = (root / "brief.md").read_text(encoding="utf-8") if (root / "brief.md").is_file() else ""
+    ws_text = (root / "working-set.md").read_text(encoding="utf-8") if (root / "working-set.md").is_file() else ""
+    brief_bytes = len(brief_text.encode("utf-8"))
+    ws_bytes = len(ws_text.encode("utf-8"))
     cl_text = (root / "critical-lessons.md").read_text(encoding="utf-8") if (root / "critical-lessons.md").is_file() else ""
     cl_bytes = len(_active_lessons_text(cl_text).encode("utf-8"))
-    snap_bytes = len(snapshot_path.read_bytes()) if "MissionCenter/snapshot.md" in files_read else 0
+    snap_text = snapshot_path.read_text(encoding="utf-8") if "MissionCenter/snapshot.md" in files_read else None
+    snap_bytes = len(snap_text.encode("utf-8")) if snap_text is not None else 0
     sections = [
-        ("MissionCenter/brief.md", brief_bytes),
-        ("MissionCenter/working-set.md", ws_bytes),
-        ("MissionCenter/critical-lessons.md#Active Lessons", cl_bytes),
+        ("brief", brief_text),
+        ("workingSet", ws_text),
+        ("activeCriticalLessons", _active_lessons_text(cl_text)),
+        ("snapshot", snap_text),
     ]
-    if snap_bytes:
-        sections.append(("MissionCenter/snapshot.md", snap_bytes))
-    included_bytes, read_next = _bounded_resume_sections(sections, max_bytes)
+    content, included_bytes, read_next = _bounded_resume_content(sections, max_bytes)
     total_bytes = sum(included_bytes.values())
 
     canonical_fallback = False
@@ -885,12 +947,13 @@ def run_resume(workspace: Path, date_str: str | None = None, max_bytes: int = RE
     # Budget overflow remains a bounded hot packet, not a canonical fallback.
 
     return {
-        "schemaVersion": SCHEMA_VERSION,
+        "schemaVersion": "1.1",
         "route": "resume",
         "sourceFresh": status_res["sourceFresh"],
         "dateFresh": status_res["dateFresh"],
         "staleReasons": status_res["staleReasons"],
         "filesRead": files_read,
+        "content": content,
         "context": {
             "briefBytes": brief_bytes,
             "workingSetBytes": ws_bytes,

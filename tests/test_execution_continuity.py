@@ -121,11 +121,29 @@ class ExecutionContinuityTests(unittest.TestCase):
             with patch.object(sys, "argv", ["snapshot", str(workspace), "--hypothesis", "cache is stale", "--evidence", "fresh trace differs"]):
                 self.assertEqual(module.main(), 0)
             snapshot = (workspace / "MissionCenter" / "snapshot.md").read_text(encoding="utf-8")
-            self.assertIn("- Retry gate: retry", snapshot)
+            self.assertIn("- Retry gate: verification_required", snapshot)
             self.assertIn("Diagnosis evidence JSON", snapshot)
+            with patch.object(sys, "argv", ["snapshot", str(workspace), "--verification-result", "pass", "--verification-action", "unit_test", "--verification-evidence", "focused suite passed"]):
+                self.assertEqual(module.main(), 0)
+            verified = (workspace / "MissionCenter" / "snapshot.md").read_text(encoding="utf-8")
+            self.assertIn("- Retry gate: retry", verified)
+            self.assertIn("Verification evidence JSON", verified)
             with patch.object(sys, "argv", ["snapshot", str(workspace), "--attempt", repeated, "--attempt", repeated, "--hypothesis", "cache is stale", "--evidence", "fresh trace differs"]):
                 self.assertEqual(module.main(), 0)
             self.assertIn("- Retry gate: diagnosis", (workspace / "MissionCenter" / "snapshot.md").read_text(encoding="utf-8"))
+
+    def test_verification_result_requires_verification_gate(self):
+        with workspace_tempdir("snapshot-verification-gate-") as temporary:
+            workspace = Path(temporary)
+            mission = workspace / "MissionCenter"
+            mission.mkdir()
+            (mission / "tasks.md").write_text(
+                "| ID | Title | Status | Depends on | Verification |\n| --- | --- | --- | --- | --- |\n| T-1 | Fix | In Progress | | unittest |\n",
+                encoding="utf-8",
+            )
+            with patch.object(sys, "argv", ["snapshot", str(workspace), "--verification-result", "fail"]):
+                with self.assertRaises(SystemExit):
+                    module.main()
 
     def test_snapshot_writes_canonical_state_for_english_and_traditional_chinese(self):
         for language, title in (('en', 'Task'), ('zh-TW', '任務')):

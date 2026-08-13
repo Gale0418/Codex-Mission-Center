@@ -1,6 +1,6 @@
 {
   "name": "mission-center",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Research-driven MissionCenter planning, adaptive optimization, and optional runtime HUD for Codex workspaces.",
   "author": {
     "name": "Gale0418",

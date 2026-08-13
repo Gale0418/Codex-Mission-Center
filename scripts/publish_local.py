@@ -175,8 +175,19 @@ def copy_tree_contents(source: Path, destination: Path) -> None:
         shutil.copy2(path, target)
 
 
-def stage_skill(source: Path, staging: Path) -> None:
+def skill_file_map(repo: Path) -> dict[str, str]:
+    result = file_map(repo / "skills" / "mission-center")
+    requirements = repo / "requirements-runtime.txt"
+    if requirements.is_file():
+        result["requirements-runtime.txt"] = file_hash(requirements)
+    return result
+
+
+def stage_skill(repo: Path, source: Path, staging: Path) -> None:
     copy_tree_contents(source, staging)
+    requirements = repo / "requirements-runtime.txt"
+    if requirements.is_file():
+        shutil.copy2(requirements, staging / "requirements-runtime.txt")
 
 
 def stage_marketplace(repo: Path, staging: Path, stamp_version: bool) -> None:
@@ -251,7 +262,7 @@ def verify_targets(
     cache_skill: Path | None,
 ) -> bool:
     targets = [
-        ("personal", file_map(canonical), file_map(personal)),
+        ("personal", skill_file_map(repo), file_map(personal)),
         ("marketplace", marketplace_file_map(repo), file_map(marketplace_root)),
     ]
     if cache_skill is not None:
@@ -356,7 +367,7 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("--cache-skill is verify-only; cache is Codex-managed")
 
     if args.dry_run:
-        print_changes("personal", map_diff(file_map(canonical), file_map(personal)))
+        print_changes("personal", map_diff(skill_file_map(repo), file_map(personal)))
         print_changes(
             "marketplace",
             map_diff(marketplace_file_map(repo), file_map(marketplace_root)),
@@ -366,7 +377,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.write:
-        replace_from_stage(personal, lambda staging: stage_skill(canonical, staging))
+        replace_from_stage(personal, lambda staging: stage_skill(repo, canonical, staging))
         replace_from_stage(
             marketplace_root,
             lambda staging: stage_marketplace(repo, staging, stamp_version=args.register),

@@ -14,7 +14,7 @@ The CLI may append only short `Notes`, `Hypotheses`, `Changes`, and structured `
 
 ## Retry Gate
 
-Two matching error signatures or three failures in one phase enter `diagnosis` mode: stop modifying and deploying. Leave this mode only with a new falsifiable hypothesis plus new evidence; create a fresh checkpoint after the evidence changes.
+Two matching error signatures or three failures in one phase enter `diagnosis` mode: stop modifying and deploying. A new falsifiable hypothesis plus new evidence advances only to `verification_required`; the first next action must be a low-cost unit, integration, configuration, dry-run, local reproduction, staging smoke, or read-only verification. Deploy, migration, release, and destructive actions remain blocked until an explicit verification PASS creates a fresh `retry` checkpoint.
 
 ## Migration
 

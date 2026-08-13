@@ -34,6 +34,8 @@ The service limit is three review runs per rolling hour and 150 files per run. P
 
 Follow the installed CodeRabbit review skill or CLI agent workflow. Verify the repository, CLI, and authentication before the review. Prefer the narrowest scope that still includes implementation and relevant tests.
 
+On Windows, if `coderabbit` is not on the host `PATH`, first try `source ~/.bashrc` in the installed shell. For the maintained local setup, use WSL Ubuntu with `/root/.local/bin/coderabbit`; treat this as a discovered fallback, not a portable default, and verify the path before use.
+
 Example:
 
     coderabbit auth status --agent

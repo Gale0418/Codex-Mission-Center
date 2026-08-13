@@ -14,6 +14,7 @@ from mission_maintenance import (
     atomic_write_if_changed,
     compute_workspace_fingerprint,
     extract_focus_tasks,
+    extract_next_candidates,
     extract_working_set_tasks,
     parse_daily_log,
     run_daily,
@@ -244,8 +245,20 @@ class MissionMaintenanceTests(unittest.TestCase):
         ]
         self.assertEqual(
             [task["ID"] for task in extract_working_set_tasks(tasks)],
-            ["T-blocked", "T-progress", "T-review", "T-backlog", "T-ready"],
+            ["T-blocked", "T-progress", "T-review", "T-ready"],
         )
+
+    def test_working_set_lists_at_most_two_backlog_candidates_separately(self):
+        tasks = [
+            {"ID": "D", "Priority": "P0", "Status": "Done"},
+            {"ID": "R", "Title": "Run", "Priority": "P1", "Status": "Ready"},
+            {"ID": "B1", "Title": "One", "Priority": "P1", "Status": "Backlog", "Depends on": "D"},
+            {"ID": "B2", "Title": "Two", "Priority": "P2", "Status": "Backlog"},
+            {"ID": "B3", "Title": "Three", "Priority": "P3", "Status": "Backlog"},
+            {"ID": "BX", "Title": "Blocked dependency", "Priority": "P0", "Status": "Backlog", "Depends on": "MISSING-1"},
+        ]
+        self.assertEqual([row["ID"] for row in extract_next_candidates(tasks)], ["B1", "B2"])
+        self.assertEqual([row["ID"] for row in extract_working_set_tasks(tasks)], ["R"])
 
     def test_resume_includes_p1_ready_when_no_p0_and_honors_budget(self):
         with workspace_tempdir("memory-resume-") as temporary:
@@ -288,10 +301,12 @@ class MissionMaintenanceTests(unittest.TestCase):
             workspace = make_workspace(Path(temporary))
             run_sync(workspace, date_str="2026-08-09")
             res = run_resume(workspace, date_str="2026-08-09")
-            self.assertEqual(res["schemaVersion"], "1.0")
+            self.assertEqual(res["schemaVersion"], "1.1")
             self.assertEqual(res["route"], "resume")
             self.assertTrue(res["sourceFresh"])
             self.assertIn("MissionCenter/working-set.md", res["filesRead"])
+            self.assertEqual(set(res["content"]), {"brief", "workingSet", "activeCriticalLessons", "snapshot"})
+            self.assertLessEqual(sum(len((value or "").encode("utf-8")) for value in res["content"].values()), 16384)
 
             task_data = run_task_info(workspace, "T1")
             self.assertEqual(task_data["task"]["ID"], "T1")

@@ -9,7 +9,7 @@ Mission Center 僅處理目前 repo 的 `./MissionCenter/`；不掃描、註冊�
 
 ## 先判斷意圖
 
-- **恢復**：依 [記憶維護](references/memory-maintenance.md) 讀 `working-set.md`、`critical-lessons.md` 的 Active Lessons；僅有有效進行中 checkpoint 才讀 `snapshot.md`。任何狀態、順序、優先級、依賴或下一步變更前讀 `tasks.md`；衍生檢視過期/損毀才以明確理由重建。
+- **恢復**：先執行 `python skills/mission-center/scripts/mission_maintenance.py . resume --json`，優先只使用 bounded `packet.content`；其中 `workingSet`、`activeCriticalLessons`、`snapshot` 分別是 `working-set.md`、`critical-lessons.md` Active Lessons 與有效 active `snapshot.md` 的 bounded 內容。若 `fallbackReason` 為 `derived view stale`，先執行 `mission_maintenance.py . sync`，再重新取得 Resume packet；其他情況僅依 `packet.readNext` 或 `fallbackReason` 追加讀取指定檔案，不得自行掃描整個 `MissionCenter/`。任何狀態、順序、優先級、依賴或下一步變更前仍須讀 `tasks.md`；詳見 [記憶維護](references/memory-maintenance.md)。
 - **目標未清**：依 [訪談](references/intake-protocol.md) 重述理解、指出最大缺口並提出**至多一個**阻塞問題；安全可逆假設可繼續。未達完整性前不建立工作區或任務。
 - **規劃／發布**：依 [任務工作區](references/task-workspace.md)、[Linear 規劃](references/linear-parity.md) 與 [執行閘門](references/execution-gates.md)，先提出選項、取捨與建議；使用者核准完整 Epic 地圖與首個可驗證里程碑的草案前，不得寫入 `tasks.md`。
 - **執行／變更**：維持最小可驗證切片、如實記錄阻塞與決策；依 [任務種子](references/task-seeding.md)、[規格化](references/normalization-rules.md) 與 [活動紀錄](references/activity-log-format.md) 更新事實。
