@@ -1,5 +1,5 @@
 <!-- Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files. -->
-<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=9f2bd75b14bddba9b9209e9099818dca8e4239b385b5bf292fcc40394c005043 -->
+<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=fcf43e33ee85f46cc9397c314e2509a63cb9c23ad2d784bffd1fbfca5db72b0e -->
 # 當前工作集
 
 - 唯一真實來源: `tasks.md`
@@ -7,5 +7,5 @@
 
 | ID | 標題 | 優先級 | 狀態 | 下一步 | 依賴 | 驗證方式 | 阻塞原因 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| MC-037 | Lean Context and Execution Continuity | P0 | In Progress | 完成整合審查、CodeRabbit、Critic 與發布證據 | MC-036 | 全量測試、doctor、benchmark、publish verify |  |
-| MC-043 | Review and Packaging Contract Hardening | P0 | In Progress | 執行 CodeRabbit、Critic、本機發布與 GitHub 流程 | MC-038, MC-039, MC-040, MC-041, MC-042 | full tests、CodeRabbit、critic、publish verify |  |
+| MC-032 | Optional Persistent Project Map | P1 | Backlog | 等 v0.3 續航契約完成後再設計 html/json/lock | MC-026, MC-037 | 跨語言 spike、fingerprint tests、人工 review |  |
+| MC-044 | Codex CLI 0.147 Agent Plugin Compatibility Spike | P1 | Backlog | 比對 portable plugin catalog 與既有 publisher，先證明可回退再決定汰除範圍 | MC-043 | 官方 CLI 安裝／搜尋／更新／離線 fallback matrix |  |

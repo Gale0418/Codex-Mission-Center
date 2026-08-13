@@ -1,9 +1,9 @@
 <!-- Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files. -->
-<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=7d0a70a40d64d651c3e442476cfa3172e09d403fdb406040e58167803b0628ec -->
+<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=c6c734b81e50071519844a7d18858dedadfdedb76cb01bc24d3ba92462de4932 -->
 # 任務簡報
 
 - 最後整理: 2026-08-13
-- 來源指紋: `7d0a70a40d64d651c3e442476cfa3172e09d403fdb406040e58167803b0628ec`
+- 來源指紋: `c6c734b81e50071519844a7d18858dedadfdedb76cb01bc24d3ba92462de4932`
 - 唯一真實來源: `tasks.md`
 - 專案: Codex Mission Center
 - 北極星: 將 Mission Center 升級為研究驅動的自適應 Project OS，並提供可選的本機 Live Agent HUD
@@ -11,6 +11,7 @@
 
 ## 今日摘要 · 2026-08-13
 - 完成 v0.3 記憶核心、續航防呆、正確性與薄路由整合，進入最終審查。
+- 完成 v0.3 全量驗證、本機 Skill 與 marketplace source 發布、GitHub draft PR #6；舊 Plugin cache refresh 因 WindowsApps 權限改列已知限制。
 
 ## 重要護欄 (7)
 - GR-001
