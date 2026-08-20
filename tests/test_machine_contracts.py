@@ -17,6 +17,10 @@ class MachineContractTests(unittest.TestCase):
             "agent-event.schema.json",
             "runtime-state.schema.json",
             "provider-capabilities.schema.json",
+            "execution-pulse.schema.json",
+            "steelman-evolution.schema.json",
+            "research-portfolio.schema.json",
+            "shift-loss-eval.schema.json",
         }
         self.assertEqual({path.name for path in SCHEMAS.glob("*.json")}, expected)
         for path in SCHEMAS.glob("*.json"):

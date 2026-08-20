@@ -2,8 +2,8 @@
 
 - 專案: Codex Mission Center
 - 目標: 將 Mission Center 升級為研究驅動的自適應 Project OS，並提供可選的本機 Live Agent HUD
-- 週期: v0.3 Lean Context and Execution Continuity
-- 標籤: mission-center, adaptive-optimization, runtime, hud-v2, memory, verification, critic-council
+- 週期: OWO+ v0.4 Causal Continuity and Evolution Loop
+- 標籤: mission-center, causal-continuity, execution-pulse, handoff, memory, verification, evolution
 - 活動紀錄:
   - 完成 69 項 unittest、CLI doctor、skill validation 與 publish dry-run。 已記錄 Smoke tests: 8.
   - GitHub main branch protection 已要求 `test` 通過，且管理員不可繞過。
@@ -12,5 +12,12 @@
   - 啟動 OWO+ Evolution cycle；保留既有 Task lifecycle 契約與完成任務。
   - 完成自適應路由、Shadow 實驗契約、Runtime Adapter、HUD v2 與最終發布驗證；四個 Evolution Epic 已收斂。
   - OWO+ Evolution final sync. 已記錄 Smoke tests: 12.
+  - 2026-08-20：核准 OWO+ v0.4 Epic 地圖；第一里程碑採 pulse → ledger → bounded handoff → resume 的 walking skeleton。
+  - 2026-08-20：MC-047 完成；31 focused tests＋8 subtests、完整 221 tests、Doctor 與實際 handoff/resume smoke 通過。
+  - 2026-08-20：MC-048 完成；route-specific Steelman 契約、高風險 full 路由、授權預算與兩輪上限驗證通過。
+  - 2026-08-20：MC-049 完成；三路研究投資組合、外部來源 fail-closed、預算與兩訊號飽和路由驗證通過。
+  - 2026-08-20：MC-050 完成；Shift-Loss 指標、privacy-safe cases、paired baseline 與四項安全硬限制驗證通過。
+  - 2026-08-20：MC-051 本機 release gate 通過；242 tests＋74 subtests、Doctor、Skill／Plugin validators、manifest、publish dry-run 與 diff check 全綠，等待外部審查授權。
+  - 2026-08-21：Antigravity 全工作區稽核與證據仲裁修正 Schema parity、因果時間、atomic handoff、Windows incident pointer 與 advisory artifact secret scan；246 tests＋74 subtests、Doctor、Skill／Plugin validators、publish dry-run 與 diff check 全綠。
 - 開放問題:
-  - 無
+  - MC-051 的 CodeRabbit 上傳同意與 critic_full 總額／席次／工具／時限預算尚未由使用者核准。

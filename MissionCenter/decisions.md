@@ -20,3 +20,5 @@
 - 2026-08-10：Critic finding 是 derived/advisory evidence，不是 Task status 或 passing smoke test；`tasks.md` 仍是唯一 lifecycle 真實來源，只有人類可接受剩餘高風險。
 - 2026-08-10：Critic 最多執行一次初審與一次受影響差異複審；缺能力、缺可觀察產物或超出預算時必須標示 blocked／limited，不得假裝完成體驗。
 - 2026-08-10：收尾順序固定為本機驗證、CodeRabbit 技術審查、成果 Critic Council；若 Critic 修正了程式碼，只重跑受影響的 focused Rabbit 與一次 delta critic，避免沿用失效證據。
+- 2026-08-20：OWO+ v0.4 採 Causal Continuity and Evolution Loop；先交付 pulse → ledger → bounded handoff → resume 的 walking skeleton，再依證據擴充 Steelman、研究投資組合與 Shift-Loss 評測。
+- 2026-08-20：`tasks.md` 持續是唯一 lifecycle truth；execution pulse／ledger／handoff 只能保存受限執行證據與衍生交接資訊，不得自行變更 Task 狀態、排序或完成判定。

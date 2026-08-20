@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mission-center.local/schemas/steelman-evolution.schema.json",
+  "title": "Mission Center Steelman Evolution artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactType", "taskId", "selectedRoute", "maxRounds", "perspectives", "realSubagentsCompleted"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "artifactType": { "const": "steelman-evolution" },
+    "taskId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "trueGoal": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "currentBest": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "strongestOpposition": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "thirdRoute": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "flipVariables": { "type": "array", "minItems": 1 },
+    "smallestDiscriminatingTest": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "materialDissent": { "type": "array", "minItems": 1 },
+    "reopenConditions": { "type": "array", "minItems": 1 },
+    "qualityContract": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "object", "minProperties": 1 }] },
+    "architectureContract": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "object", "minProperties": 1 }] },
+    "evidenceRefs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "unknowns": { "type": "array", "minItems": 0 },
+    "selectedRoute": { "enum": ["skip", "steelman_lite", "steelman_full"] },
+    "maxRounds": { "type": "integer", "minimum": 0, "maximum": 2 },
+    "skipReason": { "type": "string", "minLength": 1 },
+    "perspectives": { "type": "array" },
+    "authorization": { "type": "object" },
+    "budgets": { "type": "object" },
+    "realSubagentsCompleted": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "selectedRoute": { "const": "skip" } } },
+      "then": {
+        "required": ["skipReason"],
+        "properties": {
+          "maxRounds": { "const": 0 },
+          "realSubagentsCompleted": { "const": false }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "selectedRoute": { "enum": ["steelman_lite", "steelman_full"] } } },
+      "then": {
+        "required": ["trueGoal", "currentBest", "strongestOpposition", "thirdRoute", "flipVariables", "smallestDiscriminatingTest", "materialDissent", "reopenConditions", "qualityContract", "architectureContract", "evidenceRefs", "unknowns"],
+        "properties": {
+          "maxRounds": { "minimum": 1 },
+          "flipVariables": { "minItems": 1 },
+          "materialDissent": { "minItems": 1 },
+          "reopenConditions": { "minItems": 1 },
+          "evidenceRefs": { "minItems": 1 }
+        }
+      }
+    }
+  ]
+}

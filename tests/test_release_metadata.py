@@ -13,9 +13,15 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertTrue(url.endswith("/PRIVACY.md"))
         self.assertTrue((ROOT / "PRIVACY.md").is_file())
 
-    def test_plugin_version_is_final_maintenance_patch(self):
+    def test_plugin_version_is_owo_v04_release(self):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "0.3.1")
+        self.assertEqual(manifest["version"], "0.4.0")
+
+    def test_plugin_default_prompt_has_at_most_three_entries(self):
+        manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        prompts = manifest["interface"]["defaultPrompt"]
+        self.assertLessEqual(len(prompts), 3)
+        self.assertTrue(all(isinstance(prompt, str) and prompt.strip() for prompt in prompts))
 
     def test_readme_does_not_end_with_test_marker(self):
         lines = (ROOT / "README.md").read_text(encoding="utf-8").splitlines()

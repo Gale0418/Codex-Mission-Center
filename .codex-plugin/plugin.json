@@ -1,7 +1,7 @@
 {
   "name": "mission-center",
-  "version": "0.3.1",
-  "description": "Research-driven MissionCenter planning, adaptive optimization, and optional runtime HUD for Codex workspaces.",
+  "version": "0.4.0",
+  "description": "Offline OWO+ v0.4 MissionCenter planning with causal continuity, bounded Steelman and research gates, privacy-safe self-evaluation, adaptive optimization, and an optional runtime HUD.",
   "author": {
     "name": "Gale0418",
     "email": "Gale0418@users.noreply.github.com",
@@ -22,8 +22,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Mission Center",
-    "shortDescription": "Research-first task center for Codex",
-    "longDescription": "Mission Center clarifies goals, researches prior art, routes measurable work to bounded optimization, publishes only user-approved rolling task plans, and optionally shows connected runtime agents separately from task lifecycle helpers.",
+    "shortDescription": "Offline causal task center for Codex",
+    "longDescription": "Mission Center OWO+ v0.4 clarifies goals, preserves causal pulse-to-handoff continuity, routes medium/high-risk decisions through bounded Steelman and research portfolio gates, evaluates privacy-safe Shift-Loss metrics, and keeps optional runtime agents separate from the canonical task lifecycle. It does not perform automatic web research or make unapproved task changes.",
     "developerName": "Gale0418",
     "category": "Productivity",
     "capabilities": [
@@ -33,10 +33,9 @@
     "websiteURL": "https://github.com/Gale0418/Codex-Mission-Center",
     "privacyPolicyURL": "https://github.com/Gale0418/Codex-Mission-Center/blob/main/PRIVACY.md",
     "defaultPrompt": [
-      "Use Mission Center to clarify and research this goal before planning",
-      "Draft a rolling MissionCenter task plan for my approval",
-      "Review MissionCenter task progress and refresh its HUD"
-      ,"Route this project through the Adaptive Optimization Gate"
+      "Use Mission Center offline to clarify this goal, inspect local evidence, and route adaptive optimization only when justified",
+      "Draft a rolling MissionCenter task plan for my approval, preserving tasks.md as the only lifecycle source",
+      "Resume bounded context, record pulse-to-handoff continuity, and review Steelman, research, or Shift-Loss artifacts without claiming unverified completion"
     ],
     "brandColor": "#F59E0B",
     "composerIcon": "./assets/mission-center.svg",

@@ -9,7 +9,7 @@ import json
 import os
 import re
 import tempfile
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -465,6 +465,298 @@ WORKING_SET_FINGERPRINT_SOURCES = ("tasks.md",)
 WORKING_SET_MAX_BYTES = 4096
 CRITICAL_LESSONS_MAX_BYTES = 6144
 RESUME_MAX_BYTES = 16384
+EXECUTION_LEDGER_FILENAME = "execution-ledger.jsonl"
+EXECUTION_LEDGER_MAX_BYTES = 262144
+EXECUTION_PULSE_MAX_BYTES = 4096
+HANDOFF_MAX_BYTES = 8192
+PULSE_FIELDS = {
+    "pulseId",
+    "taskId",
+    "phase",
+    "outcome",
+    "nextAction",
+    "evidenceRef",
+    "budgetRemaining",
+    "causalParent",
+}
+PULSE_FORBIDDEN_KEY = re.compile(
+    r"(?:prompt|reasoning|chain[-_ ]?of[-_ ]?thought|full[-_ ]?command|command|secret|password|token|api[-_ ]?key|credential)",
+    re.IGNORECASE,
+)
+PULSE_STRING_LIMITS = {
+    "pulseId": 128,
+    "taskId": 128,
+    "phase": 128,
+    "outcome": 1024,
+    "nextAction": 1024,
+    "evidenceRef": 512,
+    "causalParent": 128,
+}
+CANONICAL_TASK_FIELDS = ("ID", "Title", "Priority", "Status", "Depends on", "Next action", "Verification")
+
+
+def _pulse_text(value: Any, field: str, *, required: bool = True) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"execution pulse {field} must be a string")
+    if required and not value.strip():
+        raise ValueError(f"execution pulse {field} must not be empty")
+    if len(value) > PULSE_STRING_LIMITS[field]:
+        raise ValueError(f"execution pulse {field} exceeds its length bound")
+    if any(ord(character) < 32 and character not in "\t" for character in value):
+        raise ValueError(f"execution pulse {field} contains a control character")
+    if re.search(r"-----BEGIN [A-Z ]+-----|(?:password|secret|api[_ -]?key)\s*=|\b(?:sk|ghp|xox[baprs])-[A-Za-z0-9_-]+", value, re.IGNORECASE):
+        raise ValueError(f"execution pulse {field} contains secret-like content")
+    return value.strip()
+
+
+def _validate_pulse_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("execution pulse must be an object")
+    for key in payload:
+        if PULSE_FORBIDDEN_KEY.search(str(key)):
+            raise ValueError(f"execution pulse field is forbidden: {key}")
+        if key not in PULSE_FIELDS:
+            raise ValueError(f"execution pulse field is not allowed: {key}")
+
+    required = ("taskId", "phase", "outcome", "nextAction", "evidenceRef", "budgetRemaining")
+    missing = [field for field in required if field not in payload]
+    if missing:
+        raise ValueError(f"execution pulse is missing required fields: {', '.join(missing)}")
+
+    normalized: dict[str, Any] = {
+        "taskId": _pulse_text(payload["taskId"], "taskId"),
+        "phase": _pulse_text(payload["phase"], "phase"),
+        "outcome": _pulse_text(payload["outcome"], "outcome"),
+        "nextAction": _pulse_text(payload["nextAction"], "nextAction"),
+        "evidenceRef": _pulse_text(payload["evidenceRef"], "evidenceRef", required=False),
+    }
+    budget = payload["budgetRemaining"]
+    if isinstance(budget, bool) or not isinstance(budget, int) or budget < 0:
+        raise ValueError("execution pulse budgetRemaining must be a non-negative integer")
+    normalized["budgetRemaining"] = budget
+    parent = payload.get("causalParent")
+    if parent is not None:
+        normalized["causalParent"] = _pulse_text(parent, "causalParent")
+    else:
+        normalized["causalParent"] = None
+    pulse_id = payload.get("pulseId")
+    if pulse_id is not None:
+        normalized["pulseId"] = _pulse_text(pulse_id, "pulseId")
+    else:
+        identity = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        normalized["pulseId"] = "pulse-" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+    return normalized
+
+
+def _execution_ledger_path(workspace: Path) -> Path:
+    return mission_root(workspace) / EXECUTION_LEDGER_FILENAME
+
+
+def _canonical_task(workspace: Path, task_id: str) -> dict[str, str] | None:
+    """Read one task row from the sole lifecycle source; never infer from pulse data."""
+    root = mission_root(workspace)
+    tasks_path = root / "tasks.md"
+    if not tasks_path.is_file():
+        raise ValueError("canonical tasks.md is missing")
+    wanted = task_id.strip().casefold()
+    for task in parse_tasks(tasks_path):
+        if task.get("ID", "").strip().casefold() == wanted:
+            return {field: task.get(field, "") for field in CANONICAL_TASK_FIELDS}
+    return None
+
+
+def _read_execution_ledger(workspace: Path) -> list[dict[str, Any]]:
+    """Read only the named, bounded pulse ledger; malformed input fails closed."""
+    path = _execution_ledger_path(workspace)
+    if not path.is_file():
+        return []
+    if path.stat().st_size > EXECUTION_LEDGER_MAX_BYTES:
+        raise ValueError("execution ledger exceeds its bounded byte limit")
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (UnicodeDecodeError, OSError) as exc:
+        raise ValueError("execution ledger is unreadable") from exc
+    records: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    parsed_times: dict[str, datetime] = {}
+    for number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        if len(line.encode("utf-8")) > EXECUTION_PULSE_MAX_BYTES:
+            raise ValueError(f"execution ledger line {number} exceeds its byte limit")
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"execution ledger line {number} is malformed") from exc
+        if not isinstance(record, dict) or record.get("schemaVersion") != "1.0" or record.get("kind") != "execution-pulse":
+            raise ValueError(f"execution ledger line {number} has an invalid envelope")
+        allowed_record_fields = PULSE_FIELDS | {"schemaVersion", "kind", "recordedAt"}
+        for key in record:
+            if key not in allowed_record_fields or PULSE_FORBIDDEN_KEY.search(str(key)):
+                raise ValueError(f"execution ledger line {number} contains a forbidden field: {key}")
+        payload = {field: record.get(field) for field in PULSE_FIELDS if field in record}
+        normalized = _validate_pulse_payload(payload)
+        if record.get("pulseId") != normalized["pulseId"]:
+            raise ValueError(f"execution ledger line {number} has an invalid pulseId")
+        if record["pulseId"] in seen:
+            raise ValueError(f"execution ledger contains duplicate pulseId: {record['pulseId']}")
+        seen.add(record["pulseId"])
+        recorded_at = record.get("recordedAt")
+        if not isinstance(recorded_at, str) or not recorded_at.strip():
+            raise ValueError(f"execution ledger line {number} is missing recordedAt")
+        try:
+            parsed_recorded_at = datetime.fromisoformat(recorded_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError(f"execution ledger line {number} has an invalid recordedAt") from exc
+        if parsed_recorded_at.tzinfo is None or parsed_recorded_at.utcoffset() is None:
+            raise ValueError(f"execution ledger line {number} recordedAt must include a timezone")
+        normalized["schemaVersion"] = "1.0"
+        normalized["kind"] = "execution-pulse"
+        normalized["recordedAt"] = recorded_at
+        records.append(normalized)
+        parsed_times[normalized["pulseId"]] = parsed_recorded_at
+    ids = {record["pulseId"] for record in records}
+    prior_ids: set[str] = set()
+    for record in records:
+        parent = record.get("causalParent")
+        if parent is not None and parent not in ids:
+            raise ValueError(f"execution ledger has an unknown causalParent: {parent}")
+        if parent is not None and parent not in prior_ids:
+            raise ValueError(f"execution ledger causalParent must precede its child: {parent}")
+        if parent is not None and parsed_times[parent] > parsed_times[record["pulseId"]]:
+            raise ValueError(f"execution ledger causalParent recordedAt must precede or equal its child: {parent}")
+        prior_ids.add(record["pulseId"])
+    by_id = {record["pulseId"]: record for record in records}
+    for record in records:
+        visited: set[str] = set()
+        current: dict[str, Any] | None = record
+        while current is not None:
+            pulse_id = current["pulseId"]
+            if pulse_id in visited:
+                raise ValueError("execution ledger contains a causal cycle")
+            visited.add(pulse_id)
+            parent = current.get("causalParent")
+            current = by_id.get(parent) if parent else None
+    return records
+
+
+def append_execution_pulse(workspace: Path, pulse: dict[str, Any]) -> dict[str, Any]:
+    """Append one restricted execution pulse without changing task lifecycle files."""
+    root = mission_root(workspace)
+    if not root.is_dir():
+        raise FileNotFoundError(f"MissionCenter directory not found: {root}")
+    normalized = _validate_pulse_payload(pulse)
+    if _canonical_task(root, normalized["taskId"]) is None:
+        raise ValueError(f"execution pulse taskId not found in canonical tasks.md: {normalized['taskId']}")
+    existing = _read_execution_ledger(workspace)
+    existing_by_id = {record["pulseId"]: record for record in existing}
+    if normalized.get("causalParent") is not None and normalized["causalParent"] not in existing_by_id:
+        raise ValueError(f"execution pulse has an unknown causalParent: {normalized['causalParent']}")
+    prior = existing_by_id.get(normalized["pulseId"])
+    if prior is not None:
+        candidate = {field: prior.get(field) for field in PULSE_FIELDS}
+        if candidate != normalized:
+            raise ValueError(f"execution pulse id already exists with different content: {normalized['pulseId']}")
+        return {"schemaVersion": "1.0", "appended": False, "duplicate": True, "pulse": prior, "ledger": EXECUTION_LEDGER_FILENAME}
+
+    record = dict(normalized)
+    record.update({
+        "schemaVersion": "1.0",
+        "kind": "execution-pulse",
+        "recordedAt": datetime.now(timezone.utc).isoformat(),
+    })
+    line = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+    if len(line.encode("utf-8")) > EXECUTION_PULSE_MAX_BYTES:
+        raise ValueError("execution pulse exceeds its byte limit")
+    path = _execution_ledger_path(workspace)
+    prior_text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    content = prior_text
+    if content and not content.endswith("\n"):
+        content += "\n"
+    content += line
+    if len(content.encode("utf-8")) > EXECUTION_LEDGER_MAX_BYTES:
+        raise ValueError("execution ledger would exceed its bounded byte limit")
+    atomic_write_if_changed(path, content)
+    return {"schemaVersion": "1.0", "appended": True, "duplicate": False, "pulse": record, "ledger": EXECUTION_LEDGER_FILENAME}
+
+
+def _handoff_packet(
+    records: list[dict[str, Any]],
+    task_id: str | None,
+    max_bytes: int,
+    canonical_task: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    selected = [record for record in records if task_id is None or record["taskId"].casefold() == task_id.strip().casefold()]
+    if not selected:
+        return {"schemaVersion": "1.0", "route": "handoff", "taskId": task_id, "found": False, "pulses": [], "bytes": 0, "maxBytes": max_bytes, "truncated": False, "content": None}
+    latest = selected[-1]
+    if canonical_task is None:
+        raise ValueError(f"execution ledger latest task is missing from canonical tasks.md: {latest['taskId']}")
+    by_id = {record["pulseId"]: record for record in records}
+    chain: list[dict[str, Any]] = []
+    current = latest
+    while current is not None:
+        chain.append(current)
+        parent = current.get("causalParent")
+        current = by_id.get(parent) if parent else None
+    chain.reverse()
+    packet = {
+        "schemaVersion": "1.0",
+        "route": "handoff",
+        "taskId": latest["taskId"],
+        "found": True,
+        "lifecycleSource": "tasks.md",
+        "canonicalTask": canonical_task,
+        "latestPulse": latest,
+        "nextAction": latest["nextAction"],
+        "executionNextAction": latest["nextAction"],
+        "nextActionSource": "execution-pulse",
+        "executionOnly": True,
+        "budgetRemaining": latest["budgetRemaining"],
+        "evidenceRef": latest["evidenceRef"],
+        "causalParent": latest.get("causalParent"),
+        "causalChain": chain,
+        "truncated": False,
+    }
+    while True:
+        encoded = json.dumps(packet, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if len(encoded.encode("utf-8")) <= max_bytes:
+            packet["bytes"] = len(encoded.encode("utf-8"))
+            packet["maxBytes"] = max_bytes
+            packet["content"] = encoded
+            return packet
+        if len(packet["causalChain"]) > 1:
+            packet["causalChain"] = packet["causalChain"][1:]
+            packet["truncated"] = True
+            continue
+        packet["causalChain"] = []
+        packet["latestPulse"] = {"pulseId": latest["pulseId"], "taskId": latest["taskId"], "nextAction": latest["nextAction"], "budgetRemaining": latest["budgetRemaining"], "causalParent": latest.get("causalParent")}
+        packet["truncated"] = True
+        encoded = json.dumps(packet, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if len(encoded.encode("utf-8")) <= max_bytes:
+            packet["bytes"] = len(encoded.encode("utf-8"))
+            packet["maxBytes"] = max_bytes
+            packet["content"] = encoded
+            return packet
+        if max_bytes <= 0:
+            packet["bytes"] = 0
+            packet["maxBytes"] = max_bytes
+            packet["content"] = None
+            return packet
+        raise ValueError("handoff byte budget is too small for required metadata")
+
+
+def run_handoff(workspace: Path, task_id: str | None = None, max_bytes: int = HANDOFF_MAX_BYTES) -> dict[str, Any]:
+    """Return the latest bounded causal pulse chain; no task status is derived here."""
+    root = mission_root(workspace)
+    if not root.is_dir():
+        raise FileNotFoundError(f"MissionCenter directory not found: {root}")
+    bounded = min(max(0, int(max_bytes)), HANDOFF_MAX_BYTES)
+    records = _read_execution_ledger(root)
+    requested_task = _canonical_task(root, task_id) if task_id is not None else None
+    selected = [record for record in records if task_id is None or record["taskId"].casefold() == task_id.strip().casefold()]
+    latest_task = _canonical_task(root, selected[-1]["taskId"]) if selected else requested_task
+    return _handoff_packet(records, task_id, bounded, latest_task)
 
 
 def _priority_key(task: dict[str, str]) -> tuple[int, str]:
@@ -692,11 +984,12 @@ def validate_critical_lessons(path: Path, incidents_dir: Path | None = None) -> 
             if is_active_lesson and not incident:
                 errors.append(f"critical-lessons.md {lesson_id} is missing Incident evidence pointer")
             if incident and incident not in {"-", "None", "無"} and incidents_dir is not None:
-                match = re.fullmatch(r"(?:incidents/)?(INC-\d{3})\.md|(?:INC-\d{3})", incident)
+                norm_incident = incident.replace("\\", "/")
+                match = re.fullmatch(r"(?:incidents/)?(INC-\d{3})\.md|(?:INC-\d{3})", norm_incident)
                 if not match:
                     errors.append(f"critical-lessons.md {lesson_id} has invalid Incident pointer: {incident}")
                     continue
-                incident_id = match.group(1) or incident
+                incident_id = match.group(1) or norm_incident
                 target_path = (incidents_dir / f"{incident_id}.md").resolve()
                 if incidents_dir.resolve() not in target_path.parents or not target_path.is_file():
                     errors.append(f"critical-lessons.md {lesson_id} references missing incident file: {incident}")
@@ -888,6 +1181,17 @@ def _bounded_resume_content(
             content[name] = None
             included[name] = 0
             continue
+        if name == "handoff":
+            value_bytes = len(value.encode("utf-8"))
+            if value_bytes <= remaining:
+                content[name] = value
+                included[name] = value_bytes
+                remaining -= value_bytes
+            else:
+                content[name] = None
+                included[name] = 0
+                read_next.append(name)
+            continue
         if truncated_section:
             content[name] = ""
             included[name] = 0
@@ -908,6 +1212,7 @@ def _bounded_resume_content(
 def run_resume(workspace: Path, date_str: str | None = None, max_bytes: int = RESUME_MAX_BYTES) -> dict[str, Any]:
     root = mission_root(workspace)
     status_res = run_status(root, date_str=date_str)
+    bounded_max_bytes = min(max(0, int(max_bytes)), RESUME_MAX_BYTES)
 
     files_read = [
         "MissionCenter/brief.md",
@@ -920,6 +1225,19 @@ def run_resume(workspace: Path, date_str: str | None = None, max_bytes: int = RE
         snap_text = snapshot_path.read_text(encoding="utf-8")
         if re.search(r"^\s*-\s*State:\s*active\b", snap_text, re.MULTILINE | re.IGNORECASE):
             files_read.append("MissionCenter/snapshot.md")
+
+    ledger_path = root / EXECUTION_LEDGER_FILENAME
+    handoff: dict[str, Any] | None = None
+    ledger_error: str | None = None
+    if ledger_path.is_file():
+        files_read.append(f"MissionCenter/{EXECUTION_LEDGER_FILENAME}")
+        try:
+            # Build the bounded handoff independently; the resume packet applies the
+            # single 16 KiB fuse (or a caller's smaller budget) to all sections.
+            handoff = run_handoff(root, max_bytes=HANDOFF_MAX_BYTES)
+        except ValueError as exc:
+            # Do not expose partially parsed evidence or fall back to a directory scan.
+            ledger_error = str(exc)
 
     brief_text = (root / "brief.md").read_text(encoding="utf-8") if (root / "brief.md").is_file() else ""
     ws_text = (root / "working-set.md").read_text(encoding="utf-8") if (root / "working-set.md").is_file() else ""
@@ -935,7 +1253,9 @@ def run_resume(workspace: Path, date_str: str | None = None, max_bytes: int = RE
         ("activeCriticalLessons", _active_lessons_text(cl_text)),
         ("snapshot", snap_text),
     ]
-    content, included_bytes, read_next = _bounded_resume_content(sections, max_bytes)
+    if handoff and handoff.get("content"):
+        sections.insert(0, ("handoff", handoff["content"]))
+    content, included_bytes, read_next = _bounded_resume_content(sections, bounded_max_bytes)
     total_bytes = sum(included_bytes.values())
 
     canonical_fallback = False
@@ -944,6 +1264,9 @@ def run_resume(workspace: Path, date_str: str | None = None, max_bytes: int = RE
     if not status_res["sourceFresh"] or not status_res["dateFresh"]:
         canonical_fallback = True
         fallback_reason = "derived view stale"
+    elif ledger_error:
+        canonical_fallback = True
+        fallback_reason = "execution ledger corrupt"
     # Budget overflow remains a bounded hot packet, not a canonical fallback.
 
     return {
@@ -954,6 +1277,9 @@ def run_resume(workspace: Path, date_str: str | None = None, max_bytes: int = RE
         "staleReasons": status_res["staleReasons"],
         "filesRead": files_read,
         "content": content,
+        "handoff": handoff,
+        "ledgerStatus": "corrupt" if ledger_error else ("ready" if handoff is not None else "missing"),
+        "ledgerError": ledger_error,
         "context": {
             "briefBytes": brief_bytes,
             "workingSetBytes": ws_bytes,
@@ -963,7 +1289,7 @@ def run_resume(workspace: Path, date_str: str | None = None, max_bytes: int = RE
             "includedBytes": included_bytes,
         },
         "bytes": total_bytes,
-        "maxBytes": max_bytes,
+        "maxBytes": bounded_max_bytes,
         "canonicalFallback": canonical_fallback,
         "fallbackReason": fallback_reason,
         "truncated": bool(read_next),
@@ -1020,6 +1346,20 @@ def main(argv: list[str] | None = None) -> int:
     resume.add_argument("--date")
     resume.add_argument("--max-bytes", type=int, default=RESUME_MAX_BYTES)
 
+    pulse = commands.add_parser("pulse")
+    pulse.add_argument("--task-id", required=True)
+    pulse.add_argument("--phase", required=True)
+    pulse.add_argument("--outcome", required=True)
+    pulse.add_argument("--next-action", required=True)
+    pulse.add_argument("--evidence-ref", default="")
+    pulse.add_argument("--budget-remaining", required=True, type=int)
+    pulse.add_argument("--causal-parent")
+    pulse.add_argument("--pulse-id")
+
+    handoff = commands.add_parser("handoff")
+    handoff.add_argument("--task-id")
+    handoff.add_argument("--max-bytes", type=int, default=HANDOFF_MAX_BYTES)
+
     task_cmd = commands.add_parser("task")
     task_cmd.add_argument("task_id")
     task_cmd.add_argument("--json", action="store_true", default=True)
@@ -1034,6 +1374,19 @@ def main(argv: list[str] | None = None) -> int:
         result = run_status(workspace, args.date)
     elif args.command == "resume":
         result = run_resume(workspace, args.date, args.max_bytes)
+    elif args.command == "pulse":
+        result = append_execution_pulse(workspace, {
+            "pulseId": args.pulse_id,
+            "taskId": args.task_id,
+            "phase": args.phase,
+            "outcome": args.outcome,
+            "nextAction": args.next_action,
+            "evidenceRef": args.evidence_ref,
+            "budgetRemaining": args.budget_remaining,
+            "causalParent": args.causal_parent,
+        })
+    elif args.command == "handoff":
+        result = run_handoff(workspace, args.task_id, args.max_bytes)
     elif args.command == "task":
         result = run_task_info(workspace, args.task_id)
 
