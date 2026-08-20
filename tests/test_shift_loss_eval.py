@@ -8,6 +8,7 @@ from tests import workspace_tempdir
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "skills" / "mission-center" / "scripts"))
 
+from security_scanner import scan_forbidden_content
 from shift_loss_eval import aggregate_cases, compare_paired, evaluate_shift_loss, validate_shift_loss
 from tests.test_mission_maintenance import make_workspace
 
@@ -118,6 +119,18 @@ class ShiftLossEvalTests(unittest.TestCase):
         self.assertTrue(any("evidenceBackedClaims must be a non-negative integer" in error for error in errors))
         self.assertTrue(any("recoveryDistance must be a non-negative number" in error for error in errors))
         self.assertTrue(any("caseId must be bounded non-empty text" in error for error in errors))
+
+    def test_security_scanner_handles_deep_input_with_controlled_error(self):
+        nested = "leaf"
+        for _ in range(1100):
+            nested = {"nested": nested}
+        errors = scan_forbidden_content(nested)
+        self.assertTrue(any("security scanner depth limit" in error for error in errors))
+
+        record = result()
+        record["metadata"] = nested
+        errors = validate_shift_loss(record)
+        self.assertTrue(any("security scanner depth limit" in error for error in errors))
 
     def test_shift_loss_schema_has_anyof_and_python_validator_rejects_all_false(self):
         schema_path = ROOT / "skills" / "mission-center" / "schemas" / "shift-loss-eval.schema.json"

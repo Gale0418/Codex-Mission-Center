@@ -1,3 +1,4 @@
+import copy
 import sys
 import unittest
 from pathlib import Path
@@ -15,7 +16,7 @@ from research_portfolio import (
 from tests.test_mission_maintenance import make_workspace
 
 
-def source(locator="local://evidence", trust="trusted_local", source_type="local", status="verified"):
+def source(locator="MissionCenter/tasks.md", trust="unverified", source_type="local", status="verified"):
     return {
         "locator": locator,
         "sourceType": source_type,
@@ -33,7 +34,7 @@ def hypothesis(identifier, kind, refs=None, status="active"):
         "kind": kind,
         "question": f"Does {identifier} matter?",
         "mechanism": "bounded mechanism",
-        "currentEvidenceRefs": refs or [],
+        "currentEvidenceRefs": ["MissionCenter/tasks.md"] if refs is None else refs,
         "smallestDiscriminatingTest": "compare two observable outcomes",
         "expectedObservation": "one outcome changes",
         "falsificationConditions": ["test does not discriminate"],
@@ -55,8 +56,8 @@ def portfolio(task_id="T1"):
         "initialHypothesisAllocation": default_initial_allocation(),
         "allocationKind": "initial_hypothesis_allocation",
         "hypotheses": [
-            hypothesis("h-exploit", "exploit", ["local://evidence"]),
-            hypothesis("h-adjacent", "adjacent_explore", ["local://evidence"]),
+            hypothesis("h-exploit", "exploit", ["MissionCenter/tasks.md"]),
+            hypothesis("h-adjacent", "adjacent_explore", ["MissionCenter/tasks.md"]),
             hypothesis("h-moonshot", "moonshot", [], "research_needed"),
         ],
         "sourceLedger": [source()],
@@ -162,6 +163,65 @@ class ResearchPortfolioTests(unittest.TestCase):
         record_key["secret"] = "hidden_value"
         errors_key = validate_research_portfolio(record_key)
         self.assertTrue(any("forbidden privacy content" in error for error in errors_key))
+
+    def test_nested_objects_reject_unknown_fields(self):
+        cases = (
+            ("initialHypothesisAllocation", "extraAllocation"),
+            ("hypotheses", "extraHypothesis"),
+            ("budget", "extraBudget"),
+            ("sourceLedger", "extraSource"),
+            ("saturationSignals", "extraSignal"),
+        )
+        for target, extra in cases:
+            record = portfolio()
+            if target == "hypotheses":
+                record[target][0][extra] = True
+            elif target == "budget":
+                record["hypotheses"][0][target][extra] = 0
+            elif target == "sourceLedger":
+                record[target][0][extra] = True
+            else:
+                record[target][extra] = True
+            errors = validate_research_portfolio(record)
+            self.assertTrue(any(extra in error and "unknown field" in error for error in errors), (target, errors))
+
+    def test_local_locators_are_workspace_relative_and_fail_closed_without_workspace(self):
+        with workspace_tempdir("research-local-locator-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            fixture = workspace / "fixtures" / "evidence.json"
+            fixture.parent.mkdir()
+            fixture.write_text("{}", encoding="utf-8")
+
+            record = portfolio()
+            record["sourceLedger"] = [source("fixtures/evidence.json", "trusted_local", "fixture")]
+            for item in record["hypotheses"][:2]:
+                item["currentEvidenceRefs"] = ["fixtures/evidence.json"]
+            self.assertEqual(validate_research_portfolio(record, workspace), [])
+
+            for bad_locator in ("https://example.invalid/evidence.json", str(fixture), "../outside.json"):
+                bad = copy.deepcopy(record)
+                bad["sourceLedger"][0]["locator"] = bad_locator
+                for item in bad["hypotheses"][:2]:
+                    item["currentEvidenceRefs"] = [bad_locator]
+                errors = validate_research_portfolio(bad, workspace)
+                self.assertTrue(any("locator" in error and ("relative" in error or "resolve" in error) for error in errors), (bad_locator, errors))
+
+            no_workspace = copy.deepcopy(record)
+            errors = validate_research_portfolio(no_workspace)
+            self.assertTrue(any("requires workspace verification" in error for error in errors))
+
+            promoted = copy.deepcopy(record)
+            promoted["promotionStatus"] = "promoted"
+            errors = validate_research_portfolio(promoted)
+            self.assertTrue(any("unverifiable local" in error for error in errors))
+
+            missing = copy.deepcopy(record)
+            missing["sourceLedger"][0]["locator"] = "fixtures/missing.json"
+            missing["sourceLedger"][0]["status"] = "promoted"
+            for item in missing["hypotheses"][:2]:
+                item["currentEvidenceRefs"] = ["fixtures/missing.json"]
+            errors = validate_research_portfolio(missing, workspace)
+            self.assertTrue(any("existing file" in error for error in errors))
 
 
 if __name__ == "__main__":

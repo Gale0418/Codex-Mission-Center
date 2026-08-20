@@ -7,8 +7,9 @@ import argparse
 import json
 import math
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
+from urllib.parse import urlsplit
 
 try:
     from mission_maintenance import parse_tasks
@@ -45,6 +46,7 @@ HYPOTHESIS_FIELDS = (
 SOURCE_FIELDS = ("locator", "sourceType", "provenance", "trustStatus", "licenseStatus", "retrievedAt", "status")
 BASE_FIELDS = ("schemaVersion", "artifactType", "taskId", "initialHypothesisAllocation", "allocationKind", "hypotheses", "sourceLedger", "saturationSignals", "selectedAction")
 ALLOWED_FIELDS = set(BASE_FIELDS) | {"hardConstraintFailure", "budgetExhausted", "promotionStatus"}
+ALLOCATION_FIELDS = ("exploit", "adjacent_explore", "moonshot")
 CANONICAL_TASK_FIELDS = ("ID", "Title", "Priority", "Status", "Depends on", "Next action", "Verification")
 
 
@@ -68,6 +70,14 @@ def _list(value: Any, field: str, errors: list[str], *, non_empty: bool = True) 
     for index, item in enumerate(value):
         if isinstance(item, str) and len(item) > 2048:
             errors.append(f"{field}[{index}] exceeds 2048 characters")
+
+
+def _check_allowed_fields(value: dict[str, Any], allowed: tuple[str, ...], field: str, errors: list[str]) -> None:
+    """Mirror nested schema objects with additionalProperties=false."""
+    allowed_set = set(allowed)
+    for key in value:
+        if key not in allowed_set:
+            errors.append(f"{field} unknown field: {key}")
 
 
 def _nonnegative(value: Any) -> bool:
@@ -108,6 +118,9 @@ def route_saturation(
         raise ValueError("saturation signals must be an object")
     if not isinstance(hard_constraint_failure, bool) or not isinstance(budget_exhausted, bool):
         raise ValueError("hard_constraint_failure and budget_exhausted must be boolean")
+    unknown = [field for field in signals if field not in SIGNAL_FIELDS]
+    if unknown:
+        raise ValueError(f"saturation signals unknown field: {unknown[0]}")
     errors: list[str] = []
     for field in SIGNAL_FIELDS[:-1]:
         if not isinstance(signals.get(field), bool):
@@ -142,23 +155,59 @@ def _validate_budget(value: Any, field: str, errors: list[str]) -> None:
     if not isinstance(value, dict):
         errors.append(f"{field} must be an object")
         return
+    _check_allowed_fields(value, ("token", "tool", "time"), field, errors)
     for name in ("token", "tool", "time"):
         if not _nonnegative(value.get(name)):
             errors.append(f"{field}.{name} must be a non-negative number (zero is explicit)" )
 
 
-def _validate_source_ledger(entries: Any, errors: list[str]) -> tuple[set[str], set[str]]:
+def _local_locator_error(
+    locator: str,
+    workspace: Path | None,
+    *,
+    require_existing_file: bool = False,
+) -> str | None:
+    """Ensure local provenance uses a relative locator contained by workspace."""
+    # Reject URL schemes (including local:// and https:// fixture spoofing) and
+    # absolute paths before resolving the candidate.
+    if urlsplit(locator).scheme or locator.startswith(("//", "\\\\")):
+        return "must be a relative path inside workspace; URL locators are invalid"
+    candidate = Path(locator)
+    if candidate.is_absolute() or PureWindowsPath(locator).is_absolute():
+        return "must be a relative path inside workspace; absolute locators are invalid"
+    if workspace is None:
+        if ".." in candidate.parts or ".." in PureWindowsPath(locator).parts:
+            return "cannot verify parent traversal without workspace"
+        return None
+    root = Path(workspace).expanduser().resolve()
+    if root.name.casefold() == "missioncenter":
+        root = root.parent
+    try:
+        resolved = (root / candidate).resolve()
+        resolved.relative_to(root)
+    except (OSError, RuntimeError, ValueError):
+        return "must resolve inside workspace; parent traversal escapes are invalid"
+    if require_existing_file and not resolved.is_file():
+        return "must reference an existing file before it can be trusted or promoted"
+    return None
+
+
+def _validate_source_ledger(
+    entries: Any, errors: list[str], workspace: Path | None
+) -> tuple[set[str], set[str], set[str]]:
     if not isinstance(entries, list):
         errors.append("sourceLedger must be a list")
-        return set(), set()
+        return set(), set(), set()
     if len(entries) > 32:
         errors.append("sourceLedger may contain at most 32 entries")
     locators: set[str] = set()
     untrusted: set[str] = set()
+    unverifiable_local: set[str] = set()
     for index, source in enumerate(entries):
         if not isinstance(source, dict):
             errors.append(f"sourceLedger[{index}] must be an object")
             continue
+        _check_allowed_fields(source, SOURCE_FIELDS, f"sourceLedger[{index}]", errors)
         for field in SOURCE_FIELDS:
             if field not in source:
                 errors.append(f"sourceLedger[{index}].{field} is required")
@@ -178,6 +227,20 @@ def _validate_source_ledger(entries: Any, errors: list[str]) -> tuple[set[str], 
         if status not in SOURCE_STATUSES:
             errors.append(f"sourceLedger[{index}].status is invalid")
         source_type = str(source.get("sourceType", "")).casefold()
+        if source_type in LOCAL_SOURCE_TYPES and _text(locator):
+            locator_error = _local_locator_error(
+                locator,
+                workspace,
+                require_existing_file=trust == "trusted_local" or status == "promoted",
+            )
+            if locator_error:
+                errors.append(f"sourceLedger[{index}].locator {locator_error}")
+            if workspace is None:
+                unverifiable_local.add(locator)
+                if trust == "trusted_local":
+                    errors.append(f"sourceLedger[{index}] trusted_local requires workspace verification")
+                if status == "promoted":
+                    errors.append(f"sourceLedger[{index}] local provenance cannot be promoted without workspace verification")
         if source_type not in LOCAL_SOURCE_TYPES and trust != "untrusted_external_evidence":
             errors.append(f"sourceLedger[{index}] external content must be untrusted_external_evidence")
         if trust == "untrusted_external_evidence":
@@ -185,7 +248,7 @@ def _validate_source_ledger(entries: Any, errors: list[str]) -> tuple[set[str], 
                 untrusted.add(locator)
             if status == "promoted":
                 errors.append(f"sourceLedger[{index}] untrusted external evidence cannot be promoted")
-    return locators, untrusted
+    return locators, untrusted, unverifiable_local
 
 
 def validate_research_portfolio(record: Any, workspace: Path | None = None) -> list[str]:
@@ -206,6 +269,8 @@ def validate_research_portfolio(record: Any, workspace: Path | None = None) -> l
         errors.append("taskId is not present in canonical tasks.md")
 
     allocation = record.get("initialHypothesisAllocation")
+    if isinstance(allocation, dict):
+        _check_allowed_fields(allocation, ALLOCATION_FIELDS, "initialHypothesisAllocation", errors)
     if not isinstance(allocation, dict) or set(allocation) != HYPOTHESIS_KINDS or any(not _nonnegative(value) for value in allocation.values()) or sum(allocation.values()) != 100:
         errors.append("initialHypothesisAllocation must contain exploit, adjacent_explore, moonshot totaling 100")
     if record.get("allocationKind") != "initial_hypothesis_allocation":
@@ -217,13 +282,14 @@ def validate_research_portfolio(record: Any, workspace: Path | None = None) -> l
         hypotheses = []
     if len(hypotheses) > 12:
         errors.append("hypotheses may contain at most 12 entries")
-    locators, untrusted = _validate_source_ledger(record.get("sourceLedger"), errors)
+    locators, untrusted, unverifiable_local = _validate_source_ledger(record.get("sourceLedger"), errors, workspace)
     seen_ids: set[str] = set()
     seen_kinds: set[str] = set()
     for index, hypothesis in enumerate(hypotheses):
         if not isinstance(hypothesis, dict):
             errors.append(f"hypotheses[{index}] must be an object")
             continue
+        _check_allowed_fields(hypothesis, HYPOTHESIS_FIELDS, f"hypotheses[{index}]", errors)
         for field in HYPOTHESIS_FIELDS:
             if field not in hypothesis:
                 errors.append(f"hypotheses[{index}].{field} is required")
@@ -258,10 +324,14 @@ def validate_research_portfolio(record: Any, workspace: Path | None = None) -> l
             errors.append(f"hypotheses[{index}] empty evidenceRefs require unverified or research_needed status")
         if status == "promoted" and any(ref in untrusted for ref in refs):
             errors.append(f"hypotheses[{index}] cannot promote untrusted external evidence")
+        if status == "promoted" and any(ref in unverifiable_local for ref in refs):
+            errors.append(f"hypotheses[{index}] cannot promote unverifiable local evidence without workspace verification")
     for kind in sorted(HYPOTHESIS_KINDS - seen_kinds):
         errors.append(f"hypotheses must include at least one {kind} hypothesis")
 
     signals = record.get("saturationSignals")
+    if isinstance(signals, dict):
+        _check_allowed_fields(signals, SIGNAL_FIELDS, "saturationSignals", errors)
     try:
         routed = route_saturation(
             signals,
@@ -283,6 +353,8 @@ def validate_research_portfolio(record: Any, workspace: Path | None = None) -> l
         errors.append("promotionStatus is invalid")
     if promotion == "promoted" and untrusted:
         errors.append("portfolio with untrusted external evidence cannot be promoted")
+    if promotion == "promoted" and unverifiable_local:
+        errors.append("portfolio with unverifiable local evidence cannot be promoted without workspace verification")
     return errors
 
 

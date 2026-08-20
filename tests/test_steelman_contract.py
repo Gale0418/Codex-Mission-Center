@@ -69,6 +69,22 @@ class SteelmanContractTests(unittest.TestCase):
                 route_steelman(workspace, "UNKNOWN", risk="low", deterministic=True)
             self.assertEqual((workspace / "MissionCenter/tasks.md").read_bytes(), tasks_before)
 
+    def test_route_rejects_non_boolean_deterministic_context(self):
+        with workspace_tempdir("steelman-route-bool-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            with self.assertRaises(ValueError):
+                route_steelman(workspace, {"taskId": "T1", "risk": "low", "deterministic": "false"})
+            with self.assertRaises(ValueError):
+                route_steelman(workspace, {"taskId": "T1", "risk": "low", "deterministic": None})
+            with self.assertRaises(ValueError):
+                route_steelman(workspace, "T1", risk="low", deterministic=None)
+            with self.assertRaisesRegex(ValueError, "conflicting deterministic"):
+                route_steelman(
+                    workspace,
+                    {"taskId": "T1", "risk": "low", "deterministic": False},
+                    deterministic=True,
+                )
+
     def test_required_fields_dissent_reopen_and_round_cap_fail_closed(self):
         record = artifact()
         errors = validate_steelman_artifact({
@@ -120,6 +136,24 @@ class SteelmanContractTests(unittest.TestCase):
             real["budgets"] = {"total": 10, "perSeat": 5, "tool": 2, "wallClock": 30}
             self.assertEqual(validate_steelman_artifact(real, workspace), [])
 
+    def test_evidence_refs_are_bounded_non_empty_strings(self):
+        record = artifact()
+        record["evidenceRefs"] = [None]
+        errors = validate_steelman_artifact(record)
+        self.assertTrue(any("evidenceRefs[0] must be a non-empty string" in error for error in errors))
+        record["evidenceRefs"] = ["x" * 4097]
+        errors = validate_steelman_artifact(record)
+        self.assertTrue(any("evidenceRefs[0] exceeds 4096 characters" in error for error in errors))
+
+        real = artifact()
+        real["perspectives"] = [
+            {"id": "real-a", "kind": "real_subagent", "status": "completed", "observation": "a", "blindSpot": "b", "recommendation": "c", "evidenceRefs": [None]},
+            {"id": "sim-b", "kind": "simulated", "observation": "d", "blindSpot": "e", "recommendation": "f"},
+        ]
+        real["realSubagentsCompleted"] = True
+        errors = validate_steelman_artifact(real)
+        self.assertTrue(any("perspectives[0].evidenceRefs[0] must be a non-empty string" in error for error in errors))
+
     def test_artifact_task_binding_and_tasks_are_not_written(self):
         with workspace_tempdir("steelman-task-binding-") as temporary:
             workspace = make_workspace(Path(temporary))
@@ -143,10 +177,18 @@ class SteelmanContractTests(unittest.TestCase):
         invalid_lite = artifact(max_rounds=2)
         self.assertTrue(any("exactly one round" in error for error in validate_steelman_artifact(invalid_lite)))
     def test_steelman_rejects_secret_injection_and_forbidden_keys(self):
-        record = artifact()
-        record["strongestOpposition"] = "contains token sk-proj-1234567890abcdef"
-        errors = validate_steelman_artifact(record)
-        self.assertTrue(any("contains secret-like content" in error for error in errors))
+        secret_examples = [
+            "contains token sk-proj-1234567890abcdef",
+            "Authorization: Bearer abcdefghijklmnop",
+            "JWT eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature123",
+            "password: hunter2",
+            "token=abc123",
+        ]
+        for example in secret_examples:
+            record = artifact()
+            record["strongestOpposition"] = example
+            errors = validate_steelman_artifact(record)
+            self.assertTrue(any("contains secret-like content" in error for error in errors), example)
 
         record_key = artifact()
         record_key["secret"] = "top_secret"

@@ -74,6 +74,14 @@ def _non_empty_collection(value: Any, field: str, errors: list[str]) -> None:
         errors.append(f"{field} must be a non-empty list")
 
 
+def _non_empty_bounded_text_collection(value: Any, field: str, errors: list[str], limit: int = 4096) -> None:
+    if not isinstance(value, list) or not value:
+        errors.append(f"{field} must be a non-empty list")
+        return
+    for index, item in enumerate(value):
+        _bounded_text(item, f"{field}[{index}]", errors, limit)
+
+
 def _positive_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0
 
@@ -121,7 +129,9 @@ def _validate_perspectives(record: dict[str, Any], route: str, errors: list[str]
                 errors.append(f"perspectives[{index}] real_subagent status is invalid")
             if status == "completed":
                 completed_real = True
-                _non_empty_collection(perspective.get("evidenceRefs"), f"perspectives[{index}].evidenceRefs", errors)
+                _non_empty_bounded_text_collection(
+                    perspective.get("evidenceRefs"), f"perspectives[{index}].evidenceRefs", errors
+                )
     declared = record.get("realSubagentsCompleted")
     if not isinstance(declared, bool):
         errors.append("realSubagentsCompleted must be boolean")
@@ -185,8 +195,9 @@ def validate_steelman_artifact(record: Any, workspace: Path | None = None) -> li
             value = record.get(field)
             if not (_text(value) or (isinstance(value, dict) and bool(value))):
                 errors.append(f"{field} must be a non-empty string or object")
-        for field in ("flipVariables", "materialDissent", "reopenConditions", "evidenceRefs"):
+        for field in ("flipVariables", "materialDissent", "reopenConditions"):
             _non_empty_collection(record.get(field), field, errors)
+        _non_empty_bounded_text_collection(record.get("evidenceRefs"), "evidenceRefs", errors)
         dissent = record.get("materialDissent")
         if isinstance(dissent, list):
             for index, item in enumerate(dissent):
@@ -217,14 +228,21 @@ def route_steelman(
 ) -> dict[str, Any]:
     """Select a route from explicit local risk inputs; no artifact or subagent is dispatched."""
     context = task_id if isinstance(task_id, dict) else {}
+    if type(deterministic) is not bool:
+        raise ValueError("deterministic must be boolean")
     if isinstance(task_id, dict):
         task_id = str(context.get("taskId", ""))
         if risk_level is None and context.get("riskLevel") is not None:
             risk_level = str(context["riskLevel"])
         if context.get("risk") is not None and risk == "medium":
             risk = str(context["risk"])
-        if deterministic is False and context.get("deterministic") is not None:
-            deterministic = bool(context["deterministic"])
+        if "deterministic" in context:
+            context_deterministic = context["deterministic"]
+            if type(context_deterministic) is not bool:
+                raise ValueError("deterministic must be boolean")
+            if deterministic is True and context_deterministic is not True:
+                raise ValueError("conflicting deterministic values")
+            deterministic = context_deterministic
     canonical = _canonical_task(workspace, task_id)
     if canonical is None:
         raise ValueError(f"taskId is not present in canonical tasks.md: {task_id}")

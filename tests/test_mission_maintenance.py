@@ -245,6 +245,74 @@ class MissionMaintenanceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "must precede or equal"):
                 run_handoff(workspace)
 
+    def test_execution_causal_parent_must_match_child_task_on_append_and_read(self):
+        with workspace_tempdir("memory-pulse-cross-task-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            append_execution_pulse(workspace, {
+                "pulseId": "parent-t1", "taskId": "T1", "phase": "implement",
+                "outcome": "parent", "nextAction": "continue", "evidenceRef": "tests/parent",
+                "budgetRemaining": 2, "causalParent": None,
+            })
+            with self.assertRaisesRegex(ValueError, "same task"):
+                append_execution_pulse(workspace, {
+                    "pulseId": "child-t2", "taskId": "T2", "phase": "verify",
+                    "outcome": "cross task", "nextAction": "stop", "evidenceRef": "tests/child",
+                    "budgetRemaining": 1, "causalParent": "parent-t1",
+                })
+
+            ledger = workspace / "MissionCenter/execution-ledger.jsonl"
+            records = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+            child = dict(records[0])
+            child.update({"pulseId": "child-t2", "taskId": "T2", "causalParent": "parent-t1"})
+            ledger.write_text("\n".join(json.dumps(record) for record in (records + [child])) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "same task"):
+                run_handoff(workspace)
+
+    def test_daily_log_read_modify_write_keeps_parallel_events(self):
+        with workspace_tempdir("memory-daily-parallel-") as temporary:
+            workspace = make_workspace(Path(temporary))
+
+            def write_event(index):
+                return run_daily(workspace, f"parallel event {index}", "2026-08-09")
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                list(executor.map(write_event, range(12)))
+            entries = parse_daily_log((workspace / "MissionCenter/daily-log.md").read_text(encoding="utf-8"))[1]
+            self.assertEqual(set(entries["2026-08-09"]), {f"parallel event {index}" for index in range(12)})
+            self.assertTrue(run_status(workspace, "2026-08-09")["sourceFresh"])
+
+    def test_corrupt_derived_views_are_stale_and_rebuilt(self):
+        with workspace_tempdir("memory-derived-corrupt-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            mission = workspace / "MissionCenter"
+            run_sync(workspace, date_str="2026-08-09")
+            (mission / "brief.md").write_bytes(b"\xff\xfe")
+            (mission / "working-set.md").write_bytes(b"x" * (4096 + 1))
+            status = run_status(workspace, "2026-08-09")
+            self.assertTrue(status["stale"])
+            self.assertTrue(any(reason.startswith("derived_") for reason in status["staleReasons"]))
+            run_sync(workspace, date_str="2026-08-09")
+            self.assertIn("mission-center-derived", (mission / "brief.md").read_text(encoding="utf-8"))
+            self.assertIn("mission-center-derived", (mission / "working-set.md").read_text(encoding="utf-8"))
+
+    def test_oversized_canonical_input_fails_closed_without_overwriting_derived(self):
+        with workspace_tempdir("memory-canonical-limit-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            mission = workspace / "MissionCenter"
+            run_sync(workspace, date_str="2026-08-09")
+            brief_before = (mission / "brief.md").read_bytes()
+            tasks_before = (mission / "tasks.md").read_bytes()
+            (mission / "tasks.md").write_bytes(b"x" * (256 * 1024 + 1))
+            with self.assertRaisesRegex(ValueError, "tasks.md exceeds"):
+                run_status(workspace, "2026-08-09")
+            self.assertEqual((mission / "brief.md").read_bytes(), brief_before)
+
+            (mission / "tasks.md").write_bytes(tasks_before)
+            (mission / "snapshot.md").write_bytes(b"\xff\xfe")
+            with self.assertRaises(UnicodeDecodeError):
+                run_resume(workspace, "2026-08-09")
+            self.assertEqual((mission / "brief.md").read_bytes(), brief_before)
+
     def test_resume_budget_is_hard_capped_at_sixteen_kib(self):
         with workspace_tempdir("memory-pulse-budget-") as temporary:
             workspace = make_workspace(Path(temporary))
