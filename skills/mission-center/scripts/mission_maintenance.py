@@ -9,11 +9,13 @@ import json
 import os
 import re
 import tempfile
+from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from common.markdown_table import parse_table_blocks
+from security_scanner import SECRET_PATTERN
 from sync_mission_center import TEXT, _find_summary_value, detect_language, parse_table
 from visual_state import normalize_tasks
 
@@ -504,7 +506,7 @@ def _pulse_text(value: Any, field: str, *, required: bool = True) -> str:
         raise ValueError(f"execution pulse {field} exceeds its length bound")
     if any(ord(character) < 32 and character not in "\t" for character in value):
         raise ValueError(f"execution pulse {field} contains a control character")
-    if re.search(r"-----BEGIN [A-Z ]+-----|(?:password|secret|api[_ -]?key)\s*=|\b(?:sk|ghp|xox[baprs])-[A-Za-z0-9_-]+", value, re.IGNORECASE):
+    if SECRET_PATTERN.search(value):
         raise ValueError(f"execution pulse {field} contains secret-like content")
     return value.strip()
 
@@ -640,6 +642,39 @@ def _read_execution_ledger(workspace: Path) -> list[dict[str, Any]]:
     return records
 
 
+@contextmanager
+def _execution_ledger_lock(workspace: Path):
+    """Serialize ledger writers across processes without adding workspace files."""
+    ledger_identity = os.path.normcase(str(_execution_ledger_path(workspace).resolve()))
+    lock_key = hashlib.sha256(ledger_identity.encode("utf-8")).hexdigest()
+    lock_root = Path(tempfile.gettempdir()) / "mission-center-locks"
+    lock_root.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_root / f"{lock_key}.lock"
+    with lock_path.open("a+b") as lock_file:
+        lock_file.seek(0, os.SEEK_END)
+        if lock_file.tell() == 0:
+            lock_file.write(b"\0")
+            lock_file.flush()
+        lock_file.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
 def append_execution_pulse(workspace: Path, pulse: dict[str, Any]) -> dict[str, Any]:
     """Append one restricted execution pulse without changing task lifecycle files."""
     root = mission_root(workspace)
@@ -648,36 +683,37 @@ def append_execution_pulse(workspace: Path, pulse: dict[str, Any]) -> dict[str, 
     normalized = _validate_pulse_payload(pulse)
     if _canonical_task(root, normalized["taskId"]) is None:
         raise ValueError(f"execution pulse taskId not found in canonical tasks.md: {normalized['taskId']}")
-    existing = _read_execution_ledger(workspace)
-    existing_by_id = {record["pulseId"]: record for record in existing}
-    if normalized.get("causalParent") is not None and normalized["causalParent"] not in existing_by_id:
-        raise ValueError(f"execution pulse has an unknown causalParent: {normalized['causalParent']}")
-    prior = existing_by_id.get(normalized["pulseId"])
-    if prior is not None:
-        candidate = {field: prior.get(field) for field in PULSE_FIELDS}
-        if candidate != normalized:
-            raise ValueError(f"execution pulse id already exists with different content: {normalized['pulseId']}")
-        return {"schemaVersion": "1.0", "appended": False, "duplicate": True, "pulse": prior, "ledger": EXECUTION_LEDGER_FILENAME}
+    with _execution_ledger_lock(workspace):
+        existing = _read_execution_ledger(workspace)
+        existing_by_id = {record["pulseId"]: record for record in existing}
+        if normalized.get("causalParent") is not None and normalized["causalParent"] not in existing_by_id:
+            raise ValueError(f"execution pulse has an unknown causalParent: {normalized['causalParent']}")
+        prior = existing_by_id.get(normalized["pulseId"])
+        if prior is not None:
+            candidate = {field: prior.get(field) for field in PULSE_FIELDS}
+            if candidate != normalized:
+                raise ValueError(f"execution pulse id already exists with different content: {normalized['pulseId']}")
+            return {"schemaVersion": "1.0", "appended": False, "duplicate": True, "pulse": prior, "ledger": EXECUTION_LEDGER_FILENAME}
 
-    record = dict(normalized)
-    record.update({
-        "schemaVersion": "1.0",
-        "kind": "execution-pulse",
-        "recordedAt": datetime.now(timezone.utc).isoformat(),
-    })
-    line = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
-    if len(line.encode("utf-8")) > EXECUTION_PULSE_MAX_BYTES:
-        raise ValueError("execution pulse exceeds its byte limit")
-    path = _execution_ledger_path(workspace)
-    prior_text = path.read_text(encoding="utf-8") if path.is_file() else ""
-    content = prior_text
-    if content and not content.endswith("\n"):
-        content += "\n"
-    content += line
-    if len(content.encode("utf-8")) > EXECUTION_LEDGER_MAX_BYTES:
-        raise ValueError("execution ledger would exceed its bounded byte limit")
-    atomic_write_if_changed(path, content)
-    return {"schemaVersion": "1.0", "appended": True, "duplicate": False, "pulse": record, "ledger": EXECUTION_LEDGER_FILENAME}
+        record = dict(normalized)
+        record.update({
+            "schemaVersion": "1.0",
+            "kind": "execution-pulse",
+            "recordedAt": datetime.now(timezone.utc).isoformat(),
+        })
+        line = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+        if len(line.encode("utf-8")) > EXECUTION_PULSE_MAX_BYTES:
+            raise ValueError("execution pulse exceeds its byte limit")
+        path = _execution_ledger_path(workspace)
+        prior_text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        content = prior_text
+        if content and not content.endswith("\n"):
+            content += "\n"
+        content += line
+        if len(content.encode("utf-8")) > EXECUTION_LEDGER_MAX_BYTES:
+            raise ValueError("execution ledger would exceed its bounded byte limit")
+        atomic_write_if_changed(path, content)
+        return {"schemaVersion": "1.0", "appended": True, "duplicate": False, "pulse": record, "ledger": EXECUTION_LEDGER_FILENAME}
 
 
 def _handoff_packet(
@@ -1235,7 +1271,7 @@ def run_resume(workspace: Path, date_str: str | None = None, max_bytes: int = RE
             # Build the bounded handoff independently; the resume packet applies the
             # single 16 KiB fuse (or a caller's smaller budget) to all sections.
             handoff = run_handoff(root, max_bytes=HANDOFF_MAX_BYTES)
-        except ValueError as exc:
+        except (ValueError, OSError) as exc:
             # Do not expose partially parsed evidence or fall back to a directory scan.
             ledger_error = str(exc)
 

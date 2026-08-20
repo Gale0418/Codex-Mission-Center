@@ -1,3 +1,4 @@
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -127,6 +128,20 @@ class SteelmanContractTests(unittest.TestCase):
             before = path.read_bytes()
             errors = validate_steelman_artifact(artifact("UNKNOWN"), workspace)
             self.assertTrue(any("canonical tasks.md" in error for error in errors))
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_schema_and_python_validator_enforce_route_specific_rounds_and_perspectives(self):
+        schema = json.loads((ROOT / "skills/mission-center/schemas/steelman-evolution.schema.json").read_text(encoding="utf-8"))
+        route_rules = {
+            rule["if"]["properties"]["selectedRoute"].get("const"): rule["then"]["properties"]
+            for rule in schema["allOf"]
+            if "const" in rule["if"]["properties"]["selectedRoute"]
+        }
+        self.assertEqual(route_rules["steelman_lite"]["maxRounds"]["const"], 1)
+        self.assertEqual(route_rules["steelman_lite"]["perspectives"]["minItems"], 2)
+        self.assertEqual(route_rules["steelman_full"]["perspectives"]["minItems"], 3)
+        invalid_lite = artifact(max_rounds=2)
+        self.assertTrue(any("exactly one round" in error for error in validate_steelman_artifact(invalid_lite)))
     def test_steelman_rejects_secret_injection_and_forbidden_keys(self):
         record = artifact()
         record["strongestOpposition"] = "contains token sk-proj-1234567890abcdef"

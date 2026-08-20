@@ -52,6 +52,24 @@
           "evidenceRefs": { "minItems": 1 }
         }
       }
+    },
+    {
+      "if": { "properties": { "selectedRoute": { "const": "steelman_lite" } } },
+      "then": {
+        "properties": {
+          "maxRounds": { "const": 1 },
+          "perspectives": { "minItems": 2 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "selectedRoute": { "const": "steelman_full" } } },
+      "then": {
+        "properties": {
+          "maxRounds": { "minimum": 1, "maximum": 2 },
+          "perspectives": { "minItems": 3 }
+        }
+      }
     }
   ]
 }

@@ -110,6 +110,15 @@ class ShiftLossEvalTests(unittest.TestCase):
         invalid = result(cases=[case("none")])
         self.assertTrue(any("at least one true" in error for error in validate_shift_loss(invalid)))
 
+    def test_malformed_numeric_and_case_id_values_return_errors_without_crashing(self):
+        malformed = result(cases=[case("bad", recall=True, evidenceClaims="two", evidenceBackedClaims=[], recoveryDistance="far")])
+        malformed["cases"][0]["caseId"] = []
+        errors = validate_shift_loss(malformed)
+        self.assertTrue(any("evidenceClaims must be a non-negative integer" in error for error in errors))
+        self.assertTrue(any("evidenceBackedClaims must be a non-negative integer" in error for error in errors))
+        self.assertTrue(any("recoveryDistance must be a non-negative number" in error for error in errors))
+        self.assertTrue(any("caseId must be bounded non-empty text" in error for error in errors))
+
     def test_shift_loss_schema_has_anyof_and_python_validator_rejects_all_false(self):
         schema_path = ROOT / "skills" / "mission-center" / "schemas" / "shift-loss-eval.schema.json"
         schema = json.loads(schema_path.read_text(encoding="utf-8"))

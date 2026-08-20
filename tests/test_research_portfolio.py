@@ -144,6 +144,7 @@ class ResearchPortfolioTests(unittest.TestCase):
             path = workspace / "MissionCenter/tasks.md"
             before = path.read_bytes()
             self.assertTrue(any("canonical tasks.md" in error for error in validate_research_portfolio(portfolio("UNKNOWN"), workspace)))
+            self.assertEqual(path.read_bytes(), before)
     def test_research_rejects_secret_injection_and_schema_description_locks_total(self):
         schema_path = ROOT / "skills" / "mission-center" / "schemas" / "research-portfolio.schema.json"
         import json

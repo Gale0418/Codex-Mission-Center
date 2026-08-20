@@ -169,7 +169,9 @@ def validate_steelman_artifact(record: Any, workspace: Path | None = None) -> li
         errors.append("maxRounds must be an integer from 0 through 2")
     elif route == "skip" and max_rounds != 0:
         errors.append("skip requires maxRounds 0")
-    elif route in {"steelman_lite", "steelman_full"} and max_rounds < 1:
+    elif route == "steelman_lite" and max_rounds != 1:
+        errors.append("steelman_lite requires exactly one round")
+    elif route == "steelman_full" and max_rounds < 1:
         errors.append("steelman routes require at least one round")
     if route == "skip" and not _text(record.get("skipReason")):
         errors.append("skip requires skipReason")

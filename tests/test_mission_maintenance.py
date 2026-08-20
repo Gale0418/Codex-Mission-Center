@@ -2,7 +2,9 @@ import json
 import sys
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
 from tests import workspace_tempdir
 
@@ -169,6 +171,43 @@ class MissionMaintenanceTests(unittest.TestCase):
             self.assertNotIn("handoff", packet["content"])
             self.assertEqual((mission / "tasks.md").read_bytes(), tasks_before)
 
+    def test_execution_pulse_uses_shared_secret_scanner_and_serializes_writers(self):
+        with workspace_tempdir("memory-pulse-lock-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            secret = {
+                "taskId": "T1", "phase": "verify", "outcome": "ghp_123456789012345678901234567890123456",
+                "nextAction": "continue", "evidenceRef": "tests/lock", "budgetRemaining": 1,
+                "causalParent": None,
+            }
+            with self.assertRaisesRegex(ValueError, "secret-like"):
+                append_execution_pulse(workspace, secret)
+
+            def append(index):
+                return append_execution_pulse(workspace, {
+                    "pulseId": f"parallel-{index}", "taskId": "T1", "phase": "verify",
+                    "outcome": f"result-{index}", "nextAction": "continue",
+                    "evidenceRef": f"tests/parallel-{index}", "budgetRemaining": 1,
+                    "causalParent": None,
+                })
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                results = list(executor.map(append, range(16)))
+            self.assertTrue(all(result["appended"] for result in results))
+            ledger = workspace / "MissionCenter/execution-ledger.jsonl"
+            records = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual({record["pulseId"] for record in records}, {f"parallel-{index}" for index in range(16)})
+
+    def test_resume_treats_ledger_oserror_as_corrupt_without_aborting(self):
+        with workspace_tempdir("memory-pulse-oserror-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            run_sync(workspace, date_str="2026-08-09")
+            (workspace / "MissionCenter/execution-ledger.jsonl").write_text("{}\n", encoding="utf-8")
+            with patch("mission_maintenance.run_handoff", side_effect=OSError("read denied")):
+                packet = run_resume(workspace, "2026-08-09")
+            self.assertEqual(packet["ledgerStatus"], "corrupt")
+            self.assertEqual(packet["fallbackReason"], "execution ledger corrupt")
+            self.assertIsNone(packet["handoff"])
+
     def test_execution_ledger_rejects_invalid_time_and_forward_parent(self):
         with workspace_tempdir("memory-pulse-envelope-") as temporary:
             workspace = make_workspace(Path(temporary))
@@ -227,7 +266,7 @@ class MissionMaintenanceTests(unittest.TestCase):
             self.assertGreater(bounded["context"]["includedBytes"]["brief"], 0)
             self.assertIsNotNone(bounded["content"]["brief"])
 
-    def test_critical_lessons_only_accepts_incident_ids_or_incident_paths_inside_directory(self):
+    def test_critical_lessons_rejects_non_incident_paths(self):
         with workspace_tempdir("memory-incidents-") as temporary:
             root = Path(temporary)
             incidents = root / "incidents"

@@ -15,7 +15,7 @@ It does not merge tasks across projects.
 
 - Asks exactly one focused intake question per turn until the goal is clear.
 - Runs a creative cross-domain council when analogy can produce feasible ideas.
-- Searches prior art before implementation, with Jina fallback and license checks.
+- When current external facts materially affect a decision and the user approves access, researches prior art with source and license checks; Jina is only a documented fallback when the normal fetch route is blocked.
 - Routes each project through an Adaptive Optimization Gate instead of forcing one method everywhere.
 - Routes consequential decisions through a Dynamic Expert Council while letting deterministic work skip the meeting entirely.
 - Preserves OWO+ v0.4 causal continuity with restricted pulse-to-handoff evidence; the execution ledger never owns task lifecycle.

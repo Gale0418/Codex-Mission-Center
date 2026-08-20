@@ -92,10 +92,12 @@ def validate_case(case: Any, workspace: Path | None = None) -> list[str]:
         errors.append("case must have at least one true shouldRecall/shouldIgnore/shouldSupersede target")
     if case.get("firstCorrectActionMs") is not None and not _nonnegative(case.get("firstCorrectActionMs")):
         errors.append("case.firstCorrectActionMs must be non-negative or null")
+    valid_counts: dict[str, bool] = {}
     for field in ("tokensUsed", "evidenceClaims", "evidenceBackedClaims"):
-        if not _nonnegative(case.get(field), integer=True):
+        valid_counts[field] = _nonnegative(case.get(field), integer=True)
+        if not valid_counts[field]:
             errors.append(f"case.{field} must be a non-negative integer")
-    if case.get("evidenceBackedClaims", 0) > case.get("evidenceClaims", 0):
+    if valid_counts["evidenceClaims"] and valid_counts["evidenceBackedClaims"] and case["evidenceBackedClaims"] > case["evidenceClaims"]:
         errors.append("case.evidenceBackedClaims cannot exceed evidenceClaims")
     if case.get("recoveryDistance") is not None and not _nonnegative(case.get("recoveryDistance")):
         errors.append("case.recoveryDistance must be a non-negative number")
@@ -136,9 +138,10 @@ def validate_shift_loss(record: Any, workspace: Path | None = None) -> list[str]
             if case.get("variant") != record.get("variant"):
                 errors.append(f"cases[{index}].variant must match result.variant")
             identifier = case.get("caseId")
-            if identifier in seen:
-                errors.append(f"duplicate caseId: {identifier}")
-            seen.add(identifier)
+            if isinstance(identifier, str):
+                if identifier in seen:
+                    errors.append(f"duplicate caseId: {identifier}")
+                seen.add(identifier)
     if workspace is not None and _text(record.get("taskId")) and _canonical_task(workspace, record["taskId"]) is None:
         errors.append("result.taskId is not present in canonical tasks.md")
     return errors
