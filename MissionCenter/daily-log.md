@@ -3,7 +3,7 @@
 - 最後整理： 2026-08-21
 
 ## 2026-08-21
-- 完成 OWO+ 多角度 hardening：Antigravity 稽核、Luna 證據仲裁與 Codex 驗收修正 5 類契約缺口；246 tests＋74 subtests、Doctor、Skill／Plugin validators、publish dry-run 與 diff check 全綠；MC-051 保持 Review，等待 CodeRabbit 與 critic_full 授權。
+- 完成 OWO+ v0.4：隔離 CodeRabbit review、critic_full 3 critic＋1 arbiter 與唯一 delta 共收斂 17 項 finding；261 tests、Doctor、Skill／Plugin validators、critic record 與本機 personal／marketplace／cache 發布全綠；MC-046、MC-051 關閉為 Done。
 
 ## 2026-08-20
 - 完成 OWO+ v0.4 全景審查修補：ledger 現在拒絕 forward parent 與無效／無時區 recordedAt；243 tests＋74 subtests、Doctor、Skill/Plugin validator、handoff→resume 與 publish dry-run 全綠；Antigravity 完整工作區外傳未獲明確同意，正式外部審查與 publish 仍保留 Review。

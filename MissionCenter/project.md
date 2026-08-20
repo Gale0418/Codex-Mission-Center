@@ -19,5 +19,6 @@
   - 2026-08-20：MC-050 完成；Shift-Loss 指標、privacy-safe cases、paired baseline 與四項安全硬限制驗證通過。
   - 2026-08-20：MC-051 本機 release gate 通過；242 tests＋74 subtests、Doctor、Skill／Plugin validators、manifest、publish dry-run 與 diff check 全綠，等待外部審查授權。
   - 2026-08-21：Antigravity 全工作區稽核與證據仲裁修正 Schema parity、因果時間、atomic handoff、Windows incident pointer 與 advisory artifact secret scan；246 tests＋74 subtests、Doctor、Skill／Plugin validators、publish dry-run 與 diff check 全綠。
+  - 2026-08-21：完成 OWO+ v0.4 release：CodeRabbit scoped review 與 critic_full 3 critic＋1 arbiter／唯一 delta 收斂 17 項 finding；261 tests、Doctor、validators 與 critic record 全綠；personal／marketplace／cache 發布無 drift。
 - 開放問題:
-  - MC-051 的 CodeRabbit 上傳同意與 critic_full 總額／席次／工具／時限預算尚未由使用者核准。
+  - 無。
