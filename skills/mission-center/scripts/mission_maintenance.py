@@ -565,7 +565,12 @@ def _detect_language_bounded(root: Path) -> str:
         path = Path(root) / name
         if path.is_file():
             limit = CANONICAL_READ_LIMITS.get(name, 64 * 1024)
-            text = _read_bounded_text(path, limit)
+            try:
+                text = _read_bounded_text(path, limit)
+            except (OSError, UnicodeDecodeError, ValueError):
+                if name == "progress.md":
+                    continue
+                raise
             if any(marker in text for marker in markers):
                 return "zh-TW"
     return "en"

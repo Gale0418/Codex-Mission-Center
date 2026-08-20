@@ -13,6 +13,7 @@ SCRIPTS = ROOT / "skills" / "mission-center" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from mission_maintenance import (
+    _detect_language_bounded,
     append_daily_log,
     atomic_write_if_changed,
     compute_workspace_fingerprint,
@@ -63,6 +64,16 @@ def make_workspace(base: Path, language: str = "en") -> Path:
 
 
 class MissionMaintenanceTests(unittest.TestCase):
+    def test_optional_oversized_progress_does_not_block_language_detection(self):
+        with workspace_tempdir("memory-progress-language-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            mission = workspace / "MissionCenter"
+            (mission / "project.md").write_text("# Project\n", encoding="utf-8")
+            (mission / "progress.md").write_text("# 進度\n" + ("x" * (64 * 1024)), encoding="utf-8")
+            (mission / "tasks.md").write_text("# 任務\n", encoding="utf-8")
+
+            self.assertEqual(_detect_language_bounded(mission), "zh-TW")
+
     def test_execution_pulses_are_idempotent_causal_and_resume_bounded(self):
         with workspace_tempdir("memory-pulse-") as temporary:
             workspace = make_workspace(Path(temporary))
