@@ -206,6 +206,11 @@ class ResearchPortfolioTests(unittest.TestCase):
                 errors = validate_research_portfolio(bad, workspace)
                 self.assertTrue(any("locator" in error and ("relative" in error or "resolve" in error) for error in errors), (bad_locator, errors))
 
+            malformed = copy.deepcopy(record)
+            malformed["sourceLedger"][0]["locator"] = "http://[::1"
+            errors = validate_research_portfolio(malformed, workspace)
+            self.assertTrue(any("malformed URL-like" in error for error in errors))
+
             no_workspace = copy.deepcopy(record)
             errors = validate_research_portfolio(no_workspace)
             self.assertTrue(any("requires workspace verification" in error for error in errors))

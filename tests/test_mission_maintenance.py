@@ -268,6 +268,14 @@ class MissionMaintenanceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "same task"):
                 run_handoff(workspace)
 
+            ledger.write_text(json.dumps({**records[0], "taskId": "t1"}) + "\n", encoding="utf-8")
+            append_execution_pulse(workspace, {
+                "pulseId": "casefold-child", "taskId": "T1", "phase": "verify",
+                "outcome": "same canonical task", "nextAction": "continue",
+                "evidenceRef": "tests/casefold", "budgetRemaining": 1,
+                "causalParent": "parent-t1",
+            })
+
     def test_daily_log_read_modify_write_keeps_parallel_events(self):
         with workspace_tempdir("memory-daily-parallel-") as temporary:
             workspace = make_workspace(Path(temporary))
@@ -295,6 +303,13 @@ class MissionMaintenanceTests(unittest.TestCase):
             self.assertIn("mission-center-derived", (mission / "brief.md").read_text(encoding="utf-8"))
             self.assertIn("mission-center-derived", (mission / "working-set.md").read_text(encoding="utf-8"))
 
+            project = (mission / "project.md").read_text(encoding="utf-8")
+            (mission / "project.md").write_text(project.replace("Save tokens", "x" * 4200), encoding="utf-8")
+            large = run_sync(workspace, date_str="2026-08-09", max_bytes=8192, force=True)
+            self.assertGreater(large["briefBytes"], 4096)
+            self.assertLessEqual(large["briefBytes"], 8192)
+            self.assertTrue(run_status(workspace, "2026-08-09")["sourceFresh"])
+
     def test_oversized_canonical_input_fails_closed_without_overwriting_derived(self):
         with workspace_tempdir("memory-canonical-limit-") as temporary:
             workspace = make_workspace(Path(temporary))
@@ -306,6 +321,11 @@ class MissionMaintenanceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "tasks.md exceeds"):
                 run_status(workspace, "2026-08-09")
             self.assertEqual((mission / "brief.md").read_bytes(), brief_before)
+
+            daily_before = (mission / "daily-log.md").read_bytes()
+            with self.assertRaisesRegex(ValueError, "tasks.md exceeds"):
+                run_daily(workspace, "must not be written", "2026-08-09")
+            self.assertEqual((mission / "daily-log.md").read_bytes(), daily_before)
 
             (mission / "tasks.md").write_bytes(tasks_before)
             (mission / "snapshot.md").write_bytes(b"\xff\xfe")

@@ -14,15 +14,16 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from common.markdown_table import parse_table_blocks
+from common.markdown_table import parse_table_blocks, parse_table_rows
 from security_scanner import SECRET_PATTERN
-from sync_mission_center import TEXT, _find_summary_value, detect_language, parse_table
+from sync_mission_center import TEXT, _find_summary_value
 from visual_state import normalize_tasks
 
 
 SCHEMA_VERSION = "1.0"
 FINGERPRINT_FORMAT = "sha256-v2-lf"
 DEFAULT_BRIEF_MAX_BYTES = 4096
+BRIEF_HARD_MAX_BYTES = 16384
 DERIVED_WARNING = "Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files."
 FOCUS_DEPRECATION = "Deprecated compatibility view: focus.md is generated from tasks.md only and must never be edited or treated as a second lifecycle source."
 FINGERPRINT_SOURCES = ("project.md", "tasks.md", "guardrails.md", "daily-log.md")
@@ -126,7 +127,8 @@ def compute_workspace_fingerprint(
     for name in sources_to_hash:
         path = root / name
         if path.is_file():
-            raw = canonicalize_hash_bytes(path.read_bytes())
+            limit = CANONICAL_READ_LIMITS.get(name, 256 * 1024)
+            raw = canonicalize_hash_bytes(_read_bounded_bytes(path, limit))
             source_hash = hashlib.sha256(raw).hexdigest()
         else:
             raw = b"<missing>"
@@ -159,7 +161,13 @@ def parse_derived_fingerprint(text: str) -> dict[str, str]:
 
 
 def parse_tasks(tasks_path: Path) -> list[dict[str, str]]:
-    rows = parse_table(tasks_path)
+    path = Path(tasks_path)
+    if not path.is_file():
+        return []
+    text = _read_bounded_text(path, CANONICAL_READ_LIMITS["tasks.md"])
+    rows, errors = parse_table_rows(text.splitlines(), table_name=path.name, strict=True)
+    if errors:
+        raise ValueError(errors[0])
     return normalize_tasks(rows) if rows else []
 
 
@@ -185,7 +193,14 @@ def normalize_guardrail_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]
 
 
 def read_guardrails(path: Path) -> list[dict[str, str]]:
-    return normalize_guardrail_rows(parse_table(path)) if path.is_file() else []
+    path = Path(path)
+    if not path.is_file():
+        return []
+    text = _read_bounded_text(path, CANONICAL_READ_LIMITS["guardrails.md"])
+    rows, errors = parse_table_rows(text.splitlines(), table_name=path.name, strict=True)
+    if errors:
+        raise ValueError(errors[0])
+    return normalize_guardrail_rows(rows)
 
 
 def active_guardrail_ids(rows: list[dict[str, str]]) -> list[str]:
@@ -254,9 +269,9 @@ def organize_daily_log(root: Path, day: date, message: str | None = None) -> tup
 
 
 def _organize_daily_log_unlocked(root: Path, day: date, message: str | None = None) -> tuple[bool, list[str]]:
-    language = detect_language(root)
+    language = _detect_language_bounded(root)
     path = root / "daily-log.md"
-    existing = path.read_text(encoding="utf-8") if path.is_file() else daily_log_template(language, day.isoformat())
+    existing = _read_bounded_text(path, CANONICAL_READ_LIMITS["daily-log.md"]) if path.is_file() else daily_log_template(language, day.isoformat())
     _, entries = parse_daily_log(existing)
     day_key = day.isoformat()
     if message:
@@ -336,7 +351,8 @@ def validate_guardrails(rows: list[dict[str, str]]) -> list[str]:
 
 
 def project_identity(root: Path, language: str) -> tuple[str, str, str]:
-    text = (root / "project.md").read_text(encoding="utf-8") if (root / "project.md").is_file() else ""
+    path = root / "project.md"
+    text = _read_bounded_text(path, CANONICAL_READ_LIMITS["project.md"]) if path.is_file() else ""
     labels = TEXT[language]
     project = _find_summary_value(text, [labels["project_label"], "Project", "專案"]) or root.parent.name
     goal = _find_summary_value(text, [labels["goal_label"], "Goal", "目標"]) or ""
@@ -401,7 +417,7 @@ def render_brief(
     max_bytes: int = DEFAULT_BRIEF_MAX_BYTES,
 ) -> str:
     root = mission_root(workspace)
-    language = detect_language(root)
+    language = _detect_language_bounded(root)
     day = day or local_date()
     fingerprint = fingerprint or compute_workspace_fingerprint(root)
     daily_entries = daily_entries or []
@@ -521,22 +537,38 @@ CANONICAL_READ_LIMITS = {
     "critical-lessons.md": 64 * 1024,
 }
 DERIVED_READ_LIMITS = {
-    "brief.md": DEFAULT_BRIEF_MAX_BYTES,
+    "brief.md": BRIEF_HARD_MAX_BYTES,
     "working-set.md": WORKING_SET_MAX_BYTES,
     "focus.md": WORKING_SET_MAX_BYTES,
 }
 
 
-def _read_bounded_text(path: Path, max_bytes: int) -> str:
-    """Read one UTF-8 file with a stat/read fuse; callers choose fail-open policy."""
+def _read_bounded_bytes(path: Path, max_bytes: int) -> bytes:
+    """Read at most max_bytes plus one sentinel byte from a stable descriptor."""
     path = Path(path)
-    size = path.stat().st_size
-    if size > max_bytes:
-        raise ValueError(f"{path.name} exceeds its bounded byte limit ({size} > {max_bytes})")
-    raw = path.read_bytes()
+    with path.open("rb") as handle:
+        raw = handle.read(max_bytes + 1)
     if len(raw) > max_bytes:
         raise ValueError(f"{path.name} exceeds its bounded byte limit")
+    return raw
+
+
+def _read_bounded_text(path: Path, max_bytes: int) -> str:
+    """Read one bounded UTF-8 file; callers choose fail-open policy."""
+    raw = _read_bounded_bytes(path, max_bytes)
     return raw.decode("utf-8")
+
+
+def _detect_language_bounded(root: Path) -> str:
+    markers = ("# 專案", "# 進度", "# 任務", "- 目標:", "- 目標：")
+    for name in ("project.md", "progress.md", "tasks.md"):
+        path = Path(root) / name
+        if path.is_file():
+            limit = CANONICAL_READ_LIMITS.get(name, 64 * 1024)
+            text = _read_bounded_text(path, limit)
+            if any(marker in text for marker in markers):
+                return "zh-TW"
+    return "en"
 
 
 def _validate_canonical_inputs(root: Path) -> None:
@@ -688,7 +720,7 @@ def _read_execution_ledger(workspace: Path) -> list[dict[str, Any]]:
         parent = record.get("causalParent")
         if parent is not None and parent not in ids:
             raise ValueError(f"execution ledger has an unknown causalParent: {parent}")
-        if parent is not None and by_id.get(parent, {}).get("taskId") != record.get("taskId"):
+        if parent is not None and by_id.get(parent, {}).get("taskId", "").strip().casefold() != record.get("taskId", "").strip().casefold():
             raise ValueError(
                 f"execution ledger causalParent must belong to the same task: {parent}"
             )
@@ -772,7 +804,8 @@ def append_execution_pulse(workspace: Path, pulse: dict[str, Any]) -> dict[str, 
             raise ValueError(f"execution pulse has an unknown causalParent: {normalized['causalParent']}")
         if (
             normalized.get("causalParent") is not None
-            and existing_by_id[normalized["causalParent"]].get("taskId") != normalized["taskId"]
+            and existing_by_id[normalized["causalParent"]].get("taskId", "").strip().casefold()
+            != normalized["taskId"].strip().casefold()
         ):
             raise ValueError("execution pulse causalParent must belong to the same task")
         prior = existing_by_id.get(normalized["pulseId"])
@@ -1125,7 +1158,7 @@ def validate_critical_lessons(path: Path, incidents_dir: Path | None = None) -> 
 
 
 def ensure_memory_files(root: Path, day: date) -> list[str]:
-    language = detect_language(root)
+    language = _detect_language_bounded(root)
     changed = []
     if not (root / "guardrails.md").is_file() and atomic_write_if_changed(root / "guardrails.md", guardrails_template(language)):
         changed.append("guardrails.md")
@@ -1163,6 +1196,7 @@ def run_sync(
                 max_bytes=max_bytes,
                 _daily_lock_held=True,
             )
+    max_bytes = min(max(0, int(max_bytes)), BRIEF_HARD_MAX_BYTES)
     _validate_canonical_inputs(root)
     day = local_date(date_str)
     current_before = compute_workspace_fingerprint(root)
@@ -1187,8 +1221,9 @@ def run_sync(
     ws_fingerprint = compute_workspace_fingerprint(root, WORKING_SET_FINGERPRINT_SOURCES)
     focus_fingerprint = compute_workspace_fingerprint(root, FOCUS_FINGERPRINT_SOURCES)
 
-    working_set = render_working_set(tasks, ws_fingerprint, detect_language(root))
-    focus = render_focus(tasks, focus_fingerprint, detect_language(root))
+    language = _detect_language_bounded(root)
+    working_set = render_working_set(tasks, ws_fingerprint, language)
+    focus = render_focus(tasks, focus_fingerprint, language)
     brief = render_brief(root, tasks, fingerprint, day, today_entries, guardrails, max_bytes)
 
     def write_derived(path: Path, content: str) -> bool:
@@ -1223,6 +1258,7 @@ def run_daily(workspace: Path, message: str | None = None, date_str: str | None 
         raise FileNotFoundError(f"MissionCenter directory not found: {root}")
     day = local_date(date_str)
     with _daily_log_lock(root):
+        _validate_canonical_inputs(root)
         changed = ensure_memory_files(root, day)
         daily_changed, _ = _organize_daily_log_unlocked(root, day, message)
         if daily_changed:

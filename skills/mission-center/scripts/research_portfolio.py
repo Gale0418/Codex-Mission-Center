@@ -170,7 +170,11 @@ def _local_locator_error(
     """Ensure local provenance uses a relative locator contained by workspace."""
     # Reject URL schemes (including local:// and https:// fixture spoofing) and
     # absolute paths before resolving the candidate.
-    if urlsplit(locator).scheme or locator.startswith(("//", "\\\\")):
+    try:
+        scheme = urlsplit(locator).scheme
+    except ValueError:
+        return "must be a valid relative path; malformed URL-like locators are invalid"
+    if scheme or locator.startswith(("//", "\\\\")):
         return "must be a relative path inside workspace; URL locators are invalid"
     candidate = Path(locator)
     if candidate.is_absolute() or PureWindowsPath(locator).is_absolute():
