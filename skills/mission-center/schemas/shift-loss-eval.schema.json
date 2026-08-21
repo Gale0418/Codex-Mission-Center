@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mission-center.local/schemas/shift-loss-eval.schema.json",
+  "title": "Mission Center privacy-safe Shift-Loss evaluation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactType", "taskId", "variant", "cases"],
+  "$defs": {
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "taskId", "variant", "shouldRecall", "shouldIgnore", "shouldSupersede", "actualRecall", "actualIgnore", "actualSupersede", "firstCorrectActionMs", "staleMemoryInjected", "wrongBranch", "tokensUsed", "verifiedProgress", "evidenceClaims", "evidenceBackedClaims", "falseDone", "recoveryDistance", "unverifiedDestructiveAction", "activeGuardrailWithoutSource", "multipleWritersSameBranch"],
+      "properties": {
+        "caseId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "taskId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "variant": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+        "shouldRecall": { "type": "boolean" }, "shouldIgnore": { "type": "boolean" }, "shouldSupersede": { "type": "boolean" },
+        "actualRecall": { "type": "boolean" }, "actualIgnore": { "type": "boolean" }, "actualSupersede": { "type": "boolean" },
+        "firstCorrectActionMs": { "type": ["number", "null"], "minimum": 0 },
+        "staleMemoryInjected": { "type": "boolean" }, "wrongBranch": { "type": "boolean" },
+        "tokensUsed": { "type": "integer", "minimum": 0 }, "verifiedProgress": { "type": "boolean" },
+        "evidenceClaims": { "type": "integer", "minimum": 0 }, "evidenceBackedClaims": { "type": "integer", "minimum": 0 },
+        "falseDone": { "type": "boolean" }, "recoveryDistance": { "type": ["number", "null"], "minimum": 0 },
+        "unverifiedDestructiveAction": { "type": "boolean" }, "activeGuardrailWithoutSource": { "type": "boolean" },
+        "multipleWritersSameBranch": { "type": "boolean" }
+      },
+      "anyOf": [
+        { "properties": { "shouldRecall": { "const": true } } },
+        { "properties": { "shouldIgnore": { "const": true } } },
+        { "properties": { "shouldSupersede": { "const": true } } }
+      ]
+    }
+  },
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "artifactType": { "const": "shift-loss-eval" },
+    "taskId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "variant": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+    "cases": { "type": "array", "minItems": 1, "maxItems": 128, "items": { "$ref": "#/$defs/case" } }
+  },
+  "description": "Structured synthetic summaries only. Do not place prompts, tool arguments, raw logs, commands, or secrets in this artifact."
+}

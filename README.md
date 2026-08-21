@@ -15,9 +15,12 @@ It does not merge tasks across projects.
 
 - Asks exactly one focused intake question per turn until the goal is clear.
 - Runs a creative cross-domain council when analogy can produce feasible ideas.
-- Searches prior art before implementation, with Jina fallback and license checks.
+- When current external facts materially affect a decision and the user approves access, researches prior art with source and license checks; Jina is only a documented fallback when the normal fetch route is blocked.
 - Routes each project through an Adaptive Optimization Gate instead of forcing one method everywhere.
 - Routes consequential decisions through a Dynamic Expert Council while letting deterministic work skip the meeting entirely.
+- Preserves OWO+ v0.4 causal continuity with restricted pulse-to-handoff evidence; the execution ledger never owns task lifecycle.
+- Routes medium/high-risk decisions through bounded Steelman Evolution and Research Portfolio/Saturation gates without automatic adoption.
+- Evaluates privacy-safe Shift-Loss self-metrics from structured synthetic or local fixtures; fixtures are not real-world measurements.
 - Runs bounded, repository-local Shadow evaluations whose winners require manual review.
 - Presents approaches and writes only the user-approved rolling task draft.
 - Creates or reuses `MissionCenter/` in the current workspace.
@@ -74,6 +77,7 @@ MissionCenter/
   snapshot.md
   closeout.md
   visual-hub.md
+  execution-ledger.jsonl       # optional bounded pulse evidence, never lifecycle truth
 output/
   mission-center-assets/
     visual-summary.html
@@ -87,6 +91,9 @@ output/
   mission-center-runtime/
     runtime-state.json
     task-links.json
+  mission-center-critique/     # optional advisory Steelman/critic artifacts
+  mission-center-research/     # optional bounded research portfolio artifacts
+  mission-center-evals/        # optional privacy-safe Shift-Loss summaries
 ```
 
 Open `output/mission-center-assets/visual-summary.html` to view the static task HUD. For live runtime data, start the loopback companion and open the printed URL:
@@ -144,6 +151,24 @@ python skills/mission-center/scripts/mission_maintenance.py . status
 python skills/mission-center/scripts/mission_maintenance.py . daily --message "Verified parser fix"
 python skills/mission-center/scripts/mission_maintenance.py . sync
 ```
+
+The OWO+ v0.4 continuity and decision gates are explicit local routes:
+
+```bash
+# Pulse-to-handoff continuity (ledger is execution evidence, not lifecycle truth)
+python skills/mission-center/scripts/mission_maintenance.py . pulse --task-id MC-047 --phase verify --outcome "checked" --next-action "resume tests" --evidence-ref tests/test_mission_maintenance.py --budget-remaining 100
+python skills/mission-center/scripts/mission_maintenance.py . handoff --task-id MC-047
+python skills/mission-center/scripts/mission_maintenance.py . resume --json
+
+# Steelman Evolution, Research Portfolio/Saturation, and Shift-Loss evaluation
+python skills/mission-center/scripts/steelman_contract.py route . MC-048 --risk high
+python skills/mission-center/scripts/research_portfolio.py validate portfolio.json --workspace .
+python skills/mission-center/scripts/research_portfolio.py saturate signals.json
+python skills/mission-center/scripts/shift_loss_eval.py evaluate result.json --workspace .
+python skills/mission-center/scripts/shift_loss_eval.py compare baseline.json owo.json --workspace .
+```
+
+These scripts are deterministic and offline by default. They do not perform automatic web research, dispatch unapproved agents, update task status, or promote unverified evidence. Any sample or fixture data is synthetic and must not be reported as measured project performance.
 
 `tasks.md` remains the only task lifecycle source. `brief.md` and `working-set.md` are content-fingerprinted materialized views and are safe to delete and rebuild. `focus.md` is a deprecated generated compatibility view, never a second truth source. Active critical lessons stay within a 6 KiB budget and point to detailed `incidents/` evidence. Guardrail changes require explicit human approval.
 

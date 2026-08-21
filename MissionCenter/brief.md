@@ -1,20 +1,16 @@
 <!-- Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files. -->
-<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=13823512769aae4d16f74deafc209701b6a02593c81b059bfd4185ea499d7580 -->
+<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=64e10fd7f3aeaf5023e1df22608502bfba66de7d107094be46a3d121389d3b58 -->
 # 任務簡報
 
-- 最後整理: 2026-08-13
-- 來源指紋: `13823512769aae4d16f74deafc209701b6a02593c81b059bfd4185ea499d7580`
+- 最後整理: 2026-08-21
+- 來源指紋: `64e10fd7f3aeaf5023e1df22608502bfba66de7d107094be46a3d121389d3b58`
 - 唯一真實來源: `tasks.md`
 - 專案: Codex Mission Center
 - 北極星: 將 Mission Center 升級為研究驅動的自適應 Project OS，並提供可選的本機 Live Agent HUD
-- 週期: v0.3 Lean Context and Execution Continuity
+- 週期: OWO+ v0.4 Causal Continuity and Evolution Loop
 
-## 今日摘要 · 2026-08-13
-- 完成 v0.3 記憶核心、續航防呆、正確性與薄路由整合，進入最終審查。
-- 完成 v0.3 全量驗證、本機 Skill 與 marketplace source 發布、GitHub draft PR #6；舊 Plugin cache refresh 因 WindowsApps 權限改列已知限制。
-- 完成 v0.3 CodeRabbit 三輪收斂：初審 10 findings 全修、delta 1 Minor 補實跑 hook 測試、最終 0 findings；完整 209 tests、Doctor、Skill 與 Plugin validation 全綠，準備快轉推送 main。
-- 修正 PR #6 首輪 CI 的兩個跨平台邊界：POSIX 淺路徑 fixture 與零任務 working-set Doctor 契約；新增回歸後完整 210 tests 全綠。
-- 完成 v0.3.1 Final Maintenance Patch：Working Set／Resume Fuse／Snapshot Doctor／Personal Runtime requirements／Diagnosis verification gate；217 tests、CodeRabbit 兩輪與本機發布全綠，核心架構凍結。
+## 今日摘要 · 2026-08-21
+- 完成 OWO+ v0.4：隔離 CodeRabbit review、critic_full 3 critic＋1 arbiter 與唯一 delta 共收斂 17 項 finding；261 tests、Doctor、Skill／Plugin validators、critic record 與本機 personal／marketplace／cache 發布全綠；MC-046、MC-051 關閉為 Done。
 
 ## 重要護欄 (7)
 - GR-001

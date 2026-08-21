@@ -37,6 +37,10 @@ HUD 的一位 helper 對應一項 task，來源永遠是 `tasks.md`；依 [視�
 ## 參考路由
 
 - [活動格式](references/activity-log-format.md)｜[協作](references/agent-orchestration.md)｜[收尾](references/closeout-format.md)｜[CodeRabbit](references/coderabbit-review-gate.md)
+- [Execution Pulse／Handoff](references/execution-pulse-handoff.md)
+- [Steelman Evolution](references/steelman-evolution.md)
+- [Research Portfolio／Saturation](references/research-portfolio.md)
+- [Shift-Loss Eval／Self-Metrics](references/shift-loss-eval.md)
 - [完成評論](references/completion-critic-council.md)｜[動態專家](references/dynamic-expert-council.md)｜[執行閘門](references/execution-gates.md)｜[實驗設計](references/experiment-design.md)
 - [創意智囊](references/intake-council.md)｜[訪談](references/intake-protocol.md)｜[Linear 規劃](references/linear-parity.md)｜[記憶維護](references/memory-maintenance.md)
 - [規格化](references/normalization-rules.md)｜[最佳化](references/optimization-protocol.md)｜[最佳化路由](references/optimization-routing.md)｜[平台支援](references/platform-support.md)

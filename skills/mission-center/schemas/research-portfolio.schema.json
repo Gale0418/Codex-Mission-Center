@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mission-center.local/schemas/research-portfolio.schema.json",
+  "title": "Mission Center Research Portfolio",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactType", "taskId", "initialHypothesisAllocation", "allocationKind", "hypotheses", "sourceLedger", "saturationSignals", "selectedAction"],
+  "$defs": {
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token", "tool", "time"],
+      "properties": {
+        "token": { "type": "number", "minimum": 0 },
+        "tool": { "type": "number", "minimum": 0 },
+        "time": { "type": "number", "minimum": 0 }
+      }
+    },
+    "hypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "question", "mechanism", "currentEvidenceRefs", "smallestDiscriminatingTest", "expectedObservation", "falsificationConditions", "dependencies", "risks", "budget", "successNextAction", "failureKnowledge", "revalidateWhen", "status"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "kind": { "enum": ["exploit", "adjacent_explore", "moonshot"] },
+        "question": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "mechanism": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "currentEvidenceRefs": { "type": "array", "items": { "type": "string", "maxLength": 1024 } },
+        "smallestDiscriminatingTest": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "expectedObservation": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "falsificationConditions": { "type": "array", "minItems": 1 },
+        "dependencies": { "type": "array", "minItems": 0 },
+        "risks": { "type": "array", "minItems": 0 },
+        "budget": { "$ref": "#/$defs/budget" },
+        "successNextAction": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "failureKnowledge": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "revalidateWhen": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "status": { "enum": ["unverified", "research_needed", "active", "promoted", "rejected", "stopped"] }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locator", "sourceType", "provenance", "trustStatus", "licenseStatus", "retrievedAt", "status"],
+      "properties": {
+        "locator": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "sourceType": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "provenance": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "trustStatus": { "enum": ["trusted_local", "untrusted_external_evidence", "unverified"] },
+        "licenseStatus": { "enum": ["known", "compatible", "incompatible", "unknown", "not_applicable"] },
+        "retrievedAt": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "status": { "enum": ["discovered", "verified", "rejected", "advisory_only", "promoted"] }
+      }
+    }
+  },
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "artifactType": { "const": "research-portfolio" },
+    "taskId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "initialHypothesisAllocation": { "type": "object", "required": ["exploit", "adjacent_explore", "moonshot"], "additionalProperties": false, "properties": { "exploit": { "type": "number", "minimum": 0 }, "adjacent_explore": { "type": "number", "minimum": 0 }, "moonshot": { "type": "number", "minimum": 0 } }, "description": "Starting hypothesis allocation percentage weights (default 60/30/10). Total sum must equal 100, enforced fail-closed by Python semantic validator." },
+    "allocationKind": { "const": "initial_hypothesis_allocation" },
+    "hypotheses": { "type": "array", "minItems": 1, "maxItems": 12, "items": { "$ref": "#/$defs/hypothesis" }, "description": "Python validation requires at least one exploit, adjacent_explore, and moonshot hypothesis." },
+    "sourceLedger": { "type": "array", "minItems": 0, "maxItems": 32, "items": { "$ref": "#/$defs/source" }, "description": "May be empty before research; Python validation then requires empty evidence refs and unverified/research_needed statuses." },
+    "saturationSignals": { "type": "object", "required": ["repeatedRootCause", "renamedHypothesis", "metricStalled", "budgetBurning", "sharedUnverifiedPremise", "lowMarginalGainCount"], "additionalProperties": false, "properties": { "repeatedRootCause": { "type": "boolean" }, "renamedHypothesis": { "type": "boolean" }, "metricStalled": { "type": "boolean" }, "budgetBurning": { "type": "boolean" }, "sharedUnverifiedPremise": { "type": "boolean" }, "lowMarginalGainCount": { "type": "integer", "minimum": 0 } } },
+    "selectedAction": { "enum": ["continue", "broaden_search", "human_decision", "stop"] },
+    "hardConstraintFailure": { "type": "boolean" },
+    "budgetExhausted": { "type": "boolean" },
+    "promotionStatus": { "enum": ["advisory_only", "not_promoted", "promoted"] }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "promotionStatus": { "const": "promoted" } } },
+      "then": { "description": "Python validator additionally rejects promotion when untrusted external evidence is referenced." }
+    }
+  ]
+}

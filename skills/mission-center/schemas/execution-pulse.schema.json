@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mission-center.local/schemas/execution-pulse.schema.json",
+  "title": "Mission Center restricted execution pulse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "pulseId",
+    "taskId",
+    "phase",
+    "outcome",
+    "nextAction",
+    "evidenceRef",
+    "budgetRemaining",
+    "causalParent",
+    "recordedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "kind": { "const": "execution-pulse" },
+    "pulseId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "taskId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "phase": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "outcome": { "type": "string", "minLength": 1, "maxLength": 1024 },
+    "nextAction": { "type": "string", "minLength": 1, "maxLength": 1024 },
+    "evidenceRef": { "type": "string", "maxLength": 512 },
+    "budgetRemaining": { "type": "integer", "minimum": 0 },
+    "causalParent": { "type": ["string", "null"], "maxLength": 128 },
+    "recordedAt": { "type": "string", "format": "date-time" }
+  }
+}

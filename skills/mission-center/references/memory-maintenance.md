@@ -12,6 +12,7 @@ Reduce repeated context loading without creating a second task truth source. The
 - `working-set.md` is the bounded derived execution view: Blocked, In Progress, Review, unfinished P0, then Ready work. It never owns lifecycle state.
 - `critical-lessons.md` is the compact, verified experience layer. Active lessons require a symptom, root cause, verified action, verification, and an incident evidence pointer; detailed evidence belongs in `incidents/INC-xxx.md`.
 - `focus.md` is a deprecated compatibility view for one migration cycle. It is generated from `tasks.md`, may be deleted after consumers migrate, and is never a second source of truth.
+- `execution-ledger.jsonl` is an optional, bounded execution-evidence ledger. It may carry restricted pulse-to-handoff continuity, but never owns task lifecycle or ordering.
 
 `tasks.md` remains the only lifecycle and ordering source. Never infer or write Task status from runtime state, the daily journal, brief, or focus.
 
@@ -22,6 +23,7 @@ Reduce repeated context loading without creating a second task truth source. The
 3. Read `tasks.md` before changing task lifecycle, ordering, priority, dependencies, or next actions.
 4. Read `decisions.md`, `notes.md`, and `smoke-tests.md` when rationale, research, risk, or verification evidence is needed.
 5. When stale or truncated, run `mission_maintenance.py . sync`. Canonical fallback is explicit and limited to a stale/corrupt derived view, requested missing task, lifecycle mutation, verification evidence, or an explicit request.
+6. When handing work across invocations, use the restricted `pulse` command and `handoff` route described in [Execution Pulse／Handoff](execution-pulse-handoff.md). A missing ledger is safe to omit; a corrupt ledger fails closed.
 
 ## Maintenance Commands
 

@@ -1,7 +1,10 @@
+import json
 import sys
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
 from tests import workspace_tempdir
 
@@ -10,6 +13,7 @@ SCRIPTS = ROOT / "skills" / "mission-center" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from mission_maintenance import (
+    _detect_language_bounded,
     append_daily_log,
     atomic_write_if_changed,
     compute_workspace_fingerprint,
@@ -18,6 +22,8 @@ from mission_maintenance import (
     extract_working_set_tasks,
     parse_daily_log,
     run_daily,
+    append_execution_pulse,
+    run_handoff,
     run_status,
     run_resume,
     run_sync,
@@ -58,6 +64,331 @@ def make_workspace(base: Path, language: str = "en") -> Path:
 
 
 class MissionMaintenanceTests(unittest.TestCase):
+    def test_optional_oversized_progress_does_not_block_language_detection(self):
+        with workspace_tempdir("memory-progress-language-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            mission = workspace / "MissionCenter"
+            (mission / "project.md").write_text("# Project\n", encoding="utf-8")
+            (mission / "progress.md").write_text("# 進度\n" + ("x" * (64 * 1024)), encoding="utf-8")
+            (mission / "tasks.md").write_text("# 任務\n", encoding="utf-8")
+
+            self.assertEqual(_detect_language_bounded(mission), "zh-TW")
+
+    def test_execution_pulses_are_idempotent_causal_and_resume_bounded(self):
+        with workspace_tempdir("memory-pulse-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            mission = workspace / "MissionCenter"
+            tasks_before = (mission / "tasks.md").read_bytes()
+            first = append_execution_pulse(workspace, {
+                "pulseId": "pulse-a",
+                "taskId": "T1",
+                "phase": "implement",
+                "outcome": "A complete",
+                "nextAction": "continue",
+                "evidenceRef": "tests/A",
+                "budgetRemaining": 100,
+                "causalParent": None,
+            })
+            duplicate = append_execution_pulse(workspace, {
+                "pulseId": "pulse-a",
+                "taskId": "T1",
+                "phase": "implement",
+                "outcome": "A complete",
+                "nextAction": "continue",
+                "evidenceRef": "tests/A",
+                "budgetRemaining": 100,
+                "causalParent": None,
+            })
+            append_execution_pulse(workspace, {
+                "pulseId": "pulse-b",
+                "taskId": "T1",
+                "phase": "verify",
+                "outcome": "B complete",
+                "nextAction": "resume focused tests",
+                "evidenceRef": "tests/B",
+                "budgetRemaining": 42,
+                "causalParent": "pulse-a",
+            })
+            handoff = run_handoff(workspace, "T1")
+            self.assertTrue(first["appended"])
+            self.assertTrue(duplicate["duplicate"])
+            self.assertEqual([pulse["pulseId"] for pulse in handoff["causalChain"]], ["pulse-a", "pulse-b"])
+            self.assertEqual(handoff["nextAction"], "resume focused tests")
+            self.assertEqual(handoff["executionNextAction"], "resume focused tests")
+            self.assertEqual(handoff["nextActionSource"], "execution-pulse")
+            self.assertTrue(handoff["executionOnly"])
+            self.assertEqual(handoff["lifecycleSource"], "tasks.md")
+            self.assertEqual(handoff["canonicalTask"], {
+                "ID": "T1", "Title": "Critical fix", "Priority": "P0", "Status": "Ready",
+                "Depends on": "", "Next action": "Implement", "Verification": "unittest",
+            })
+            self.assertEqual(handoff["budgetRemaining"], 42)
+            packet = run_resume(workspace, "2026-08-09")
+            self.assertEqual(packet["ledgerStatus"], "ready")
+            self.assertIn("handoff", packet["content"])
+            self.assertLessEqual(packet["bytes"], 16384)
+            self.assertEqual((mission / "tasks.md").read_bytes(), tasks_before)
+
+    def test_pulse_requires_canonical_task_and_missing_latest_task_fails_closed(self):
+        with workspace_tempdir("memory-pulse-task-binding-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            mission = workspace / "MissionCenter"
+            pulse = {
+                "pulseId": "pulse-bound",
+                "taskId": "T1",
+                "phase": "implement",
+                "outcome": "bound",
+                "nextAction": "verify",
+                "evidenceRef": "tests/bound",
+                "budgetRemaining": 7,
+                "causalParent": None,
+            }
+            with self.assertRaises(ValueError):
+                append_execution_pulse(workspace, {**pulse, "taskId": "UNKNOWN"})
+            append_execution_pulse(workspace, pulse)
+            run_sync(workspace, date_str="2026-08-09")
+            (mission / "tasks.md").write_text(
+                (mission / "tasks.md").read_text(encoding="utf-8").replace(
+                    "| T1 | Critical fix |", "| TX | Removed task |"
+                ),
+                encoding="utf-8",
+            )
+            tasks_after_delete = (mission / "tasks.md").read_bytes()
+            with self.assertRaises(ValueError):
+                run_handoff(workspace)
+            packet = run_resume(workspace, "2026-08-09")
+            self.assertEqual(packet["ledgerStatus"], "corrupt")
+            self.assertIsNone(packet["handoff"])
+            self.assertEqual((mission / "tasks.md").read_bytes(), tasks_after_delete)
+
+    def test_execution_pulse_rejects_sensitive_fields_and_corrupt_ledger_fails_closed(self):
+        with workspace_tempdir("memory-pulse-reject-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            mission = workspace / "MissionCenter"
+            for forbidden in ("prompt", "reasoning", "command", "secret"):
+                with self.assertRaises(ValueError):
+                    append_execution_pulse(workspace, {
+                        "taskId": "T1", "phase": "x", "outcome": "x", "nextAction": "x",
+                        "evidenceRef": "x", "budgetRemaining": 1, "causalParent": None,
+                        forbidden: "do not persist this",
+                    })
+            run_sync(workspace, date_str="2026-08-09")
+            tasks_before = (mission / "tasks.md").read_bytes()
+            (mission / "execution-ledger.jsonl").write_text("{not json}\n", encoding="utf-8")
+            packet = run_resume(workspace, "2026-08-09")
+            self.assertEqual(packet["ledgerStatus"], "corrupt")
+            self.assertEqual(packet["fallbackReason"], "execution ledger corrupt")
+            self.assertIsNone(packet["handoff"])
+            self.assertNotIn("handoff", packet["content"])
+            self.assertEqual((mission / "tasks.md").read_bytes(), tasks_before)
+
+    def test_execution_pulse_uses_shared_secret_scanner_and_serializes_writers(self):
+        with workspace_tempdir("memory-pulse-lock-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            secret = {
+                "taskId": "T1", "phase": "verify", "outcome": "ghp_123456789012345678901234567890123456",
+                "nextAction": "continue", "evidenceRef": "tests/lock", "budgetRemaining": 1,
+                "causalParent": None,
+            }
+            with self.assertRaisesRegex(ValueError, "secret-like"):
+                append_execution_pulse(workspace, secret)
+
+            def append(index):
+                return append_execution_pulse(workspace, {
+                    "pulseId": f"parallel-{index}", "taskId": "T1", "phase": "verify",
+                    "outcome": f"result-{index}", "nextAction": "continue",
+                    "evidenceRef": f"tests/parallel-{index}", "budgetRemaining": 1,
+                    "causalParent": None,
+                })
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                results = list(executor.map(append, range(16)))
+            self.assertTrue(all(result["appended"] for result in results))
+            ledger = workspace / "MissionCenter/execution-ledger.jsonl"
+            records = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual({record["pulseId"] for record in records}, {f"parallel-{index}" for index in range(16)})
+
+    def test_resume_treats_ledger_oserror_as_corrupt_without_aborting(self):
+        with workspace_tempdir("memory-pulse-oserror-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            run_sync(workspace, date_str="2026-08-09")
+            (workspace / "MissionCenter/execution-ledger.jsonl").write_text("{}\n", encoding="utf-8")
+            with patch("mission_maintenance.run_handoff", side_effect=OSError("read denied")):
+                packet = run_resume(workspace, "2026-08-09")
+            self.assertEqual(packet["ledgerStatus"], "corrupt")
+            self.assertEqual(packet["fallbackReason"], "execution ledger corrupt")
+            self.assertIsNone(packet["handoff"])
+
+    def test_execution_ledger_rejects_invalid_time_and_forward_parent(self):
+        with workspace_tempdir("memory-pulse-envelope-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            mission = workspace / "MissionCenter"
+            append_execution_pulse(workspace, {
+                "pulseId": "pulse-a", "taskId": "T1", "phase": "implement",
+                "outcome": "A", "nextAction": "continue", "evidenceRef": "tests/A",
+                "budgetRemaining": 1, "causalParent": None,
+            })
+            ledger = mission / "execution-ledger.jsonl"
+            original = ledger.read_text(encoding="utf-8")
+            record = json.loads(original)
+            record["recordedAt"] = "not-a-date"
+            ledger.write_text(json.dumps(record) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "invalid recordedAt"):
+                run_handoff(workspace)
+
+            child = dict(record)
+            child.update({"pulseId": "pulse-child", "causalParent": "pulse-parent", "recordedAt": "2026-08-20T12:00:00Z"})
+            parent = dict(record)
+            parent.update({"pulseId": "pulse-parent", "causalParent": None, "recordedAt": "2026-08-20T11:00:00+00:00"})
+            ledger.write_text(
+                json.dumps(child) + "\n" + json.dumps(parent) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "must precede its child"):
+                run_handoff(workspace)
+
+            parent_later = dict(parent)
+            parent_later["recordedAt"] = "2026-08-20T15:00:00Z"
+            ledger.write_text(
+                json.dumps(parent_later) + "\n" + json.dumps(child) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "must precede or equal"):
+                run_handoff(workspace)
+
+    def test_execution_causal_parent_must_match_child_task_on_append_and_read(self):
+        with workspace_tempdir("memory-pulse-cross-task-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            append_execution_pulse(workspace, {
+                "pulseId": "parent-t1", "taskId": "T1", "phase": "implement",
+                "outcome": "parent", "nextAction": "continue", "evidenceRef": "tests/parent",
+                "budgetRemaining": 2, "causalParent": None,
+            })
+            with self.assertRaisesRegex(ValueError, "same task"):
+                append_execution_pulse(workspace, {
+                    "pulseId": "child-t2", "taskId": "T2", "phase": "verify",
+                    "outcome": "cross task", "nextAction": "stop", "evidenceRef": "tests/child",
+                    "budgetRemaining": 1, "causalParent": "parent-t1",
+                })
+
+            ledger = workspace / "MissionCenter/execution-ledger.jsonl"
+            records = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+            child = dict(records[0])
+            child.update({"pulseId": "child-t2", "taskId": "T2", "causalParent": "parent-t1"})
+            ledger.write_text("\n".join(json.dumps(record) for record in (records + [child])) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "same task"):
+                run_handoff(workspace)
+
+            ledger.write_text(json.dumps({**records[0], "taskId": "t1"}) + "\n", encoding="utf-8")
+            append_execution_pulse(workspace, {
+                "pulseId": "casefold-child", "taskId": "T1", "phase": "verify",
+                "outcome": "same canonical task", "nextAction": "continue",
+                "evidenceRef": "tests/casefold", "budgetRemaining": 1,
+                "causalParent": "parent-t1",
+            })
+
+    def test_daily_log_read_modify_write_keeps_parallel_events(self):
+        with workspace_tempdir("memory-daily-parallel-") as temporary:
+            workspace = make_workspace(Path(temporary))
+
+            def write_event(index):
+                return run_daily(workspace, f"parallel event {index}", "2026-08-09")
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                list(executor.map(write_event, range(12)))
+            entries = parse_daily_log((workspace / "MissionCenter/daily-log.md").read_text(encoding="utf-8"))[1]
+            self.assertEqual(set(entries["2026-08-09"]), {f"parallel event {index}" for index in range(12)})
+            self.assertTrue(run_status(workspace, "2026-08-09")["sourceFresh"])
+
+    def test_corrupt_derived_views_are_stale_and_rebuilt(self):
+        with workspace_tempdir("memory-derived-corrupt-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            mission = workspace / "MissionCenter"
+            run_sync(workspace, date_str="2026-08-09")
+            (mission / "brief.md").write_bytes(b"\xff\xfe")
+            (mission / "working-set.md").write_bytes(b"x" * (4096 + 1))
+            status = run_status(workspace, "2026-08-09")
+            self.assertTrue(status["stale"])
+            self.assertTrue(any(reason.startswith("derived_") for reason in status["staleReasons"]))
+            run_sync(workspace, date_str="2026-08-09")
+            self.assertIn("mission-center-derived", (mission / "brief.md").read_text(encoding="utf-8"))
+            self.assertIn("mission-center-derived", (mission / "working-set.md").read_text(encoding="utf-8"))
+
+            project = (mission / "project.md").read_text(encoding="utf-8")
+            (mission / "project.md").write_text(project.replace("Save tokens", "x" * 4200), encoding="utf-8")
+            large = run_sync(workspace, date_str="2026-08-09", max_bytes=8192, force=True)
+            self.assertGreater(large["briefBytes"], 4096)
+            self.assertLessEqual(large["briefBytes"], 8192)
+            self.assertTrue(run_status(workspace, "2026-08-09")["sourceFresh"])
+
+    def test_oversized_canonical_input_fails_closed_without_overwriting_derived(self):
+        with workspace_tempdir("memory-canonical-limit-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            mission = workspace / "MissionCenter"
+            run_sync(workspace, date_str="2026-08-09")
+            brief_before = (mission / "brief.md").read_bytes()
+            tasks_before = (mission / "tasks.md").read_bytes()
+            (mission / "tasks.md").write_bytes(b"x" * (256 * 1024 + 1))
+            with self.assertRaisesRegex(ValueError, "tasks.md exceeds"):
+                run_status(workspace, "2026-08-09")
+            self.assertEqual((mission / "brief.md").read_bytes(), brief_before)
+
+            daily_before = (mission / "daily-log.md").read_bytes()
+            with self.assertRaisesRegex(ValueError, "tasks.md exceeds"):
+                run_daily(workspace, "must not be written", "2026-08-09")
+            self.assertEqual((mission / "daily-log.md").read_bytes(), daily_before)
+
+            (mission / "tasks.md").write_bytes(tasks_before)
+            (mission / "snapshot.md").write_bytes(b"\xff\xfe")
+            with self.assertRaises(UnicodeDecodeError):
+                run_resume(workspace, "2026-08-09")
+            self.assertEqual((mission / "brief.md").read_bytes(), brief_before)
+
+    def test_resume_budget_is_hard_capped_at_sixteen_kib(self):
+        with workspace_tempdir("memory-pulse-budget-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            run_sync(workspace, date_str="2026-08-09")
+            packet = run_resume(workspace, "2026-08-09", max_bytes=999999)
+            self.assertEqual(packet["maxBytes"], 16384)
+            self.assertLessEqual(packet["bytes"], 16384)
+            append_execution_pulse(workspace, {
+                "taskId": "T1", "phase": "verify", "outcome": "bounded",
+                "nextAction": "continue", "evidenceRef": "tests/budget",
+                "budgetRemaining": 1, "causalParent": None,
+            })
+            bounded = run_resume(workspace, "2026-08-09", max_bytes=512)
+            self.assertEqual(bounded["ledgerStatus"], "ready")
+            self.assertLessEqual(bounded["bytes"], 512)
+            self.assertIsNone(bounded["content"]["handoff"])
+            self.assertIn("handoff", bounded["readNext"])
+            self.assertTrue(bounded["content"]["brief"])
+            self.assertGreater(bounded["context"]["includedBytes"]["brief"], 0)
+            self.assertIsNotNone(bounded["content"]["brief"])
+
+    def test_critical_lessons_rejects_non_incident_paths(self):
+        with workspace_tempdir("memory-incidents-") as temporary:
+            root = Path(temporary)
+            incidents = root / "incidents"
+            incidents.mkdir()
+            (incidents / "INC-123.md").write_text("evidence", encoding="utf-8")
+            (root / "README.md").write_text("not incident evidence", encoding="utf-8")
+            lessons = root / "critical-lessons.md"
+            header = (
+                "# Critical Lessons\n\n## Active Lessons\n\n"
+                "| ID | Applies when | Symptoms | Root cause | Correct action | Avoid | Verification | Incident | Last confirmed |\n"
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+            )
+            def validate(incident):
+                lessons.write_text(header + f"| CL-001 | general | s | r | c | a | v | {incident} | 2026-08-13 |\n", encoding="utf-8")
+                return validate_critical_lessons(lessons, incidents)
+
+            self.assertEqual(validate("INC-123"), [])
+            self.assertEqual(validate("incidents/INC-123.md"), [])
+            self.assertEqual(validate(r"incidents\INC-123.md"), [])
+            self.assertTrue(any("invalid Incident pointer" in error for error in validate("../README.md")))
+            self.assertTrue(any("invalid Incident pointer" in error for error in validate(r"..\README.md")))
+            self.assertTrue(any("invalid Incident pointer" in error for error in validate("README.md")))
+
     def test_focus_contains_only_unfinished_p0_in_both_languages(self):
         for language in ("en", "zh-TW"):
             with workspace_tempdir(f"memory-{language}-") as temporary:
