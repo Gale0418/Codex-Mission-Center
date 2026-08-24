@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Mission Center Evidence Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "artifactType",
+    "envelopeId",
+    "taskId",
+    "checkId",
+    "scope",
+    "scopeDigest",
+    "result",
+    "status",
+    "artifactLocators",
+    "recordedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "artifactType": { "const": "evidence-envelope" },
+    "envelopeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "taskId": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*-[0-9]+$" },
+    "checkId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$" },
+    "scope": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+    },
+    "scopeDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "sourceRevision": { "type": "string", "minLength": 1, "maxLength": 1024 },
+    "result": { "enum": ["pass", "fail", "unknown"] },
+    "status": { "enum": ["current", "superseded"] },
+    "artifactLocators": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+    },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "supersedes": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+  }
+}

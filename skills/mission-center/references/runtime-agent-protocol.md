@@ -1,5 +1,7 @@
 # Runtime Agent Protocol
 
+版本與支援邊界見 [Runtime 相容性矩陣](runtime-compatibility-matrix.md)。WebSocket companion 是 experimental、unsupported for production；本文件的 endpoint-only 與 fail-closed 規則優先於任何 UI 顯示需求。
+
 Runtime data is optional telemetry. It never changes task lifecycle or ordering; `tasks.md` remains authoritative.
 
 Passive observation performs no model call and adds no model-token usage. Connected agents' own work retains its normal quota behavior. Any future LLM classification or agent-driven trial must be explicitly enabled and charged against its declared token budget.

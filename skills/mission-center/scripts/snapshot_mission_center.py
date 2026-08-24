@@ -32,6 +32,12 @@ TEXT = {
 }
 
 
+def write_text_lf(path: Path, content: str) -> None:
+    """Write UTF-8 text with stable LF newlines on every supported Python."""
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(content)
+
+
 def detect_language(root: Path) -> str:
     for name in ("project.md", "progress.md", "tasks.md"):
         path = root / name
@@ -174,6 +180,9 @@ def main() -> int:
     if verification_record is not None: lines.append(VERIFICATION_METADATA_PREFIX + json.dumps(verification_record, ensure_ascii=False, separators=(",",":")))
     for heading, values in (("Notes",args.note),("Hypotheses",args.hypothesis),("Evidence",args.evidence),("Changes",args.change)):
         if values: lines += [f"- {heading}:"]+[f"  - {value}" for value in values]
-    (root/"snapshot.md").write_text("\n".join(lines)+"\n",encoding="utf-8",newline="\n"); print(root/"snapshot.md"); return 0
+    snapshot_path = root / "snapshot.md"
+    write_text_lf(snapshot_path, "\n".join(lines) + "\n")
+    print(snapshot_path)
+    return 0
 
 if __name__ == "__main__": raise SystemExit(main())

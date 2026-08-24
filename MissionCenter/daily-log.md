@@ -1,6 +1,6 @@
 # 每日紀錄
 
-- 最後整理： 2026-08-21
+- 最後整理： 2026-08-24
 
 ## 2026-08-21
 - 完成 OWO+ v0.4：隔離 CodeRabbit review、critic_full 3 critic＋1 arbiter 與唯一 delta 共收斂 17 項 finding；261 tests、Doctor、Skill／Plugin validators、critic record 與本機 personal／marketplace／cache 發布全綠；MC-046、MC-051 關閉為 Done。

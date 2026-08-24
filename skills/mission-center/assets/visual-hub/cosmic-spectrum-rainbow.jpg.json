@@ -1,0 +1,11 @@
+{
+  "kind": "reference-derived-background",
+  "status": "approved",
+  "sourceRepository": "https://github.com/Gale0418/Chat-Observatory",
+  "sourcePath": "assets/themes/cosmic-spectrum-rainbow.jpg",
+  "sourceRef": "agent/chat-observatory-rename",
+  "sourceBlobSha": "c37fbabf08c952d5e05b1ca502c7c6c28ea4c94a",
+  "sha256": "783CCFD32E9417BE77CFE9770259DFF00741F5E9FEB725A6007FB42D36045106",
+  "usage": "Decorative Rainbow Singularity background for the Mission Center HUD",
+  "containsProductState": false
+}

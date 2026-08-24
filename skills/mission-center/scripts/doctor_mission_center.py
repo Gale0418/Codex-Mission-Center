@@ -34,6 +34,7 @@ from mission_maintenance import (
     validate_guardrails,
 )
 from snapshot_mission_center import canonical_facts
+from reconcile_mission_center import reconcile_workspace
 
 
 SMOKE_ID_HEADERS = ("Linked task ID", "對應任務 ID")
@@ -347,6 +348,24 @@ def inspect_workspace_report(workspace: Path) -> tuple[list[str], list[str]]:
     snapshot_errors, snapshot_warnings = validate_snapshot(root, tasks)
     errors.extend(snapshot_errors)
     warnings.extend(snapshot_warnings)
+
+    reconciliation = reconcile_workspace(workspace)
+    # A missing ledger is valid for workspaces with no pulse history; malformed
+    # evidence and contradictory lifecycle summaries must still block the gate.
+    hard_gate_statuses = {
+        "ledger": {"corrupt"},
+        "progress": {"conflict", "corrupt"},
+        "closeout": {"conflict", "corrupt"},
+        "derived_source": {"stale", "corrupt"},
+        "evidence_envelope": {"stale", "conflict", "corrupt"},
+    }
+    for check in reconciliation["checks"]:
+        status = check["status"]
+        message = f"reconciliation {check['name']}: {check['message']}"
+        if status in hard_gate_statuses.get(check["name"], set()):
+            errors.append(message)
+        elif status != "pass":
+            warnings.append(message)
 
     return errors, warnings
 

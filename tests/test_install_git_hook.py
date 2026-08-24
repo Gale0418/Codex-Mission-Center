@@ -87,14 +87,13 @@ class InstallGitHookTests(unittest.TestCase):
             fake_bin = root / "bin"
             fake_bin.mkdir()
             hook = root / "pre-commit"
-            hook.write_text(
-                installer.PRE_COMMIT_HOOK_SCRIPT.replace(
-                    "REPO_ROOT=$(git rev-parse --show-toplevel)",
-                    f'REPO_ROOT="{root.as_posix()}"',
-                ),
-                encoding="utf-8",
-                newline="\n",
-            )
+            with hook.open("w", encoding="utf-8", newline="\n") as handle:
+                handle.write(
+                    installer.PRE_COMMIT_HOOK_SCRIPT.replace(
+                        "REPO_ROOT=$(git rev-parse --show-toplevel)",
+                        f'REPO_ROOT="{root.as_posix()}"',
+                    )
+                )
             checker = root / "scripts" / "check_mission_center.py"
             checker.parent.mkdir()
             checker.write_text("# test placeholder\n", encoding="utf-8")
@@ -107,12 +106,11 @@ class InstallGitHookTests(unittest.TestCase):
                     log.unlink()
                 for name in names:
                     executable = fake_bin / name
-                    executable.write_text(
-                        '#!/bin/sh\nprintf "%s\\n" "$0 $*" > '
-                        f'"{log.as_posix()}"\n',
-                        encoding="utf-8",
-                        newline="\n",
-                    )
+                    with executable.open("w", encoding="utf-8", newline="\n") as handle:
+                        handle.write(
+                            '#!/bin/sh\nprintf "%s\\n" "$0 $*" > '
+                            f'"{log.as_posix()}"\n'
+                        )
                     executable.chmod(0o755)
                 env = {"PATH": str(fake_bin)}
                 return subprocess.run(

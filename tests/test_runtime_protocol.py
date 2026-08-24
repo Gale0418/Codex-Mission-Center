@@ -15,8 +15,9 @@ ROOT = Path(__file__).parents[1]
 SCRIPTS = ROOT / "skills" / "mission-center" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from mission_runtime import HudHandler, RecoverableTransportError, StdioTransport, codex_stdio_command, connect_live, is_loopback_host_header, link_task, loopback_server_type, packaged_runtime_requirements, replay, task_ids_from_workspace, validate_websockets_version
-from runtime_protocol import age_runtime_state, empty_runtime_state, load_last_valid, normalize_codex_message, reduce_event, sanitize, touch_runtime_state, validate_initialize_response, write_runtime_state
+import mission_runtime
+from mission_runtime import HudHandler, RecoverableTransportError, StdioTransport, codex_stdio_command, connect_live, decode_json_frame, is_loopback_host_header, link_task, loopback_server_type, packaged_runtime_requirements, replay, task_ids_from_workspace, validate_websockets_version
+from runtime_protocol import MAX_AGENT_STATE_COUNT, MAX_RUNTIME_FIELD_LENGTH, MAX_RUNTIME_LINE_BYTES, age_runtime_state, empty_runtime_state, load_last_valid, normalize_codex_message, reduce_event, sanitize, touch_runtime_state, validate_initialize_response, write_runtime_state
 
 
 class RuntimeProtocolTests(unittest.TestCase):
@@ -178,6 +179,52 @@ class RuntimeProtocolTests(unittest.TestCase):
         elapsed = time.perf_counter() - started
         self.assertLess(elapsed, 0.25)
         self.assertLess(len(json.dumps(state).encode("utf-8")), 64 * 1024)
+
+    def test_runtime_ingress_rejects_oversized_fields_and_secret_like_metadata(self):
+        oversized = normalize_codex_message(
+            {"method": "turn/started", "params": {"threadId": "x" * (MAX_RUNTIME_FIELD_LENGTH + 1)}},
+            1,
+        )
+        self.assertEqual(oversized, [])
+        secret_like = normalize_codex_message(
+            {"method": "turn/started", "params": {"threadId": "token=not-for-telemetry"}},
+            1,
+        )
+        self.assertEqual(secret_like, [])
+        with self.assertRaisesRegex(ValueError, "privacy policy"):
+            reduce_event(empty_runtime_state(), {**self.event(), "activity": "Bearer abcdefghijkl"})
+
+    def test_runtime_agent_state_is_bounded_and_fails_closed(self):
+        state = empty_runtime_state()
+        with mock.patch("runtime_protocol.MAX_AGENT_STATE_COUNT", 1):
+            state = reduce_event(state, self.event(agent="first"))
+            with self.assertRaisesRegex(ValueError, "agent limit"):
+                reduce_event(state, self.event(sequence=2, agent="second"))
+
+    def test_replay_rejects_oversized_files_lines_and_event_counts(self):
+        with workspace_tempdir("runtime-bounds-") as temp:
+            workspace = Path(temp)
+            stream = workspace / "events.jsonl"
+            stream.write_bytes(b"{}\n")
+            with mock.patch.object(mission_runtime, "MAX_REPLAY_FILE_BYTES", 1):
+                with self.assertRaisesRegex(ValueError, "file byte limit"):
+                    replay(workspace, stream)
+
+            stream.write_bytes((b"{}" + b"x" * MAX_RUNTIME_LINE_BYTES) + b"\n")
+            with self.assertRaisesRegex(ValueError, "line byte limit"):
+                replay(workspace, stream)
+
+            line = json.dumps({"method": "thread/started", "params": {"threadId": "t"}}).encode() + b"\n"
+            stream.write_bytes(line * 2)
+            with mock.patch.object(mission_runtime, "MAX_REPLAY_EVENTS", 1):
+                with self.assertRaisesRegex(ValueError, "event count limit"):
+                    replay(workspace, stream)
+
+    def test_json_frame_rejects_non_object_and_oversized_payload(self):
+        with self.assertRaisesRegex(ValueError, "JSON object"):
+            decode_json_frame(b"[]")
+        with self.assertRaises(RecoverableTransportError):
+            decode_json_frame(b"{}" + b" " * MAX_RUNTIME_LINE_BYTES)
 
     def test_atomic_write_invalid_json_and_last_valid(self):
         with workspace_tempdir() as temp:

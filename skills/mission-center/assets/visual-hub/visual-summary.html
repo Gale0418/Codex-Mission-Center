@@ -1,1124 +1,240 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MissionCenter Visual Summary</title>
+  <title>Codex Mission Center · Visual Summary</title>
   <style>
+    @property --edge-angle { syntax: "<angle>"; initial-value: 90deg; inherits: false; }
+    @property --panel-edge-angle { syntax: "<angle>"; initial-value: 120deg; inherits: false; }
     :root {
-      --panel-w: min(420px, 92vw);
-      --ink: #102336;
-      --paper: rgba(248, 252, 255, 0.9);
-      --line: rgba(77, 222, 255, 0.22);
-      --floor: #12263a;
-      --floor-line: rgba(119, 219, 255, 0.12);
-      --blue: #4fd8ff;
-      --green: #86f0a4;
-      --orange: #ffba6b;
-      --violet: #bda4ff;
-      --gold: #ffe66d;
-      --glass: rgba(239, 252, 255, 0.74);
-      --neon: rgba(75, 220, 255, 0.72);
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      background:
-        radial-gradient(circle at 20% 12%, rgba(255, 225, 137, 0.34), transparent 30%),
-        linear-gradient(135deg, #f4fbff 0%, #fdf7ed 48%, #eef8f4 100%);
-      color: var(--ink);
-      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
-    }
-
-    .mission-panel {
-      position: relative;
-      width: var(--panel-w);
-      aspect-ratio: 941 / 1672;
-      overflow: hidden;
-      border: 4px solid #161616;
-      border-radius: 28px;
-      background: #08131f;
-      box-shadow: 0 24px 56px rgba(33, 37, 41, 0.24);
-      isolation: isolate;
-    }
-
-    .base-map {
-      position: absolute;
-      inset: 0;
-      z-index: 0;
-      background: #06111d;
-    }
-
-    .base-map::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      z-index: 2;
-      border: 4px solid rgba(147, 232, 255, 0.3);
-      border-radius: 30px;
-      background:
-        linear-gradient(180deg, rgba(1, 11, 21, 0.08) 0%, transparent 18%, transparent 72%, rgba(1, 9, 18, 0.56) 100%),
-        radial-gradient(circle at 50% 42%, rgba(84, 224, 255, 0.08), transparent 32%);
-      box-shadow:
-        inset 0 0 0 8px rgba(255, 255, 255, 0.04),
-        inset 0 0 38px rgba(52, 214, 255, 0.18);
-      pointer-events: none;
-    }
-
-    .base-map::after {
-      content: none;
-    }
-
-    .stage-art {
-      position: absolute;
-      left: 0;
-      top: 2.2%;
-      z-index: 1;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      object-position: center top;
-      image-rendering: auto;
-      filter:
-        saturate(1.04)
-        contrast(1.03)
-        drop-shadow(0 0 14px rgba(74, 220, 255, 0.18));
-      transition: filter 500ms ease;
-    }
-
-    .zone {
-      position: absolute;
-      border: 2px solid rgba(148, 238, 255, 0.42);
-      border-radius: 22px;
-      background:
-        radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.12), transparent 58%),
-        linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02)),
-        var(--zone-color);
-      box-shadow:
-        inset 0 0 0 5px rgba(255, 255, 255, 0.05),
-        inset 0 0 22px rgba(78, 224, 255, 0.1),
-        0 9px 20px rgba(0, 0, 0, 0.18);
-      opacity: 0.12;
-      z-index: 2;
-      pointer-events: none;
-      transition: opacity 450ms ease, box-shadow 450ms ease;
-    }
-
-    .zone::after {
-      content: none;
-    }
-
-    .zone::before {
-      content: "";
-      position: absolute;
-      inset: 14px;
-      border: 1px dashed rgba(219, 251, 255, 0.18);
-      border-radius: 16px;
-      pointer-events: none;
-    }
-
-    .zone-intake {
-      --zone-color: rgba(79, 216, 255, 0.16);
-      left: 9%;
-      top: 23%;
-      width: 31%;
-      height: 15%;
-    }
-
-
-
-    .zone-progress {
-      --zone-color: rgba(134, 240, 164, 0.15);
-      left: 59%;
-      top: 23%;
-      width: 31%;
-      height: 24%;
-    }
-
-    .zone-blocked {
-      --zone-color: rgba(255, 186, 107, 0.16);
-      left: 9%;
-      top: 52%;
-      width: 31%;
-      height: 16%;
-    }
-
-    .zone-review {
-      --zone-color: rgba(189, 164, 255, 0.16);
-      left: 61%;
-      top: 53%;
-      width: 28%;
-      height: 16%;
-    }
-
-    .zone-done {
-      --zone-color: rgba(255, 230, 109, 0.16);
-      left: 29%;
-      top: 72%;
-      width: 42%;
-      height: 10%;
-    }
-
-    .mission-panel[data-status="Intake"] .zone-intake,
-    .mission-panel[data-status="In Progress"] .zone-progress,
-    .mission-panel[data-status="Blocked"] .zone-blocked,
-    .mission-panel[data-status="Review"] .zone-review,
-    .mission-panel[data-status="Done"] .zone-done {
-      opacity: 0.32;
-      box-shadow:
-        inset 0 0 0 5px rgba(255, 255, 255, 0.06),
-        inset 0 0 26px rgba(78, 224, 255, 0.16),
-        0 0 18px rgba(78, 224, 255, 0.32);
-    }
-
-    .tech-prop {
-      position: absolute;
-      z-index: 1;
-      pointer-events: none;
-    }
-
-    .dispatch-console {
-      left: 17%;
-      top: 29%;
-      width: 15%;
-      height: 7%;
-      border: 2px solid rgba(79, 216, 255, 0.78);
-      border-radius: 50% 50% 16px 16px;
-      background:
-        radial-gradient(circle at 50% 20%, rgba(239, 252, 255, 0.86), transparent 18%),
-        linear-gradient(180deg, rgba(42, 181, 255, 0.72), rgba(12, 52, 78, 0.86));
-      box-shadow: 0 0 18px rgba(79, 216, 255, 0.42);
-    }
-
-    .office-desks {
-      left: 64%;
-      top: 31%;
-      width: 20%;
-      height: 13%;
-      background:
-        linear-gradient(90deg, rgba(239, 252, 255, 0.72) 0 42%, transparent 42% 58%, rgba(239, 252, 255, 0.72) 58%),
-        linear-gradient(0deg, transparent 0 42%, rgba(79, 216, 255, 0.55) 42% 58%, transparent 58%);
-      border-radius: 12px;
-      filter: drop-shadow(0 0 10px rgba(79, 216, 255, 0.3));
-    }
-
-    .repair-bay {
-      left: 17%;
-      top: 64%;
-      width: 16%;
-      height: 7%;
-      border: 2px solid rgba(255, 186, 107, 0.72);
-      border-radius: 14px;
-      background:
-        repeating-linear-gradient(135deg, rgba(255, 186, 107, 0.72) 0 8px, rgba(33, 21, 9, 0.65) 8px 16px);
-      box-shadow: 0 0 14px rgba(255, 186, 107, 0.32);
-    }
-
-    .archive-racks {
-      left: 63%;
-      top: 63%;
-      width: 22%;
-      height: 8%;
-      background:
-        repeating-linear-gradient(90deg, rgba(239, 252, 255, 0.74) 0 8px, rgba(80, 65, 128, 0.64) 8px 16px);
-      border: 2px solid rgba(189, 164, 255, 0.7);
-      border-radius: 10px;
-      box-shadow: 0 0 14px rgba(189, 164, 255, 0.3);
-    }
-
-    .nap-pods {
-      left: 33%;
-      top: 76.8%;
-      width: 34%;
-      height: 4.7%;
-      background:
-        radial-gradient(ellipse at 22% 50%, rgba(255, 230, 109, 0.86), transparent 34%),
-        radial-gradient(ellipse at 50% 50%, rgba(255, 230, 109, 0.72), transparent 34%),
-        radial-gradient(ellipse at 78% 50%, rgba(255, 230, 109, 0.86), transparent 34%);
-      border: 1.5px solid rgba(255, 230, 109, 0.7);
-      border-radius: 999px;
-      box-shadow: 0 0 16px rgba(255, 230, 109, 0.28);
-    }
-
-    .construction-site {
-      position: absolute;
-      left: 50%;
-      top: 46.5%;
-      z-index: 1;
-      width: 38%;
-      height: 23%;
-      border: 3px solid rgba(255, 230, 109, 0.72);
-      border-radius: 999px;
-      background:
-        radial-gradient(circle at 50% 47%, rgba(255, 255, 255, 0.94), transparent 13%),
-        radial-gradient(circle at 50% 47%, rgba(255, 230, 109, 0.72), transparent 38%),
-        conic-gradient(from 0deg, rgba(79, 216, 255, 0.18), rgba(255, 230, 109, 0.36), rgba(134, 240, 164, 0.22), rgba(79, 216, 255, 0.18));
-      box-shadow:
-        inset 0 0 0 7px rgba(255, 255, 255, 0.08),
-        0 0 24px rgba(255, 230, 109, 0.26),
-        0 12px 22px rgba(0, 0, 0, 0.24);
-      transform: translate(-50%, -50%);
-    }
-
-    .construction-site::before {
-      content: "Progress Reactor";
-      position: absolute;
-      left: 50%;
-      top: 8px;
-      padding: 5px 10px;
-      border: 1.5px solid rgba(255, 230, 109, 0.86);
-      border-radius: 999px;
-      background: rgba(6, 18, 30, 0.78);
-      color: #fff8bd;
-      font-size: 10px;
-      font-weight: 900;
-      white-space: nowrap;
-      transform: translateX(-50%);
-    }
-
-    .monument {
-      position: absolute;
-      left: 50%;
-      bottom: 13%;
-      width: 78%;
-      height: 63%;
-      transform: translateX(-50%);
-    }
-
-    .monument-block {
-      position: absolute;
-      left: 50%;
-      bottom: calc(var(--level) * 11%);
-      width: calc(16% + var(--level) * 7%);
-      height: 10%;
-      border: 2px solid rgba(52, 42, 22, 0.7);
-      border-radius: 8px;
-      background: linear-gradient(180deg, #ffe88e, #d99b33);
-      box-shadow: inset 0 3px rgba(255, 255, 255, 0.38);
-      opacity: 0.18;
-      transform: translateX(-50%);
-      transition: opacity 700ms ease, filter 700ms ease, transform 700ms ease;
-    }
-
-    .monument-block.is-built {
-      opacity: 1;
-      filter: saturate(1.1);
-      transform: translateX(-50%) translateY(-2px);
-    }
-
-    .meme-face {
-      position: absolute;
-      left: 50%;
-      top: 23%;
-      width: 46%;
-      aspect-ratio: 1;
-      border: 3px solid rgba(52, 42, 22, 0.7);
-      border-radius: 50% 50% 45% 45%;
-      background: linear-gradient(180deg, #fff3b2, #f3be4e);
-      opacity: 0;
-      transform: translateX(-50%) scale(0.78);
-      transition: opacity 700ms ease, transform 700ms ease;
-    }
-
-    .meme-face::before,
-    .meme-face::after {
-      content: "";
-      position: absolute;
-      top: 34%;
-      width: 13%;
-      height: 18%;
-      border-radius: 50%;
-      background: #1c1f22;
-    }
-
-    .meme-face::before {
-      left: 28%;
-    }
-
-    .meme-face::after {
-      right: 28%;
-    }
-
-    .meme-mouth {
-      position: absolute;
-      left: 50%;
-      bottom: 25%;
-      width: 31%;
-      height: 12%;
-      border-bottom: 4px solid #1c1f22;
-      border-radius: 0 0 999px 999px;
-      transform: translateX(-50%);
-    }
-
-    .construction-site[data-stage="8"] .meme-face,
-    .construction-site[data-stage="9"] .meme-face,
-    .construction-site[data-stage="10"] .meme-face {
-      opacity: 1;
-      transform: translateX(-50%) scale(1);
-    }
-
-    .summary {
-      position: absolute;
-      left: 5.5%;
-      right: 5.5%;
-      top: 3.5%;
-      z-index: 4;
-      pointer-events: none;
-    }
-
-    .attention-capsule {
-      width: 100%;
-      min-height: 38px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 8px 12px;
-      border: 1.5px solid rgba(78, 224, 255, 0.62);
-      border-radius: 999px;
-      background: rgba(8, 22, 35, 0.92);
-      color: #effcff;
-      box-shadow: 0 0 18px rgba(78, 224, 255, 0.16);
-      font: inherit;
-      font-size: 10px;
-      font-weight: 900;
-      letter-spacing: 0.02em;
-      cursor: pointer;
-      pointer-events: auto;
-    }
-
-    .attention-capsule:hover,
-    .attention-capsule:focus-visible {
-      border-color: #baffca;
-      outline: 2px solid rgba(134, 240, 164, 0.38);
-      outline-offset: 2px;
-    }
-
-    .attention-capsule[data-attention="true"] .capsule-attention {
-      color: #ffd08c;
-      text-shadow: 0 0 8px rgba(255, 180, 84, 0.55);
-    }
-
-    .mission-details {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
-    }
-
-    .task-card {
-      position: absolute;
-      left: 5%;
-      right: 5%;
-      bottom: 1.1%;
-      z-index: 4;
-      width: auto;
-      min-height: 54px;
-      padding: 7px 12px 7px 76px;
-      border: 1.5px solid rgba(148, 238, 255, 0.48);
-      border-radius: 18px;
-      background:
-        linear-gradient(90deg, rgba(8, 22, 35, 0.94), rgba(19, 43, 60, 0.84)),
-        rgba(255, 252, 244, 0.86);
-      backdrop-filter: blur(6px);
-      color: #effcff;
-      font-size: 12px;
-      font-weight: 700;
-      line-height: 1.22;
-      box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.22), 0 0 18px rgba(78, 224, 255, 0.14);
-    }
-
-    .task-card::before {
-      content: "ACTIVE";
-      position: absolute;
-      left: 13px;
-      top: 50%;
-      width: 50px;
-      height: 34px;
-      display: grid;
-      place-items: center;
-      border: 1.5px solid rgba(134, 240, 164, 0.74);
-      border-radius: 12px;
-      background: rgba(134, 240, 164, 0.12);
-      color: #baffca;
-      font-size: 10px;
-      letter-spacing: 0.08em;
-      transform: translateY(-50%);
-    }
-
-    .task-card p {
-      margin: 0 0 4px;
-    }
-
-    .task-card ul {
-      margin: 0;
-      padding-left: 16px;
-      columns: 2;
-    }
-
-    .agents-layer {
-      position: absolute;
-      inset: 0;
-      z-index: 3;
-      pointer-events: none;
-    }
-
-    .runtime-agents-layer {
-      position: absolute;
-      inset: 0;
-      z-index: 5;
-      pointer-events: none;
-    }
-
-    .runtime-map-agent {
-      position: absolute;
-      left: var(--x);
-      top: var(--y);
-      width: 16px;
-      height: 16px;
-      border: 2px solid #d9fbff;
-      border-radius: 50%;
-      background: #4fd8ff;
-      box-shadow: 0 0 12px rgba(79, 216, 255, 0.8);
-      transform: translate(-50%, -50%);
-      transition: left 650ms ease, top 650ms ease;
-    }
-
-    .runtime-map-agent[data-attention="true"] {
-      border-color: #fff1c6;
-      background: #ffb454;
-      box-shadow: 0 0 14px rgba(255, 180, 84, 0.9);
-    }
-
-    .agent {
-      --row-y: 0%;
-      --sheet: url("mission-helper-roster-8-fixed.png");
-      --x: 20%;
-      --y: 34%;
-      --scale: 1;
-      position: absolute;
-      left: var(--x);
-      top: var(--y);
-      width: 13.5%;
-      aspect-ratio: 171 / 192;
-      filter: drop-shadow(0 7px 8px rgba(35, 30, 25, 0.24));
-      transform: translate(-50%, -100%) scale(var(--scale));
-      transition: left 5200ms ease-in-out, top 5200ms ease-in-out, transform 5200ms ease-in-out;
-    }
-
-    .agent[data-avatar="1"] { --row-y: 0%; }
-    .agent[data-avatar="2"] { --row-y: 14.286%; }
-    .agent[data-avatar="3"] { --row-y: 28.571%; }
-    .agent[data-avatar="4"] { --row-y: 42.857%; }
-    .agent[data-avatar="5"] { --row-y: 57.143%; }
-    .agent[data-avatar="6"] { --row-y: 71.429%; }
-    .agent[data-avatar="7"] { --row-y: 85.714%; }
-    .agent[data-avatar="8"] { --row-y: 100%; }
-
-    .sprite {
-      width: 100%;
-      height: 100%;
-      background-image: var(--sheet);
-      background-repeat: no-repeat;
-      background-size: 600% 800%;
-      background-position: 0% var(--row-y);
-      animation: calm-blink 8.5s steps(1, end) infinite;
-    }
-
-    .agent[data-status="In Progress"] .sprite {
-      animation: work-frames 7.5s steps(1, end) infinite;
-    }
-
-    .agent[data-status="Blocked"] .sprite {
-      animation: none;
-      background-position: 100% var(--row-y);
-    }
-
-    .agent[data-status="Done"] .sprite {
-      animation: none;
-      background-position: 20% var(--row-y);
-    }
-
-    .agent[data-status="Review"] .sprite {
-      animation: none;
-      background-position: 40% var(--row-y);
-    }
-
-    .nameplate {
-      position: absolute;
-      left: 50%;
-      top: calc(100% + 2px);
-      max-width: 170%;
-      padding: 3px 7px;
-      border: 1.5px solid rgba(28, 31, 34, 0.7);
-      border-radius: 999px;
-      background: rgba(255, 250, 241, 0.9);
-      color: #1c1f22;
-      font-size: 9px;
-      font-weight: 900;
-      line-height: 1.1;
-      text-align: center;
-      white-space: nowrap;
-      transform: translateX(-50%);
-      box-shadow: 0 4px 8px rgba(51, 43, 32, 0.08);
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 140ms ease-out;
-    }
-
-    .agent:hover .nameplate,
-    .agent:focus-visible .nameplate {
-      opacity: 1;
-    }
-
-    .agent:focus-visible {
-      outline: 2px solid #7ee7ff;
-      outline-offset: 3px;
-      border-radius: 12px;
-    }
-
-    .status-pill {
-      position: absolute;
-      left: 6%;
-      bottom: 9.6%;
-      z-index: 4;
-      min-width: 120px;
-      padding: 8px 10px;
-      border: 2px solid #1c1f22;
-      border-radius: 999px;
-      background: rgba(8, 22, 35, 0.92);
-      color: #effcff;
-      font-size: 12px;
-      font-weight: 800;
-      text-align: center;
-      box-shadow: 0 7px 14px rgba(51, 43, 32, 0.1);
-    }
-
-    @keyframes calm-blink {
-      0%, 82% {
-        background-position: 0% var(--row-y);
-      }
-      83%, 89% {
-        background-position: 40% var(--row-y);
-      }
-      90%, 96% {
-        background-position: 20% var(--row-y);
-      }
-      97%, 100% {
-        background-position: 0% var(--row-y);
-      }
-    }
-
-    @keyframes work-frames {
-      0%, 42% {
-        background-position: 0% var(--row-y);
-      }
-      43%, 66% {
-        background-position: 60% var(--row-y);
-      }
-      67%, 90% {
-        background-position: 80% var(--row-y);
-      }
-      91%, 100% {
-        background-position: 0% var(--row-y);
-      }
-    }
-
-    @media (max-width: 430px) {
-      .summary h1 {
-        font-size: 20px;
-      }
-
-      .goal,
-      .metric,
-      .task-card,
-      .status-pill {
-        font-size: 11px;
-      }
-
-      .agent {
-        width: 16.5%;
-      }
-    }
-
-    .entity-label {
-      position: absolute;
-      z-index: 8;
-      padding: 5px 9px;
-      border: 1px solid rgba(134, 240, 164, 0.5);
-      border-radius: 999px;
-      background: rgba(8, 22, 35, 0.88);
-      color: #baffca;
-      font-size: 10px;
-      font-weight: 900;
-      letter-spacing: 0.08em;
-    }
-
-    .map-label { left: 2%; top: 17%; }
-
-    .live-agents-drawer {
-      position: absolute;
-      z-index: 9;
-      right: 5%;
-      top: 9%;
-      width: 90%;
-      box-sizing: border-box;
-      max-height: 38%;
-      overflow: auto;
-      padding: 12px;
-      border: 1px solid rgba(78, 224, 255, 0.45);
-      border-radius: 14px;
-      background: rgba(8, 22, 35, 0.96);
-      color: #effcff;
-      box-shadow: 0 0 18px rgba(78, 224, 255, 0.12);
-    }
-
-    .live-agents-drawer[hidden] { display: none; }
-    .live-agents-drawer h2 { margin: 0 0 6px; font-size: 13px; }
-    .runtime-summary { margin: 0 0 6px; color: #a9d9e6; font-size: 10px; }
-    .runtime-list { overflow-x: auto; }
-    .runtime-topology {
-      display: grid;
-      grid-auto-flow: column;
-      grid-auto-columns: 160px;
-      gap: 14px;
-      min-width: max-content;
-      padding: 3px 2px 5px;
-    }
-    .runtime-generation {
-      position: relative;
-      display: grid;
-      align-content: start;
-      gap: 6px;
-      min-width: 150px;
-    }
-    .runtime-generation:not([data-generation="0"])::before {
-      content: "";
-      position: absolute;
-      left: -9px;
-      top: 12px;
-      bottom: 12px;
-      border-left: 1px dashed rgba(109, 216, 255, 0.48);
-    }
-    .runtime-generation-label { color: #8eabb5; font-size: 8px; letter-spacing: 0.08em; text-transform: uppercase; }
-    .runtime-agent {
-      position: relative;
-      padding: 6px 7px;
-      border-left: 3px solid #6dd8ff;
-      border-radius: 6px;
-      background: rgba(255, 255, 255, 0.07);
-      font-size: 10px;
-      line-height: 1.3;
-    }
-    .runtime-agent::before { content: "◉"; margin-right: 4px; color: #6dd8ff; }
-    .runtime-agent[data-state="working"]::before { animation: topology-pulse 1.2s ease-in-out infinite; }
-    .runtime-agent[data-state="finished"] { opacity: 0.72; }
-    .runtime-parent { color: #8eabb5; font-size: 8px; }
-    .runtime-agent[data-attention="true"] { border-left-color: #ffb454; background: rgba(255, 180, 84, 0.13); }
-    .runtime-empty { color: #8eabb5; font-size: 10px; }
-
-    @keyframes topology-pulse { 50% { opacity: 0.35; transform: scale(0.82); } }
-
-    @media (max-width: 680px) {
-      .attention-capsule { gap: 5px; padding-inline: 8px; font-size: 9px; }
-      .live-agents-drawer { left: 4%; right: 4%; width: auto; max-height: 34%; }
-    }
+      --ground: #000d17; --mission: #011320; --shell: #061621; --surface: #142632; --rail: #041622;
+      --line: rgba(151, 184, 201, 0.24); --line-strong: rgba(151, 184, 201, 0.52);
+      --cyan: #62a7ce; --cyan-peak: #5cf5f4; --amber: #ffc63a; --white: #ffffff;
+      --secondary: #bac9d3; --muted: #78909d; --radius: 5px;
+      --mono: "IBM Plex Mono", "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { background: var(--ground); }
+    body { margin: 0; min-width: 320px; min-height: 100vh; color: var(--white); background: var(--ground); font-family: var(--sans); text-rendering: optimizeLegibility; }
+    body::selection, body *::selection { color: var(--ground); background: var(--cyan-peak); }
+    button, [tabindex] { -webkit-tap-highlight-color: transparent; }
+    button { font: inherit; }
+    :focus-visible { outline: 2px solid var(--cyan-peak); outline-offset: 3px; }
+    .hud-shell { --pointer-x: 0; --pointer-y: 0; position: relative; isolation: isolate; width: min(1800px, 100%); min-height: 100vh; padding: clamp(18px, 3vw, 40px); overflow: hidden; background: linear-gradient(180deg, rgba(0,13,23,.28), rgba(0,13,23,.5)), radial-gradient(circle at 36% 24%, rgba(92,245,244,.09), transparent 34%), var(--ground); }
+    .hud-shell::before { position: absolute; inset: 0; z-index: 0; padding: 1px; border-radius: inherit; background: conic-gradient(from 90deg, var(--cyan-peak), #fff 18%, #ff5bb8 42%, var(--amber) 65%, var(--cyan-peak) 86%, #fff); background: conic-gradient(from var(--edge-angle), var(--cyan-peak), #fff 18%, #ff5bb8 42%, var(--amber) 65%, var(--cyan-peak) 86%, #fff); content: ""; pointer-events: none; -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; opacity: .9; animation: borderFlow 9s linear infinite; }
+    .broadcast-strip, .broadcast-waterfall { position: absolute; z-index: 0; overflow: hidden; color: rgba(201,220,230,.58); font-family: var(--mono); font-size: .56rem; letter-spacing: .16em; line-height: 1; pointer-events: none; text-transform: uppercase; user-select: none; }
+    .broadcast-strip { left: 4%; right: 4%; height: 13px; white-space: nowrap; }
+    .broadcast-top { top: 6px; }
+    .broadcast-track { display: inline-flex; gap: 80px; width: max-content; animation: broadcastLtr 34s linear infinite; will-change: transform; }
+    .broadcast-waterfall { top: 18%; bottom: 12%; width: 13px; writing-mode: vertical-rl; text-orientation: mixed; white-space: nowrap; opacity: .46; }
+    .broadcast-left { left: 6px; } .broadcast-right { right: 6px; writing-mode: vertical-lr; opacity: .42; }
+    .waterfall-track { display: inline-flex; gap: 56px; width: max-content; animation: waterfallDown 30s linear infinite; will-change: transform; }
+    .broadcast-right .waterfall-track { animation-direction: reverse; }
+    .rainbow-background { position: absolute; inset: -3%; z-index: -4; opacity: 1; background: url("mission-fleet-bridge-background.png") center / cover no-repeat; filter: saturate(1.24) contrast(1.08) brightness(.9); transform: translate3d(calc(var(--pointer-x) * -3px), calc(var(--pointer-y) * -3px), 0) scale(1.04); transition: transform 700ms cubic-bezier(.2,.8,.2,1); pointer-events: none; }
+    .starfield-background { position: absolute; inset: 0; z-index: -3; opacity: .1; background: url("mission-starfield.png") center / cover no-repeat; filter: saturate(.82) contrast(1.04); transform: translate3d(calc(var(--pointer-x) * -6px), calc(var(--pointer-y) * -6px), 0); transition: transform 700ms cubic-bezier(.2,.8,.2,1); pointer-events: none; }
+    .bridge-background { position: absolute; inset: 0; z-index: -2; opacity: .06; background: url("mission-bridge-background.png") center / cover no-repeat; filter: saturate(.72) contrast(1.08); pointer-events: none; }
+    .singularity-effects { position: absolute; inset: 0; z-index: 0; overflow: hidden; opacity: .86; pointer-events: none; }
+    .parallax-mid, .parallax-near { position: absolute; inset: 0; pointer-events: none; transition: transform 700ms cubic-bezier(.2,.8,.2,1); }
+    .parallax-mid { transform: translate3d(calc(var(--pointer-x) * 12px), calc(var(--pointer-y) * 8px), 0); }
+    .parallax-near { transform: translate3d(calc(var(--pointer-x) * -7px), calc(var(--pointer-y) * -5px), 0); }
+    .singularity-ring, .orbital-trail, .energy-pulse { position: absolute; pointer-events: none; }
+    .singularity-ring { left: 50%; top: 46%; width: min(74vw, 980px); aspect-ratio: 1; border: 1px solid rgba(92,245,244,.42); border-radius: 50%; transform: translate(-50%,-50%) rotate(0deg); box-shadow: 0 0 20px rgba(92,245,244,.1), inset 0 0 18px rgba(255,91,184,.08); mask-image: linear-gradient(90deg, transparent 4%, #000 18% 82%, transparent 96%); animation: reverseOrbit 30s linear infinite; }
+    .singularity-ring::after { position: absolute; inset: 7%; border: 1px solid rgba(255,198,58,.34); border-radius: 50%; content: ""; mask-image: conic-gradient(from 140deg, transparent 0 12%, #000 18% 42%, transparent 48% 68%, #000 72% 84%, transparent 90%); }
+    .singularity-ring.ring-secondary { width: min(56vw, 700px); border-color: rgba(255,91,184,.35); animation-duration: 22s; animation-direction: reverse; transform: translate(-50%,-50%) rotate(0deg) scaleY(.7); }
+    .singularity-ring.ring-tertiary { width: min(38vw, 500px); border-color: rgba(255,198,58,.34); animation-duration: 16s; transform: translate(-50%,-50%) rotate(0deg) scaleY(.48); }
+    .orbital-trail { left: 50%; top: 46%; width: min(78vw, 1000px); height: min(28vw, 360px); border: 1px solid transparent; border-top-color: rgba(92,245,244,.72); border-bottom-color: rgba(255,91,184,.48); border-radius: 50%; transform: translate(-50%,-50%) rotate(-17deg); mask-image: linear-gradient(90deg, transparent, #000 16% 74%, transparent); animation: trailOrbit 12s linear infinite; }
+    .orbital-trail.trail-secondary { width: min(64vw, 820px); height: min(20vw, 250px); transform: translate(-50%,-50%) rotate(28deg); border-top-color: rgba(255,198,58,.54); border-bottom-color: rgba(128,106,255,.46); animation-duration: 9s; animation-direction: reverse; }
+    .energy-pulse { left: 50%; top: 46%; width: min(25vw, 300px); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.2), rgba(92,245,244,.08) 28%, transparent 68%); transform: translate(-50%,-50%) scale(.76); animation: energyPulse 4.8s ease-in-out infinite; }
+    .geometry-structure { position: absolute; inset: 8% 3%; border: 1px solid rgba(92,245,244,.16); opacity: .62; pointer-events: none; }
+    .geometry-structure::before { position: absolute; inset: 12px; border: 1px solid rgba(255,255,255,.1); border-left-color: rgba(92,245,244,.34); border-right-color: rgba(255,91,184,.28); content: ""; }
+    .geometry-structure::after { position: absolute; top: 16%; left: 4%; width: 92%; height: 1px; background: linear-gradient(90deg, transparent, rgba(92,245,244,.52) 16%, rgba(255,255,255,.22) 50%, rgba(255,91,184,.4) 84%, transparent); content: ""; }
+    .geometry-corner { position: absolute; width: 52px; height: 52px; border-color: rgba(92,245,244,.58); border-style: solid; }
+    .corner-top-left { top: -1px; left: -1px; border-width: 2px 0 0 2px; } .corner-top-right { top: -1px; right: -1px; border-width: 2px 2px 0 0; border-color: rgba(255,91,184,.52); } .corner-bottom-left { bottom: -1px; left: -1px; border-width: 0 0 2px 2px; border-color: rgba(255,198,58,.42); } .corner-bottom-right { right: -1px; bottom: -1px; border-width: 0 2px 2px 0; }
+    .depth-rail { position: absolute; top: 22%; bottom: 22%; width: 1px; background: linear-gradient(180deg, transparent, rgba(92,245,244,.44) 18%, rgba(255,255,255,.18) 50%, rgba(255,91,184,.34) 82%, transparent); opacity: .7; }
+    .depth-rail.rail-left { left: 6%; } .depth-rail.rail-right { right: 6%; }
+    .hud-header, .mission-workspace { position: relative; z-index: 1; }
+    .mission-plot, .evidence-rail { box-shadow: inset 0 0 0 1px rgba(92,245,244,.08); }
+    .hud-shell.is-paused *, .hud-shell.is-paused *::before, .hud-shell.is-paused *::after, .hud-shell.is-paused::before { animation-play-state: paused !important; }
+    @keyframes reverseOrbit { from { transform: translate(-50%,-50%) rotate(0deg); } to { transform: translate(-50%,-50%) rotate(-360deg); } }
+    @keyframes trailOrbit { from { transform: translate(-50%,-50%) rotate(-17deg); } to { transform: translate(-50%,-50%) rotate(343deg); } }
+    @keyframes borderFlow { from { --edge-angle: 0deg; } to { --edge-angle: 360deg; } }
+    @keyframes panelEdgeFlow { from { --panel-edge-angle: 0deg; } to { --panel-edge-angle: 360deg; } }
+    @keyframes broadcastLtr { from { transform: translate3d(-18%,0,0); } to { transform: translate3d(18%,0,0); } }
+    @keyframes waterfallDown { from { transform: translate3d(0,-18%,0); } to { transform: translate3d(0,18%,0); } }
+    @keyframes energyPulse { 0%, 100% { opacity: .3; transform: translate(-50%,-50%) scale(.72); } 50% { opacity: .9; transform: translate(-50%,-50%) scale(1.04); } }
+    @keyframes telemetryLoop { from { transform: translate3d(0,0,0); } to { transform: translate3d(-50%,0,0); } }
+    .hud-header { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--line-strong); }
+    .product-lockup h1 { margin: 0; font-size: clamp(1.25rem, 2vw, 1.8rem); font-weight: 650; letter-spacing: -.025em; }
+    .product-lockup p { margin: 6px 0 0; color: var(--secondary); font-size: .78rem; }
+    .horizon-meta { display: flex; align-items: center; flex-wrap: wrap; justify-content: end; gap: 10px 18px; color: var(--secondary); font-family: var(--mono); font-size: .67rem; letter-spacing: .12em; text-transform: uppercase; }
+    .horizon-meta strong { color: var(--cyan-peak); font-weight: 600; } .read-only { color: var(--muted); }
+    .clock-readout strong { color: var(--white); font-weight: 600; }
+    .state-notice { margin: 10px 0 0; padding: 8px 10px; border: 1px solid rgba(255,198,58,.52); border-radius: var(--radius); color: #ffe4a2; background: rgba(64,42,4,.55); font-family: var(--mono); font-size: .68rem; }
+    .state-notice[data-state="ok"] { border-color: var(--line); color: var(--secondary); background: rgba(20,38,50,.6); } .state-notice[hidden] { display: none; }
+    .mission-workspace { display: grid; grid-template-columns: minmax(0,4fr) minmax(220px,1fr); gap: 14px; margin-top: 18px; min-height: min(560px,calc(100vh - 170px)); }
+    .mission-plot, .evidence-rail { position: relative; min-width: 0; border: 1px solid var(--line-strong); border-radius: var(--radius); background: linear-gradient(140deg, rgba(6,22,33,.5), rgba(1,19,32,.58)); overflow: hidden; text-shadow: 0 1px 2px rgba(0,0,0,.72); }
+    .mission-plot::after, .evidence-rail::after { position: absolute; inset: 0; z-index: 0; padding: 1px; border-radius: inherit; background: conic-gradient(from 120deg, rgba(92,245,244,.08), rgba(92,245,244,.58), rgba(255,91,184,.44), rgba(255,198,58,.28), rgba(92,245,244,.08)); background: conic-gradient(from var(--panel-edge-angle), rgba(92,245,244,.08), rgba(92,245,244,.58), rgba(255,91,184,.44), rgba(255,198,58,.28), rgba(92,245,244,.08)); content: ""; pointer-events: none; -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; opacity: .68; animation: panelEdgeFlow 12s linear infinite; }
+    .mission-plot > *, .evidence-rail > * { position: relative; z-index: 1; }
+    .mission-plot { display: flex; flex-direction: column; min-height: 470px; }
+    .plot-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 66px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+    .plot-heading h2, .evidence-rail h2, .runtime-drawer h2 { margin: 0; font-size: .78rem; font-weight: 650; letter-spacing: .17em; text-transform: uppercase; }
+    .plot-heading p { margin: 4px 0 0; color: var(--secondary); font-size: .72rem; }
+    .plot-status { display: grid; justify-items: end; gap: 2px; font-family: var(--mono); font-size: .67rem; color: var(--secondary); }
+    .plot-status strong { color: var(--cyan-peak); font-weight: 600; } .plot-status .attention { color: var(--amber); }
+    .telemetry-rail { position: relative; display: grid; grid-template-columns: minmax(0,1.2fr) minmax(220px,.8fr); gap: 8px; min-height: 42px; padding: 7px 18px; border-bottom: 1px solid rgba(151,184,201,.2); background: rgba(0,13,23,.25); overflow: hidden; }
+    .telemetry-rail::before { position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 31px, rgba(92,245,244,.1) 32px, transparent 33px); content: ""; pointer-events: none; opacity: .36; }
+    .telemetry-strip { position: relative; display: flex; align-items: center; min-width: 0; gap: 10px; padding: 5px 9px; border: 1px solid rgba(92,245,244,.24); border-radius: 3px; background: rgba(4,22,34,.5); color: var(--secondary); font-family: var(--mono); font-size: .58rem; letter-spacing: .08em; line-height: 1.2; text-transform: uppercase; overflow: hidden; text-shadow: 0 1px 2px rgba(0,0,0,.78); }
+    .telemetry-strip::before { position: absolute; inset: -1px auto auto -1px; width: 13px; height: 10px; border-top: 1px solid var(--cyan-peak); border-left: 1px solid var(--cyan-peak); content: ""; pointer-events: none; }
+    .telemetry-strip::after { position: absolute; inset: auto -1px -1px auto; width: 13px; height: 10px; border-right: 1px solid rgba(255,91,184,.64); border-bottom: 1px solid rgba(255,91,184,.64); content: ""; pointer-events: none; }
+    .telemetry-strip strong { flex: 0 0 auto; color: var(--cyan-peak); font-weight: 600; }
+    .telemetry-strip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .runtime-telemetry-strip strong { color: var(--amber); }
+    .plot-canvas { position: relative; flex: 0 0 auto; height: clamp(400px,52vh,560px); min-height: 0; padding: 16px; overflow: hidden; background: linear-gradient(90deg, rgba(98,167,206,.05) 1px, transparent 1px) 0 0/64px 64px, linear-gradient(rgba(98,167,206,.04) 1px, transparent 1px) 0 0/64px 64px, rgba(1,19,32,.28); }
+    .territories { position: relative; z-index: 2; display: grid; grid-template-columns: repeat(5,minmax(110px,1fr)); grid-template-rows: minmax(0,1fr); gap: 8px; height: 100%; min-height: 370px; overflow-x: auto; scrollbar-color: var(--cyan) rgba(151,184,201,.12); scrollbar-width: thin; }
+    .territory { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 12px; border: 1px solid rgba(151,184,201,.24); border-radius: var(--radius); background: rgba(6,22,33,.36); text-shadow: 0 1px 2px rgba(0,0,0,.76); }
+    .territory[data-zone="Intake"] { grid-column: 1; } .territory[data-zone="In Progress"] { grid-column: 2; } .territory[data-zone="Blocked"] { grid-column: 3; } .territory[data-zone="Review"] { grid-column: 4; } .territory[data-zone="Done"] { grid-column: 5; }
+    .territory-header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding-bottom: 9px; border-bottom: 1px solid rgba(151,184,201,.18); }
+    .territory h3 { display: grid; gap: 2px; margin: 0; color: var(--secondary); font-family: var(--mono); font-size: .64rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; }
+    .zone-command { color: var(--white); font-size: .67rem; letter-spacing: .14em; }
+    .zone-state { color: var(--muted); font-size: .55rem; letter-spacing: .12em; }
+    .territory-doctrine { display: block; margin-top: 3px; color: rgba(186,201,211,.7); font-size: .5rem; font-weight: 500; letter-spacing: .1em; line-height: 1.2; text-transform: uppercase; }
+    .territory-count { color: var(--cyan); font-family: var(--mono); font-size: .68rem; }
+    .agents-layer, .runtime-agents-layer { display: grid; align-content: start; gap: 8px; min-height: 0; margin: 10px 0 0; padding: 0; overflow: auto; list-style: none; scrollbar-color: var(--cyan) transparent; scrollbar-width: thin; } .territory > .agents-layer { flex: 1; }
+    .agent { position: relative; display: grid; gap: 4px; min-width: 0; padding: 9px 10px; border: 1px solid rgba(151,184,201,.3); border-radius: 4px; color: var(--white); background: rgba(20,38,50,.66); transition: border-color 180ms ease, background 180ms ease, transform 180ms ease; text-shadow: 0 1px 2px rgba(0,0,0,.78); }
+    .agent[data-active="true"]:not([data-status="Done"]):not([data-status="idle"]):not([data-status="Idle"]) { isolation: isolate; background: rgba(20,38,50,.72); box-shadow: 0 0 0 1px rgba(92,245,244,.22), 0 0 12px rgba(92,245,244,.24), 0 0 18px rgba(255,91,184,.12), inset 0 0 12px rgba(92,245,244,.08); animation: activeAuraBreathe 3.2s ease-in-out infinite; }
+    .agent[data-active="true"]:not([data-status="Done"]):not([data-status="idle"]):not([data-status="Idle"])::before { position: absolute; inset: 0; z-index: 0; border-radius: inherit; background: linear-gradient(110deg, transparent 28%, rgba(255,255,255,.08) 42%, rgba(92,245,244,.78) 49%, rgba(255,255,255,.34) 53%, transparent 68%); clip-path: inset(0 round 4px); content: ""; pointer-events: none; transform: translateX(-115%); animation: activeCardScan 3.8s cubic-bezier(.2,.8,.2,1) infinite; }
+    .agent[data-active="true"]:not([data-status="Done"]):not([data-status="idle"]):not([data-status="Idle"])::after { position: absolute; inset: 0; z-index: 0; padding: 1px; border-radius: inherit; background: conic-gradient(from 90deg, rgba(92,245,244,.2), rgba(92,245,244,.98), rgba(255,91,184,.82), rgba(255,198,58,.66), rgba(92,245,244,.2)); clip-path: inset(0 round 4px); content: ""; pointer-events: none; -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; opacity: .88; animation: activeEdgeBreathe 2.8s ease-in-out infinite; }
+    .agent[data-active="true"] > :not(.nameplate) { position: relative; z-index: 1; }
+    .agent[data-active="true"] > .nameplate { z-index: 5; }
+    @keyframes activeCardScan { 0%, 18% { transform: translateX(-115%); opacity: 0; } 30% { opacity: .98; } 62%, 100% { transform: translateX(115%); opacity: 0; } }
+    @keyframes activeEdgeBreathe { 0%, 100% { opacity: .62; } 50% { opacity: 1; } }
+    @keyframes activeAuraBreathe { 0%, 100% { box-shadow: 0 0 0 1px rgba(92,245,244,.22), 0 0 8px rgba(92,245,244,.18), 0 0 12px rgba(255,91,184,.08), inset 0 0 8px rgba(92,245,244,.06); } 50% { box-shadow: 0 0 0 1px rgba(92,245,244,.56), 0 0 14px rgba(92,245,244,.34), 0 0 20px rgba(255,91,184,.2), inset 0 0 14px rgba(92,245,244,.12); } }
+    .agent:hover, .agent:focus-visible { border-color: var(--cyan); background: rgba(27,53,68,.92); transform: translateY(-1px); } .agent:hover .nameplate { opacity: 1; }
+    .agent[data-status="Blocked"] { border-color: rgba(255,198,58,.75); background: rgba(44,34,12,.7); } .agent-id { color: var(--cyan-peak); font-family: var(--mono); font-size: .65rem; }
+    .agent-title { display: -webkit-box; overflow: hidden; font-size: .78rem; font-weight: 560; line-height: 1.25; text-overflow: ellipsis; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .agent-title-track { display: inline; }
+    .agent-title[data-marquee="true"], .agent-title.is-overflowing { display: block; white-space: nowrap; text-overflow: clip; }
+    .agent-title[data-marquee="true"] .agent-title-track, .agent-title.is-overflowing .agent-title-track { display: inline-block; width: max-content; white-space: nowrap; transform: translate3d(0,0,0); animation: taskTitleMarquee var(--marquee-duration, 8s) ease-in-out infinite alternate; will-change: transform; }
+    @keyframes taskTitleMarquee { 0%, 14% { transform: translate3d(0,0,0); } 86%, 100% { transform: translate3d(calc(var(--marquee-distance, 0px) * -1),0,0); } }
+    .agent-state { color: var(--secondary); font-family: var(--mono); font-size: .61rem; letter-spacing: .07em; text-transform: uppercase; }
+    .nameplate { opacity: 0; position: absolute; left: 8px; right: 8px; bottom: calc(100% + 5px); z-index: 5; padding: 5px 7px; border: 1px solid var(--line-strong); border-radius: 3px; color: var(--white); background: var(--shell); font-size: .68rem; pointer-events: none; } .agent:focus-visible .nameplate { opacity: 1; }
+    .empty-state { margin: auto 0; padding: 20px 8px; color: var(--muted); font-size: .72rem; text-align: center; } .territory .empty-state { margin: 8px 0 0; padding: 10px 4px; text-align: left; }
+    .topology-layer { position: absolute; inset: 16px; z-index: 1; width: calc(100% - 32px); height: calc(100% - 32px); pointer-events: none; } .topology-layer path { fill: none; stroke: rgba(98,167,206,.6); stroke-width: 1.4; vector-effect: non-scaling-stroke; } .topology-layer[aria-hidden="true"] path { stroke: transparent; } .topology-empty { display: none !important; }
+    .progress-track { height: 4px; margin-top: 9px; overflow: hidden; border-radius: 1px; background: rgba(151,184,201,.2); } .progress-bar { width: 0%; height: 100%; background: var(--cyan-peak); }
+    .map-legend { display: flex; flex-wrap: wrap; gap: 6px 15px; margin: 14px 2px 0; padding: 0; list-style: none; color: var(--secondary); font-family: var(--mono); font-size: .63rem; } .map-legend li { display: inline-flex; align-items: center; gap: 6px; } .legend-mark { width: 7px; height: 7px; border: 1px solid currentColor; border-radius: 50%; } .legend-mark[data-tone="amber"] { color: var(--amber); } .legend-mark[data-tone="cyan"] { color: var(--cyan-peak); } .legend-mark[data-tone="neutral"] { color: var(--secondary); }
+    .plot-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 18px; border-top: 1px solid var(--line); color: var(--secondary); font-size: .69rem; }
+    .telemetry-ticker { display: flex; align-items: center; min-width: 180px; flex: 1 1 280px; overflow: hidden; border: 1px solid rgba(92,245,244,.24); border-radius: 3px; background: rgba(0,13,23,.72); color: var(--cyan-peak); font-family: var(--mono); font-size: .61rem; letter-spacing: .08em; text-transform: uppercase; }
+    .ticker-label { flex: 0 0 auto; padding: 6px 8px; border-right: 1px solid rgba(92,245,244,.24); color: var(--secondary); }
+    .ticker-viewport { min-width: 0; overflow: hidden; white-space: nowrap; }
+    .ticker-track { display: flex; width: max-content; gap: 48px; padding: 6px 0; direction: rtl; animation: telemetryLoop 24s linear infinite; will-change: transform; }
+    .ticker-item { display: block; flex: 0 0 auto; }
+    .attention-capsule { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid var(--line-strong); border-radius: 4px; color: var(--secondary); background: rgba(6,22,33,.88); cursor: pointer; } .attention-capsule[data-attention="true"] { border-color: var(--amber); color: var(--amber); } .capsule-dot { width: 7px; height: 7px; border: 1px solid currentColor; border-radius: 50%; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    .evidence-rail { display: flex; flex-direction: column; padding: 18px; background: linear-gradient(140deg, rgba(4,22,34,.55), rgba(1,19,32,.62)); } .evidence-rail > p { margin: 7px 0 18px; color: var(--secondary); font-size: .7rem; line-height: 1.5; } .evidence-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; } .evidence-item { padding: 10px 0; border-top: 1px solid rgba(151,184,201,.2); } .evidence-item strong { display: block; color: var(--secondary); font-family: var(--mono); font-size: .62rem; letter-spacing: .11em; text-transform: uppercase; } .evidence-item span { display: block; margin-top: 5px; color: var(--white); font-size: .75rem; line-height: 1.4; } .evidence-item[data-attention="true"] strong, .evidence-item[data-attention="true"] span { color: var(--amber); } .evidence-empty { color: var(--muted); font-size: .72rem; line-height: 1.5; }
+    .runtime-drawer { position: fixed; top: 18px; right: 18px; z-index: 20; width: min(520px,calc(100vw - 36px)); max-height: calc(100vh - 36px); overflow: auto; padding: 18px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: rgba(4,22,34,.98); box-shadow: 0 18px 40px rgba(0,0,0,.32); } .runtime-drawer[hidden] { display: none; } .drawer-header { display: flex; justify-content: space-between; gap: 14px; align-items: start; } .drawer-close { padding: 6px 9px; border: 1px solid var(--line-strong); border-radius: 3px; color: var(--secondary); background: transparent; cursor: pointer; } .drawer-close:hover { border-color: var(--cyan); color: var(--white); }
+    .runtime-summary, .runtime-attention, .runtime-notice { margin: 8px 0 0; color: var(--secondary); font-family: var(--mono); font-size: .64rem; line-height: 1.5; } .runtime-attention[data-attention="true"] { color: var(--amber); } .runtime-notice { color: #ffe4a2; } .runtime-notice[hidden] { display: none; } .runtime-topology { display: grid; gap: 12px; margin-top: 18px; } .runtime-generation { display: grid; gap: 7px; } .runtime-generation-label { color: var(--cyan); font-family: var(--mono); font-size: .61rem; letter-spacing: .12em; text-transform: uppercase; } .runtime-agent { padding: 8px 9px; border: 1px solid rgba(151,184,201,.28); border-radius: 3px; color: var(--secondary); font-size: .7rem; } .runtime-agent strong { color: var(--white); font-family: var(--mono); font-size: .67rem; } .runtime-agent[data-attention="true"] { border-color: var(--amber); color: #ffe4a2; } .runtime-parent { margin-top: 3px; color: var(--muted); font-family: var(--mono); font-size: .61rem; }
+    .runtime-agents-layer { position: absolute; inset: 16px; z-index: 3; pointer-events: none; } .runtime-agents-layer[hidden] { display: none; } .runtime-map-agent { position: absolute; left: var(--x); top: var(--y); width: 10px; height: 10px; border: 1px solid var(--cyan-peak); border-radius: 50%; background: var(--mission); box-shadow: 0 0 0 3px rgba(92,245,244,.1); transform: translate(-50%,-50%); transition: left 280ms ease, top 280ms ease; } .runtime-map-agent[data-attention="true"] { border-color: var(--amber); background: var(--amber); box-shadow: 0 0 0 3px rgba(255,198,58,.15); }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .001ms !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; } .hud-shell::before { animation: none; opacity: .78; } .mission-plot::after, .evidence-rail::after { animation: none; opacity: .62; } .broadcast-track, .waterfall-track { animation: none; transform: none; } .singularity-effects { opacity: .38; } .ticker-track { animation: none; transform: none; } .agent-title[data-marquee="true"] .agent-title-track, .agent-title.is-overflowing .agent-title-track { animation: none; transform: none; } .agent[data-active="true"] { animation: none; box-shadow: 0 0 0 1px rgba(92,245,244,.46), 0 0 8px rgba(92,245,244,.16), inset 0 0 8px rgba(92,245,244,.08); } .agent[data-active="true"]::before { animation: none; opacity: 0; } .agent[data-active="true"]::after { animation: none; opacity: .9; } }
+    @media (min-width: 1081px) { .runtime-drawer { width: min(420px,30vw); right: 18px; } .hud-shell.runtime-dock-open .hud-header, .hud-shell.runtime-dock-open .mission-workspace { margin-right: calc(min(420px,30vw) + 14px); } }
+    @media (max-width: 1080px) { .mission-workspace { grid-template-columns: minmax(0,3fr) minmax(210px,.9fr); } .hud-shell { padding: 22px; } }
+    @media (max-width: 760px) { .mission-workspace { grid-template-columns: 1fr; min-height: auto; } .mission-plot { min-height: 560px; } .evidence-rail { min-height: 260px; } .telemetry-rail, .broadcast-strip, .broadcast-waterfall { display: none; } }
+    @media (max-width: 620px) { .hud-shell { padding: 14px; } .hud-header { align-items: start; flex-direction: column; gap: 12px; } .horizon-meta { justify-content: start; } .plot-heading { align-items: start; flex-direction: column; } .plot-status { justify-items: start; } .plot-canvas { height: auto; min-height: 780px; padding: 10px; overflow-x: auto; } .territories { grid-template-columns: 1fr; grid-template-rows: repeat(5,minmax(130px,auto)); min-width: 280px; min-height: 0; gap: 8px; } .territory[data-zone="Intake"], .territory[data-zone="In Progress"], .territory[data-zone="Blocked"], .territory[data-zone="Review"], .territory[data-zone="Done"] { grid-column: 1; grid-row: auto; } .topology-layer, .runtime-agents-layer { display: none; } .singularity-effects { opacity: .44; } .parallax-mid { transform: translate3d(calc(var(--pointer-x) * 5px), calc(var(--pointer-y) * 3px), 0); } .parallax-near { transform: translate3d(calc(var(--pointer-x) * -3px), calc(var(--pointer-y) * -2px), 0); } .geometry-structure { inset: 10% 2%; opacity: .28; } .singularity-ring:not(.ring-primary), .orbital-trail { display: none; } .plot-footer { align-items: stretch; flex-direction: column; } .telemetry-ticker { width: 100%; flex-basis: auto; } .ticker-track { animation-duration: 36s; } .runtime-drawer { top: 10px; right: 10px; width: calc(100vw - 20px); max-height: calc(100vh - 20px); } }
   </style>
 </head>
 <body>
-  <main class="mission-panel" data-status="Intake" aria-label="MissionCenter visual progress summary">
-    <div class="base-map" aria-hidden="true">
-      <img class="stage-art" id="stageArt" src="mission-base-main.png" alt="">
-      <div class="zone zone-intake" data-label="Intake Dispatch"></div>
-      <div class="zone zone-progress" data-label="In Progress Office"></div>
-      <div class="zone zone-blocked" data-label="Blocked Repair"></div>
-      <div class="zone zone-review" data-label="Review Archive"></div>
-      <div class="zone zone-done" data-label="Done Nap Dock"></div>
-      <div class="tech-prop dispatch-console"></div>
-      <div class="tech-prop office-desks"></div>
-      <div class="tech-prop repair-bay"></div>
-      <div class="tech-prop archive-racks"></div>
-      <div class="tech-prop nap-pods"></div>
-    </div>
-
-    <section class="summary" aria-label="Mission Island">
-      <button class="attention-capsule" id="attentionCapsule" type="button" aria-expanded="false" aria-controls="liveAgentsDrawer" data-attention="false">
-        <span>MC</span>
-        <span id="capsuleWorking">● 0 working</span>
-        <span class="capsule-attention" id="capsuleAttention">! 0</span>
-        <span id="capsuleBlocked">blocked 0</span>
-        <span id="capsuleProgress">40%</span>
-      </button>
-      <div class="mission-details" aria-live="polite">
-        Goal: <span id="goal">Build task dashboard</span>
-        Progress: <span id="progressText">40%</span>
-        Stage <span id="stageText">4/10</span>
-        <span id="progressBar"></span>
+  <!-- THESIS: Fleet Command Deck presents repository task truth as an authorized observation surface: a visible fleet backdrop, five command phases, real local/UTC time, and amber reserved for human intervention. | OWN-WORLD: A transparent polished obsidian bridge, saturated fleet spectrum, anodized separators, ceramic-white type, cyan telemetry, and restrained command broadcast bands; never a generic card wall or a sensor-feed simulation. | STORY: Command status → multi-direction broadcast → task/runtime signal rails → Briefing/Execution/Hold/Verification/Archive territories → dependency topology → evidence rail → optional Runtime overlay. | FIRST VIEWPORT: Desktop exposes dense real telemetry and the mission-fleet visual backdrop; <=760px keeps one primary telemetry ticker and hides secondary broadcast bands; Runtime remains a separate collapsed layer. | FORM: Semantic HTML supplies status, tasks, evidence, clocks, ticker announcements and controls; SVG draws verified task dependencies and bounded Runtime topology; CSS decoration is explicitly VISUAL BACKDROP ONLY / NO SENSOR FEED / SOURCE: FILE SNAPSHOT. | FINISH: Transparent fleet deck, 1px typed-angle border energy, low-cost directional text flow, precise compact type, truthful freshness/polling, and active-card operation scans only. | SEED: b9d88925 -->
+  <main class="hud-shell" aria-labelledby="hudTitle">
+    <div class="broadcast-strip broadcast-top" aria-hidden="true"><div class="broadcast-track"><span>VISUAL BACKDROP ONLY · NO SENSOR FEED · SOURCE: FILE SNAPSHOT</span><span>TASK ORDER ONLY · AUTHORIZED OBSERVATION · COMMAND LINK</span><span>VISUAL BACKDROP ONLY · NO SENSOR FEED · SOURCE: FILE SNAPSHOT</span></div></div>
+    <div class="broadcast-waterfall broadcast-left" aria-hidden="true"><div class="waterfall-track"><span>COMMAND LINK · TASK ORDER ONLY · FILE SNAPSHOT · </span><span>AUTHORIZED OBSERVATION · NO SENSOR FEED · </span></div></div>
+    <div class="broadcast-waterfall broadcast-right" aria-hidden="true"><div class="waterfall-track"><span>NO SENSOR FEED · VISUAL BACKDROP ONLY · </span><span>SOURCE FILE SNAPSHOT · COMMAND LINK · </span></div></div>
+    <div class="rainbow-background" aria-hidden="true"></div>
+    <div class="starfield-background" aria-hidden="true"></div>
+    <div class="bridge-background" aria-hidden="true"></div>
+    <div class="singularity-effects" aria-hidden="true">
+      <div class="parallax-mid">
+        <div class="singularity-ring ring-primary"></div>
+        <div class="singularity-ring ring-secondary"></div>
+        <div class="singularity-ring ring-tertiary"></div>
+        <div class="orbital-trail trail-primary"></div>
+        <div class="orbital-trail trail-secondary"></div>
+        <div class="energy-pulse"></div>
       </div>
+      <div class="parallax-near">
+        <div class="geometry-structure">
+          <span class="geometry-corner corner-top-left"></span><span class="geometry-corner corner-top-right"></span><span class="geometry-corner corner-bottom-left"></span><span class="geometry-corner corner-bottom-right"></span>
+          <span class="depth-rail rail-left"></span><span class="depth-rail rail-right"></span>
+        </div>
+      </div>
+    </div>
+    <header class="hud-header" aria-label="Fleet command status horizon"><div class="product-lockup"><h1 id="hudTitle">Codex Fleet Command Deck</h1><p>艦隊指揮甲板 · repository task truth</p></div><div class="horizon-meta"><span>COMMAND STATUS</span><strong id="statusText">Unknown</strong><span id="freshnessText">UNAVAILABLE</span><span class="clock-readout">LOCAL <strong id="localTime">--:--:--</strong></span><span class="clock-readout">UTC <strong id="utcTime">--:--:--</strong></span><span class="read-only">POLL T10S · R2S/H30S</span><span class="read-only">READ ONLY</span></div></header>
+    <section class="mission-workspace" aria-label="Constellation tactical workspace">
+      <article class="mission-plot" aria-labelledby="plotTitle">
+        <header class="plot-heading"><div><h2 id="plotTitle">FLEET COMMAND PLOT</h2><p id="goal">TASK ORDER · repository task truth</p><div class="progress-track" aria-label="Mission progress"><div id="progressBar" role="progressbar" class="progress-bar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div></div></div><div class="plot-status"><span>MISSION PROGRESS <strong id="progressText">0%</strong></span><span>TASKS <strong id="activeCount">0</strong> · BLOCKED <strong id="blockedCount">0</strong></span><span id="attentionSummary">No intervention signal</span></div></header>
+        <div class="telemetry-rail" aria-hidden="true"><div class="telemetry-strip"><strong>TASK SIGNAL</strong><span id="taskTelemetryIds">ACTIVE NONE</span><span id="taskTelemetryLifecycle">INTAKE 0 · PROGRESS 0 · BLOCKED 0 · REVIEW 0 · DONE 0</span><span id="taskTelemetryFreshness">UNAVAILABLE · 0%</span></div><div class="telemetry-strip runtime-telemetry-strip"><strong>RUNTIME SIGNAL</strong><span id="runtimeTelemetryIds">DISCONNECTED · 0/0</span><span id="runtimeTelemetrySummary">WORKING 0 · BLOCKED 0 · ATTENTION 0</span></div></div>
+        <div class="plot-canvas" id="taskPlot" aria-label="Task lifecycle constellation">
+          <svg class="topology-layer" id="taskTopology" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><defs><marker id="topologyArrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="currentColor"></path></marker></defs><text class="topology-empty" x="50" y="50" text-anchor="middle">NO VERIFIED DEPENDENCY EDGES</text></svg>
+          <div class="territories">
+            <section class="territory" data-zone="Intake" aria-labelledby="zone-intake-title"><header class="territory-header"><h3 id="zone-intake-title"><span class="zone-command">BRIEFING</span><span class="zone-state">INTAKE</span><span class="territory-doctrine" aria-hidden="true">TASK ORDER / FILE SNAPSHOT / READ ONLY</span></h3><span class="territory-count" data-zone-count="Intake">0</span></header><ul class="agents-layer" data-entity-kind="task" role="list" data-zone-list="Intake"><li class="empty-state">Waiting for task state</li></ul></section>
+            <section class="territory" data-zone="In Progress" aria-labelledby="zone-progress-title"><header class="territory-header"><h3 id="zone-progress-title"><span class="zone-command">EXECUTION</span><span class="zone-state">IN PROGRESS</span><span class="territory-doctrine" aria-hidden="true">ACTIVE WORK / COMMAND LINK / TASK TRUTH</span></h3><span class="territory-count" data-zone-count="In Progress">0</span></header><ul class="agents-layer" data-entity-kind="task" role="list" data-zone-list="In Progress"><li class="empty-state">Waiting for task state</li></ul></section>
+            <section class="territory" data-zone="Blocked" aria-labelledby="zone-blocked-title"><header class="territory-header"><h3 id="zone-blocked-title"><span class="zone-command">HOLD</span><span class="zone-state">BLOCKED · NEEDS INTERVENTION</span><span class="territory-doctrine" aria-hidden="true">CONSTRAINT HOLD / HUMAN INTERVENTION</span></h3><span class="territory-count" data-zone-count="Blocked">0</span></header><ul class="agents-layer" data-entity-kind="task" role="list" data-zone-list="Blocked"><li class="empty-state">No verified blockers</li></ul></section>
+            <section class="territory" data-zone="Review" aria-labelledby="zone-review-title"><header class="territory-header"><h3 id="zone-review-title"><span class="zone-command">VERIFICATION</span><span class="zone-state">REVIEW</span><span class="territory-doctrine" aria-hidden="true">VERIFICATION QUEUE / TASK TRUTH</span></h3><span class="territory-count" data-zone-count="Review">0</span></header><ul class="agents-layer" data-entity-kind="task" role="list" data-zone-list="Review"><li class="empty-state">Waiting for task state</li></ul></section>
+            <section class="territory" data-zone="Done" aria-labelledby="zone-done-title"><header class="territory-header"><h3 id="zone-done-title"><span class="zone-command">ARCHIVE</span><span class="zone-state">DONE</span><span class="territory-doctrine" aria-hidden="true">MISSION RECORD / SNAPSHOT ARCHIVE</span></h3><span class="territory-count" data-zone-count="Done">0</span></header><ul class="agents-layer" data-entity-kind="task" role="list" data-zone-list="Done"><li class="empty-state">No completed task in snapshot</li></ul></section>
+          </div><div class="runtime-agents-layer" data-entity-kind="runtime-agent" role="list" aria-label="Runtime agents on the mission map" aria-hidden="true" hidden></div>
+        </div>
+        <footer class="plot-footer"><ul class="map-legend" aria-label="Task status legend"><li><span class="legend-mark" data-tone="neutral"></span><span>Intake</span></li><li><span class="legend-mark" data-tone="cyan"></span><span>In Progress</span></li><li><span class="legend-mark" data-tone="amber"></span><span>Blocked</span></li><li><span class="legend-mark" data-tone="neutral"></span><span>Review</span></li><li><span class="legend-mark" data-tone="neutral"></span><span>Done</span></li></ul><div class="telemetry-ticker" aria-label="Live mission telemetry"><span class="ticker-label" aria-hidden="true">TELEMETRY</span><span class="ticker-viewport" aria-hidden="true"><span class="ticker-track" id="telemetryTicker"><span class="ticker-item">STATUS Unknown · PROGRESS 0% · TASKS 0 · BLOCKED 0 · FRESHNESS UNAVAILABLE</span><span class="ticker-item" aria-hidden="true">STATUS Unknown · PROGRESS 0% · TASKS 0 · BLOCKED 0 · FRESHNESS UNAVAILABLE</span></span></span><span class="visually-hidden" id="telemetryAnnouncement" role="status" aria-live="polite">STATUS Unknown · PROGRESS 0% · TASKS 0 · BLOCKED 0 · FRESHNESS UNAVAILABLE</span></div><button class="attention-capsule" id="attentionCapsule" type="button" aria-expanded="false" aria-controls="liveAgentsDrawer" data-attention="false"><span class="capsule-dot" aria-hidden="true"></span><span>LIVE AGENTS · <span id="capsuleAttention">0 attention</span><span class="visually-hidden" id="capsuleProgress">0%</span></span></button></footer>
+        <p class="state-notice" id="stateNotice" role="status" aria-live="polite">Task state unavailable · showing fallback</p>
+      </article>
+      <aside class="evidence-rail" aria-labelledby="evidenceTitle"><h2 id="evidenceTitle">EVIDENCE / BLOCKED LOG</h2><p>只呈現可由目前快照追溯的證據；Runtime 不改寫任務生命週期。</p><ul class="evidence-list" id="evidenceList"><li class="evidence-empty">等待有效任務快照，尚無可呈現證據。</li></ul><div style="margin-top:auto;padding-top:18px;border-top:1px solid rgba(151,184,201,.2);"><div style="color:var(--muted);font-family:var(--mono);font-size:.62rem;letter-spacing:.12em;">SNAPSHOT</div><div id="snapshotSummary" style="margin-top:5px;color:var(--secondary);font-size:.72rem;">UNAVAILABLE · 0 visible / 0 total</div></div></aside>
     </section>
-
-    <section class="construction-site" data-stage="4" aria-label="Progress construction">
-      <div class="monument" id="monument"></div>
-    </section>
-
-    <div class="entity-label map-label">PIXEL MISSION MAP · TASKS</div>
-    <div class="agents-layer" data-entity-kind="task" aria-label="Task lifecycle helpers"></div>
-    <div class="runtime-agents-layer" data-entity-kind="runtime-agent" aria-label="Live runtime agents on the mission map"></div>
-
-    <aside class="live-agents-drawer" id="liveAgentsDrawer" aria-label="Live Agents" data-entity-kind="runtime-agent" hidden>
-      <h2>LIVE AGENTS</h2>
-      <p class="runtime-summary" id="runtimeSummary">Runtime optional · static HUD active</p>
-      <div class="runtime-list" id="runtimeList"><div class="runtime-empty">No connected runtime agents</div></div>
-    </aside>
-
-    <div class="status-pill">Now: <span id="statusText">Intake</span></div>
-
-    <section class="task-card" aria-label="Current tasks">
-      <p>Active</p>
-      <ul>
-        <li>Workspace setup</li>
-        <li>Task tree</li>
-      </ul>
-      <p id="blockedText" style="margin-top: 8px;">Blocked: None</p>
-    </section>
+    <aside class="runtime-drawer" id="liveAgentsDrawer" role="region" aria-labelledby="liveAgentsTitle" aria-describedby="runtimeSummary runtimeAttentionSummary runtimeNotice" data-entity-kind="runtime-agent" tabindex="-1" hidden><div class="drawer-header"><div><h2 id="liveAgentsTitle">LIVE AGENTS</h2><p class="runtime-summary" id="runtimeSummary">Runtime optional · static HUD active</p><p class="runtime-attention" id="runtimeAttentionSummary" aria-live="polite">No runtime intervention signal</p></div><button class="drawer-close" id="closeRuntimeDrawer" type="button">Close</button></div><p class="runtime-notice" id="runtimeNotice" role="status" aria-live="polite" hidden></p><div class="runtime-list" id="runtimeList"><div class="runtime-empty">No connected runtime agents</div></div></aside>
   </main>
   <script>
-    const panel = document.querySelector(".mission-panel");
-    const goal = document.querySelector("#goal");
-    const progressText = document.querySelector("#progressText");
-    const stageText = document.querySelector("#stageText");
-    const progressBar = document.querySelector("#progressBar");
-    const statusText = document.querySelector("#statusText");
-    const blockedText = document.querySelector("#blockedText");
-    const activeList = document.querySelector(".task-card ul");
-    const agentsLayer = document.querySelector(".agents-layer");
-    const constructionSite = document.querySelector(".construction-site");
-    const monument = document.querySelector("#monument");
-    const stageArt = document.querySelector("#stageArt");
-    const attentionCapsule = document.querySelector("#attentionCapsule");
-    const capsuleWorking = document.querySelector("#capsuleWorking");
-    const capsuleAttention = document.querySelector("#capsuleAttention");
-    const capsuleBlocked = document.querySelector("#capsuleBlocked");
-    const capsuleProgress = document.querySelector("#capsuleProgress");
-    const runtimeDrawer = document.querySelector("#liveAgentsDrawer");
-    const runtimeSummary = document.querySelector("#runtimeSummary");
-    const runtimeList = document.querySelector("#runtimeList");
-    const runtimeAgentsLayer = document.querySelector(".runtime-agents-layer");
+    const hudShell = document.querySelector(".hud-shell"), panel = document.querySelector(".mission-plot"), goal = document.querySelector("#goal"), progressText = document.querySelector("#progressText"), progressBar = document.querySelector("#progressBar"), statusText = document.querySelector("#statusText"), freshnessText = document.querySelector("#freshnessText"), localTime = document.querySelector("#localTime"), utcTime = document.querySelector("#utcTime"), activeCount = document.querySelector("#activeCount"), blockedCount = document.querySelector("#blockedCount"), taskAttentionSummary = document.querySelector("#attentionSummary"), stateNotice = document.querySelector("#stateNotice"), evidenceList = document.querySelector("#evidenceList"), snapshotSummary = document.querySelector("#snapshotSummary"), telemetryTicker = document.querySelector("#telemetryTicker"), telemetryAnnouncement = document.querySelector("#telemetryAnnouncement"), taskTelemetryIds = document.querySelector("#taskTelemetryIds"), taskTelemetryLifecycle = document.querySelector("#taskTelemetryLifecycle"), taskTelemetryFreshness = document.querySelector("#taskTelemetryFreshness"), runtimeTelemetryIds = document.querySelector("#runtimeTelemetryIds"), runtimeTelemetrySummary = document.querySelector("#runtimeTelemetrySummary"), taskTopology = document.querySelector("#taskTopology"), attentionCapsule = document.querySelector("#attentionCapsule"), capsuleAttention = document.querySelector("#capsuleAttention"), runtimeDrawer = document.querySelector("#liveAgentsDrawer"), closeRuntimeDrawer = document.querySelector("#closeRuntimeDrawer"), runtimeSummary = document.querySelector("#runtimeSummary"), runtimeAttentionSummary = document.querySelector("#runtimeAttentionSummary"), runtimeNotice = document.querySelector("#runtimeNotice"), runtimeList = document.querySelector("#runtimeList"), runtimeAgentsLayer = document.querySelector(".runtime-agents-layer");
     const validStatuses = new Set(["Intake", "In Progress", "Blocked", "Review", "Done"]);
     const attentionKinds = new Set(["approval", "question", "blocked", "error", "verification"]);
-    const runtimeZoneByActivityKind = {
-      "web_search": "Intake",
-      "file_change": "In Progress",
-      "command_execution": "In Progress",
-      "tool_use": "In Progress",
-      "waiting_input": "Intake",
-      "verification": "Review",
-      "blocked": "Blocked",
-      "error": "Blocked",
-      "idle": "Done",
-      "working": "In Progress",
-      "unknown": "In Progress"
-    };
+    const runtimeSourceLabels = { connected: "Connected", disconnected: "Disconnected", replay: "Replay fixture", file: "File snapshot", stale: "Stale snapshot", "file-fallback": "File fallback", static: "Static HUD" };
+    const runtimeZoneByActivityKind = { "web_search": "Intake", "file_change": "In Progress", "command_execution": "In Progress", "tool_use": "In Progress", "waiting_input": "Intake", "verification": "Review", "blocked": "Blocked", "error": "Blocked", "idle": "Unknown", "working": "In Progress", "unknown": "Unknown" };
+    const runtimeZoneByState = { working: "In Progress", waiting_approval: "Intake", blocked: "Blocked", failed: "Blocked", finished: "Done", stale: "Unknown", disconnected: "Unknown", idle: "Unknown" };
+    const runtimeZoneAnchors = { Intake: 10, "In Progress": 30, Blocked: 50, Review: 70, Done: 90 };
     const runtimePollVisibleMs = 2000;
     const runtimePollHiddenMs = 30000;
+    const taskPollVisibleMs = 10000;
+    const taskPollHiddenMs = 30000;
     const maxVisibleAgents = 15;
-    const helperAvatarLimit = 16;
-    const maxActiveItems = 6;
-    const avatarAssignments = new Map();
-    const helperAtlases = {
-      1: "mission-helper-roster-8-fixed.png",
-      2: "mission-helper-roster-8-girls-2.png"
-    };
-    const zoneBounds = {
-      "Intake": { minX: 15, maxX: 34, minY: 28, maxY: 37 },
-      "In Progress": { minX: 62, maxX: 85, minY: 28, maxY: 46 },
-      "Blocked": { minX: 15, maxX: 34, minY: 57, maxY: 66 },
-      "Review": { minX: 66, maxX: 84, minY: 58, maxY: 67 },
-      "Done": { minX: 35, maxX: 64, minY: 75, maxY: 81 }
-    };
-    let currentAgents = [];
-    let lastValidRuntimeState = null;
-    let runtimePollTimer = null;
-    const runtimeAgentPositions = new Map();
-    let wanderTimer = null;
-
-    function pickRandomAvatar(id, usedAvatars) {
-      if (avatarAssignments.has(id)) return avatarAssignments.get(id);
-
-      const available = Array.from({ length: helperAvatarLimit }, (_, index) => index + 1)
-        .filter((avatar) => !usedAvatars.has(avatar));
-      const pool = available.length ? available : Array.from({ length: helperAvatarLimit }, (_, index) => index + 1);
-      const avatar = pool[Math.floor(Math.random() * pool.length)];
-      avatarAssignments.set(id, avatar);
-      usedAvatars.add(avatar);
-      return avatar;
-    }
-
-    function spriteInfoForAvatar(avatar) {
-      const normalized = Math.max(1, Math.min(helperAvatarLimit, Number(avatar) || 1));
-      const atlas = normalized <= 8 ? helperAtlases[1] : helperAtlases[2];
-      const rowIndex = (normalized - 1) % 8;
-      return {
-        atlas,
-        rowY: `${(rowIndex / 7) * 100}%`
-      };
-    }
-
-    function normalizeAgent(agent, index, fallbackStatus, usedAvatars) {
-      const status = validStatuses.has(agent?.status) ? agent.status : fallbackStatus;
-      const id = agent?.id || `agent-${index + 1}`;
-      const explicitAvatar = Number(agent?.avatar);
-      const avatar = Number.isFinite(explicitAvatar) && explicitAvatar > 0
-        ? Math.max(1, Math.min(helperAvatarLimit, explicitAvatar))
-        : pickRandomAvatar(id, usedAvatars);
-      usedAvatars.add(avatar);
-      return {
-        id,
-        name: agent?.name || `Agent ${index + 1}`,
-        task: agent?.task || status,
-        status,
-        avatar
-      };
-    }
-
-    function renderMonument(progress) {
-      const stage = Math.max(0, Math.min(10, Math.ceil(progress / 10)));
-      stageArt.src = "mission-base-main.png";
-      stageArt.alt = "MissionCenter high-tech base";
-      constructionSite.dataset.stage = String(stage);
-      stageText.textContent = `${stage}/10`;
-      monument.innerHTML = Array.from({ length: 10 }, (_, index) => {
-        const level = 9 - index;
-        const built = index < stage ? " is-built" : "";
-        return `<div class="monument-block${built}" style="--level: ${level};"></div>`;
-      }).join("") + '<div class="meme-face"><div class="meme-mouth"></div></div>';
-    }
-
-    function renderAgents(state, fallbackStatus) {
-      const rawAgents = Array.isArray(state.agents)
-        ? state.agents.slice(0, maxVisibleAgents)
-        : [];
-      const usedAvatars = new Set();
-      currentAgents = rawAgents.map((agent, index) => normalizeAgent(agent, index, fallbackStatus, usedAvatars));
-      if (!currentAgents.length) {
-        agentsLayer.innerHTML = "";
-        return;
-      }
-      const scale = currentAgents.length > 12 ? 0.72 : currentAgents.length > 6 ? 0.82 : 1;
-
-      agentsLayer.innerHTML = currentAgents.map((agent) => {
-        const pos = randomPointInZone(agent.status);
-        const label = `${agent.name}: ${agent.task}`;
-        const sprite = spriteInfoForAvatar(agent.avatar);
-
-        return `
-          <div class="agent" tabindex="0" aria-label="${escapeAttr(label)}" data-id="${escapeAttr(agent.id)}" data-status="${escapeAttr(agent.status)}" data-avatar="${agent.avatar}" style="--sheet: url('${sprite.atlas}'); --row-y: ${sprite.rowY}; --x: ${pos.x}%; --y: ${pos.y}%; --scale: ${scale};">
-            <div class="sprite"></div>
-            <div class="nameplate">${escapeHtml(label)}</div>
-          </div>
-        `;
-      }).join("");
-    }
-
-    function wanderAgents() {
-      currentAgents.forEach((agent) => {
-        const node = agentsLayer.querySelector(`[data-id="${cssEscape(agent.id)}"]`);
-        if (!node) return;
-        const pos = randomPointInZone(agent.status);
-        node.style.setProperty("--x", `${pos.x}%`);
-        node.style.setProperty("--y", `${pos.y}%`);
-      });
-    }
-
-    function randomPointInZone(status) {
-      const bounds = zoneBounds[status] || zoneBounds.Intake;
-      return {
-        x: round(bounds.minX + Math.random() * (bounds.maxX - bounds.minX)),
-        y: round(bounds.minY + Math.random() * (bounds.maxY - bounds.minY))
-      };
-    }
-
-    async function loadState() {
-      try {
-        const response = await fetch(`visual-state.json?ts=${Date.now()}`, { cache: "no-store" });
-        if (!response.ok) return;
-        const state = await response.json();
-        const status = validStatuses.has(state.status) ? state.status : "Intake";
-        const progress = Math.max(0, Math.min(100, Number(state.progress) || 0));
-
-        panel.dataset.status = status;
-        goal.textContent = state.goal || "MissionCenter task";
-        progressText.textContent = `${progress}%`;
-        progressBar.style.width = `${progress}%`;
-        capsuleProgress.textContent = `${progress}%`;
-        statusText.textContent = status;
-        const activeItems = Array.isArray(state.active) ? state.active : [];
-        const visibleItems = activeItems.slice(0, maxActiveItems);
-        const hiddenCount = Math.max(0, activeItems.length - visibleItems.length);
-        activeList.innerHTML = visibleItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
-          + (hiddenCount ? `<li>+${hiddenCount} more</li>` : "");
-        blockedText.textContent = `Blocked: ${(state.blocked || []).join(", ") || "None"}`;
-        renderMonument(progress);
-        renderAgents(state, status);
-      } catch {
-        // File URLs and local browser cache can occasionally race during writes.
-      }
-    }
-
-    function renderRuntimeState(state) {
-      const runtimeAgents = Array.isArray(state?.agents) ? state.agents.slice(0, 15) : [];
-      const attentionItems = Array.isArray(state?.attention)
-        ? state.attention.filter((item) => attentionKinds.has(item?.kind))
-        : [];
-      const needsAttention = attentionItems.length;
-      const workingCount = runtimeAgents.filter((agent) => agent?.state === "working").length;
-      const blockedCount = runtimeAgents.filter((agent) => agent?.state === "blocked" || agent?.state === "failed").length;
-      attentionCapsule.dataset.attention = String(needsAttention > 0);
-      capsuleWorking.textContent = `● ${workingCount} working`;
-      capsuleAttention.textContent = `! ${needsAttention}`;
-      capsuleBlocked.textContent = `blocked ${blockedCount}`;
-      runtimeSummary.textContent = `${state?.sourceStatus || "disconnected"} · ${runtimeAgents.length} agents · ${needsAttention} attention`;
-      runtimeList.innerHTML = renderRuntimeTopology(runtimeAgents);
-      renderRuntimeAgents(runtimeAgents);
-    }
-
-    function renderRuntimeTopology(runtimeAgents) {
-      if (!runtimeAgents.length) return '<div class="runtime-empty">No connected runtime agents</div>';
-      const agentsById = new Map(runtimeAgents.map((agent) => [String(agent.agentId || "agent"), agent]));
-      const generationFor = (agent, trail = new Set()) => {
-        const id = String(agent.agentId || "agent");
-        const parentId = agent.parentAgentId ? String(agent.parentAgentId) : "";
-        if (!parentId || !agentsById.has(parentId) || trail.has(id)) return 0;
-        const nextTrail = new Set(trail);
-        nextTrail.add(id);
-        return Math.min(4, 1 + generationFor(agentsById.get(parentId), nextTrail));
-      };
-      const columns = new Map();
-      runtimeAgents.forEach((agent) => {
-        const generation = generationFor(agent);
-        if (!columns.has(generation)) columns.set(generation, []);
-        columns.get(generation).push(agent);
-      });
-      const html = [...columns.entries()].sort(([left], [right]) => left - right).map(([generation, agents]) => {
-        const cards = agents.map((agent) => {
-          const tasks = Array.isArray(agent.taskIds) && agent.taskIds.length ? agent.taskIds.join(", ") : "No Task link";
-          const activity = agent.state === "finished" && agent.attention === "verification"
-            ? "Finished · Awaiting MissionCenter verification"
-            : (agent.activity || "Idle");
-          const parent = agent.parentAgentId ? `<div class="runtime-parent">↳ ${escapeHtml(agent.parentAgentId)}</div>` : "";
-          return `<div class="runtime-agent" data-state="${escapeAttr(agent.state || "idle")}" data-attention="${agent.requiresAttention === true}">
-            <strong>${escapeHtml(agent.agentId || "agent")}</strong> · ${escapeHtml(agent.state || "idle")}${parent}
-            <div>${escapeHtml(tasks)} · ${escapeHtml(activity)}</div>
-          </div>`;
-        }).join("");
-        return `<section class="runtime-generation" data-generation="${generation}">
-          <div class="runtime-generation-label">Generation ${generation}</div>${cards}
-        </section>`;
-      }).join("");
-      return `<div class="runtime-topology" aria-label="Runtime agent parent-child topology">${html}</div>`;
-    }
-
-    function renderRuntimeAgents(runtimeAgents) {
-      const seen = new Set();
-      runtimeAgents.forEach((agent) => {
-        const id = String(agent.agentId || "agent");
-        seen.add(id);
-        const kind = Object.hasOwn(runtimeZoneByActivityKind, agent.activityKind)
-          ? agent.activityKind
-          : "unknown";
-        const zone = runtimeZoneByActivityKind[kind];
-        let node = runtimeAgentsLayer.querySelector(`[data-agent-id="${cssEscape(id)}"]`);
-        if (!node) {
-          node = document.createElement("div");
-          node.className = "runtime-map-agent";
-          node.dataset.entityKind = "runtime-agent";
-          node.dataset.agentId = id;
-          runtimeAgentsLayer.appendChild(node);
-        }
-        const cached = runtimeAgentPositions.get(id);
-        const pos = cached && cached.zone === zone ? cached.pos : randomPointInZone(zone);
-        runtimeAgentPositions.set(id, { zone, pos });
-        node.dataset.activityKind = kind;
-        node.dataset.attention = String(agent.requiresAttention === true);
-        node.title = agent.activity || "Runtime agent";
-        node.style.setProperty("--x", `${pos.x}%`);
-        node.style.setProperty("--y", `${pos.y}%`);
-      });
-      runtimeAgentsLayer.querySelectorAll("[data-agent-id]").forEach((node) => {
-        if (!seen.has(node.dataset.agentId)) node.remove();
-      });
-      runtimeAgentPositions.forEach((_value, id) => {
-        if (!seen.has(id)) runtimeAgentPositions.delete(id);
-      });
-    }
-
-    function toggleRuntimeDrawer() {
-      const expanded = attentionCapsule.getAttribute("aria-expanded") !== "true";
-      attentionCapsule.setAttribute("aria-expanded", String(expanded));
-      runtimeDrawer.hidden = !expanded;
-    }
-
-    function updatePollingStrategy() {
-      clearInterval(runtimePollTimer);
-      clearInterval(wanderTimer);
-      runtimePollTimer = setInterval(loadRuntimeState, document.hidden ? runtimePollHiddenMs : runtimePollVisibleMs);
-      if (!document.hidden) {
-        loadRuntimeState();
-        wanderTimer = setInterval(wanderAgents, 6500);
-      }
-    }
-
-    async function loadRuntimeState() {
-      try {
-        const response = await fetch(`../mission-center-runtime/runtime-state.json?ts=${Date.now()}`, { cache: "no-store" });
-        if (!response.ok) return;
-        const state = await response.json();
-        if (!Array.isArray(state.agents) || !Array.isArray(state.attention)) return;
-        lastValidRuntimeState = state;
-        renderRuntimeState(state);
-      } catch {
-        if (lastValidRuntimeState) renderRuntimeState(lastValidRuntimeState);
-      }
-    }
-
-    function round(value) {
-      return Math.round(value * 10) / 10;
-    }
-
-    function cssEscape(value) {
-      if (window.CSS?.escape) return CSS.escape(String(value));
-      return String(value).replace(/["\\]/g, "\\$&");
-    }
-
-    function escapeHtml(value) {
-      return String(value).replace(/[&<>"']/g, (char) => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;"
-      })[char]);
-    }
-
-    function escapeAttr(value) {
-      return escapeHtml(value).replace(/`/g, "&#96;");
-    }
-
-    loadState();
-    loadRuntimeState();
-    setInterval(loadState, 10000);
-    attentionCapsule.addEventListener("click", toggleRuntimeDrawer);
-    document.addEventListener("visibilitychange", updatePollingStrategy);
-    updatePollingStrategy();
+    const maxVisibleTasks = 15;
+    let lastValidRuntimeState = null, lastValidTaskState = null, lastFocusElement = null, runtimePollTimer = null, taskPollTimer = null, clockTimer = null, parallaxFrame = 0, titleMeasureTimer = null; const runtimeAgentPositions = new Map();
+    function setEffectsPaused(paused) { hudShell.classList.toggle("is-paused", paused); }
+    function updateClockReadouts() { if (document.hidden) return; const now = new Date(); localTime.textContent = now.toLocaleTimeString(undefined, { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }); utcTime.textContent = now.toISOString().slice(11, 19); }
+    function updateParallax(event) { if (document.hidden || parallaxFrame) return; parallaxFrame = requestAnimationFrame(() => { const bounds = hudShell.getBoundingClientRect(), x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1, y = ((event.clientY - bounds.top) / bounds.height) * 2 - 1; hudShell.style.setProperty("--pointer-x", Math.max(-1, Math.min(1, x)).toFixed(3)); hudShell.style.setProperty("--pointer-y", Math.max(-1, Math.min(1, y)).toFixed(3)); parallaxFrame = 0; }); }
+    function resetParallax() { hudShell.style.setProperty("--pointer-x", "0"); hudShell.style.setProperty("--pointer-y", "0"); }
+    function escapeHtml(value) { return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]); }
+    function escapeAttr(value) { return escapeHtml(value).replace(/`/g, "&#96;"); } function cssEscape(value) { return window.CSS?.escape ? CSS.escape(String(value)) : String(value).replace(/["\\]/g, "\\$&"); }
+    function setNotice(node, message, state = "stale") { node.textContent = message; node.dataset.state = state; node.hidden = !message; } function fallbackTaskState() { return { status: "Unknown", goal: "Unknown", progress: 0, active: [], blocked: [], agents: [] }; }
+    function updateTelemetryTicker(state, freshness = "VALID") { const message = `STATUS ${state.status} · PROGRESS ${state.progress}% · TASKS ${state.agents.length} · BLOCKED ${state.blocked.length} · FRESHNESS ${freshness}`; telemetryTicker.innerHTML = [message, message].map((item) => `<span class="ticker-item">${escapeHtml(item)}</span>`).join(""); if (telemetryAnnouncement.textContent !== message) telemetryAnnouncement.textContent = message; }
+    function updateTaskTelemetry(state, freshness = "VALID") { const zones = ["Intake", "In Progress", "Blocked", "Review", "Done"], counts = Object.fromEntries(zones.map((zone) => [zone, 0])); state.agents.forEach((agent) => { const zone = taskZone(agent); if (Object.hasOwn(counts, zone)) counts[zone] += 1; }); const activeIds = state.agents.filter((agent) => agent?.active === true).map((agent, index) => String(agent?.id || `task-${index + 1}`)).slice(0, maxVisibleTasks); taskTelemetryIds.textContent = `ACTIVE ${activeIds.length ? activeIds.join(" · ") : "NONE"}`; taskTelemetryLifecycle.textContent = `INTAKE ${counts.Intake} · PROGRESS ${counts["In Progress"]} · BLOCKED ${counts.Blocked} · REVIEW ${counts.Review} · DONE ${counts.Done}`; taskTelemetryFreshness.textContent = `${freshness} · ${state.progress}%`; }
+    function updateTaskTitleMarquees() { document.querySelectorAll(".agent-title").forEach((title) => { const track = title.querySelector(".agent-title-track"); if (!track) return; title.classList.remove("is-overflowing"); title.dataset.marquee = "false"; track.style.removeProperty("--marquee-distance"); track.style.removeProperty("--marquee-duration"); track.style.display = "inline-block"; track.style.whiteSpace = "nowrap"; track.style.width = "max-content"; const available = Math.max(0, title.getBoundingClientRect().width); const intrinsic = track.getBoundingClientRect().width; const overflow = Math.ceil(intrinsic - available); if (overflow > 2) { title.classList.add("is-overflowing"); title.dataset.marquee = "true"; title.style.setProperty("--marquee-distance", `${overflow}px`); title.style.setProperty("--marquee-duration", `${Math.max(7, Math.min(20, 7 + overflow / 18))}s`); } else { track.style.removeProperty("display"); track.style.removeProperty("white-space"); track.style.removeProperty("width"); } }); }
+    function scheduleTaskTitleMarqueeMeasurement() { clearTimeout(titleMeasureTimer); titleMeasureTimer = setTimeout(updateTaskTitleMarquees, 80); }
+    function normalizeTaskState(raw) { if (!raw || typeof raw !== "object") throw new Error("Task state must be an object"); for (const field of ["active", "blocked", "agents"]) if (raw[field] !== undefined && !Array.isArray(raw[field])) throw new Error(`Task state ${field} must be an array`); const numericProgress = Number(raw.progress); return { status: validStatuses.has(raw.status) ? raw.status : "Unknown", goal: typeof raw.goal === "string" && raw.goal.trim() ? raw.goal : "Unknown", progress: Number.isFinite(numericProgress) ? Math.max(0, Math.min(100, numericProgress)) : 0, active: Array.isArray(raw.active) ? raw.active : [], blocked: Array.isArray(raw.blocked) ? raw.blocked : [], agents: Array.isArray(raw.agents) ? raw.agents.slice(0, maxVisibleTasks) : [] }; }
+    function taskZone(agent) { const status = agent?.status || agent?.zone; return status === "Backlog" || status === "Ready" ? "Intake" : validStatuses.has(status) ? status : "Unknown"; } function taskLabel(agent, index) { return agent?.name || agent?.task || `Task ${index + 1}`; }
+    function renderTaskHelpers(agents) { const byZone = new Map(["Intake", "In Progress", "Blocked", "Review", "Done"].map((zone) => [zone, []])); agents.forEach((agent, index) => { const zone = taskZone(agent); if (byZone.has(zone)) byZone.get(zone).push({ agent, index }); }); byZone.forEach((items, zone) => { const list = document.querySelector(`[data-zone-list="${cssEscape(zone)}"]`), count = document.querySelector(`[data-zone-count="${cssEscape(zone)}"]`); if (count) count.textContent = String(items.length); if (!list) return; list.innerHTML = items.length ? items.map(({ agent, index }) => { const id = agent?.id || `task-${index + 1}`, label = taskLabel(agent, index), status = agent?.status || zone, active = agent?.active === true; return `<li class="agent" tabindex="0" role="listitem" aria-label="${escapeAttr(`${id}: ${label} · ${status}`)}" data-entity-kind="task" data-id="${escapeAttr(id)}" data-status="${escapeAttr(status)}" data-active="${active}"><span class="agent-id">${escapeHtml(id)}</span><span class="agent-title"><span class="agent-title-track" aria-hidden="true">${escapeHtml(label)}</span></span><span class="agent-state">${escapeHtml(status)}</span><span class="nameplate">${escapeHtml(agent?.task || label)}</span></li>`; }).join("") : `<li class="empty-state">${zone === "Blocked" ? "No verified blockers" : "No task in snapshot"}</li>`; }); scheduleTaskTitleMarqueeMeasurement(); }
+    function renderTopology(agents) { taskTopology.querySelectorAll(".verified-edge").forEach((edge) => edge.remove()); const links = agents.flatMap((agent) => Array.isArray(agent?.dependencies) ? agent.dependencies.map((dependency) => ({ from: dependency, to: agent?.id })) : []).filter((link) => link.from && link.to); taskTopology.querySelector(".topology-empty").style.display = links.length ? "none" : "block"; taskTopology.setAttribute("aria-hidden", links.length ? "false" : "true"); links.forEach((link, index) => { const path = document.createElementNS("http://www.w3.org/2000/svg", "path"); path.classList.add("verified-edge"); path.dataset.edge = `${link.from}-${link.to}`; path.setAttribute("d", `M ${15 + (index % 4) * 18} ${20 + (index % 3) * 22} C 42 46, 58 54, ${70 + (index % 3) * 8} ${66 + (index % 2) * 12}`); path.setAttribute("marker-end", "url(#topologyArrow)"); taskTopology.appendChild(path); }); }
+    function renderEvidence(state, freshness = "VALID") { const items = []; if (Array.isArray(state.blocked)) state.blocked.slice(0, maxVisibleTasks).forEach((item) => items.push({ kind: "阻塞", text: item, attention: true })); if (freshness !== "VALID") items.push({ kind: "快照", text: freshness === "STALE" ? "使用最後有效任務快照" : "尚未取得有效任務快照", attention: false }); evidenceList.innerHTML = items.length ? items.map((item) => `<li class="evidence-item" data-attention="${item.attention}"><strong>${escapeHtml(item.kind)}</strong><span>${escapeHtml(item.text)}</span></li>`).join("") : '<li class="evidence-empty">目前沒有可追溯的阻塞或介入證據。</li>'; }
+    function renderTaskState(state, freshness = "VALID") { panel.dataset.status = state.status; goal.textContent = state.goal; progressText.textContent = `${state.progress}%`; progressBar.style.width = `${state.progress}%`; progressBar.setAttribute("aria-valuenow", String(state.progress)); statusText.textContent = state.status; freshnessText.textContent = freshness; activeCount.textContent = String(state.agents.length); blockedCount.textContent = String(state.blocked.length); taskAttentionSummary.textContent = state.blocked.length ? `${state.blocked.length} intervention signal` : "No intervention signal"; updateTelemetryTicker(state, freshness); updateTaskTelemetry(state, freshness); renderTaskHelpers(state.agents); renderTopology(state.agents); renderEvidence(state, freshness); snapshotSummary.textContent = `${freshness} · ${state.agents.length} tasks in snapshot`; }
+    async function loadState() { try { const response = await fetch(`visual-state.json?ts=${Date.now()}`, { cache: "no-store" }); if (!response.ok) throw new Error(`Task state HTTP ${response.status}`); const state = normalizeTaskState(await response.json()); lastValidTaskState = state; renderTaskState(state); setNotice(stateNotice, "", "ok"); } catch { if (lastValidTaskState) { renderTaskState(lastValidTaskState, "STALE"); setNotice(stateNotice, "Task state stale · showing last valid snapshot"); } else { const fallback = fallbackTaskState(); renderTaskState(fallback, "UNAVAILABLE"); setNotice(stateNotice, "Task state unavailable · showing fallback"); } } }
+    function runtimeZone(agent) { const kind = Object.hasOwn(runtimeZoneByActivityKind, agent.activityKind) ? agent.activityKind : "unknown"; return runtimeZoneByState[agent?.state] || runtimeZoneByActivityKind[kind] || "Unknown"; }
+    function renderRuntimeTopology(runtimeAgents) { if (!runtimeAgents.length) return '<div class="runtime-empty">No connected runtime agents</div>'; const agentsById = new Map(runtimeAgents.map((agent) => [String(agent.agentId || "agent"), agent])); const generationFor = (agent, trail = new Set()) => { const id = String(agent.agentId || "agent"), parentId = agent.parentAgentId ? String(agent.parentAgentId) : ""; if (!parentId || !agentsById.has(parentId) || trail.has(id)) return 0; const nextTrail = new Set(trail); nextTrail.add(id); return Math.min(4, 1 + generationFor(agentsById.get(parentId), nextTrail)); }; const columns = new Map(); runtimeAgents.forEach((agent) => { const generation = generationFor(agent); if (!columns.has(generation)) columns.set(generation, []); columns.get(generation).push(agent); }); return `<div class="runtime-topology" role="list" aria-label="Runtime agent parent-child topology">${[...columns.entries()].sort(([left], [right]) => left - right).map(([generation, agents]) => `<section class="runtime-generation" role="group" data-generation="${generation}"><div class="runtime-generation-label">Generation ${generation}</div>${agents.map((agent) => { const tasks = Array.isArray(agent.taskIds) && agent.taskIds.length ? agent.taskIds.join(", ") : "No Task link", activity = agent.state === "finished" && agent.attention === "verification" ? "Finished · Awaiting MissionCenter verification" : (agent.activity || "Idle"), parent = agent.parentAgentId ? `<div class="runtime-parent">↳ ${escapeHtml(agent.parentAgentId)}</div>` : ""; return `<div class="runtime-agent" role="listitem" data-state="${escapeAttr(agent.state || "idle")}" data-attention="${agent.requiresAttention === true}"><strong>${escapeHtml(agent.agentId || "agent")}</strong> · ${escapeHtml(agent.state || "idle")} ${parent}<div>${escapeHtml(tasks)} · ${escapeHtml(activity)}</div></div>`; }).join("")}</section>`).join("")}</div>`; }
+    function runtimePositionFor(zone, index) { const anchor = runtimeZoneAnchors[zone]; if (!Number.isFinite(anchor)) return null; return { x: anchor + ((index % 3) - 1) * 4, y: 22 + Math.floor(index / 3) * 14 }; }
+    function renderRuntimeAgents(runtimeAgents) { const seen = new Set(), zoneIndexes = new Map(); runtimeAgents.forEach((agent) => { const id = String(agent.agentId || "agent"), zone = runtimeZone(agent), index = zoneIndexes.get(zone) || 0; zoneIndexes.set(zone, index + 1); seen.add(id); const position = runtimePositionFor(zone, index), existing = runtimeAgentsLayer.querySelector(`[data-agent-id="${cssEscape(id)}"]`); if (!position) { existing?.remove(); runtimeAgentPositions.delete(id); return; } let node = existing; if (!node) { node = document.createElement("div"); node.className = "runtime-map-agent"; node.dataset.entityKind = "runtime-agent"; node.dataset.agentId = id; runtimeAgentsLayer.appendChild(node); } node.dataset.attention = String(agent.requiresAttention === true); node.title = agent.activity || "Runtime agent"; runtimeAgentPositions.set(id, { zone, pos: position }); node.style.setProperty("--x", `${position.x}%`); node.style.setProperty("--y", `${position.y}%`); }); runtimeAgentsLayer.querySelectorAll("[data-agent-id]").forEach((node) => { if (!seen.has(node.dataset.agentId)) node.remove(); }); runtimeAgentPositions.forEach((_value, id) => { if (!seen.has(id)) runtimeAgentPositions.delete(id); }); }
+    function updateRuntimeTelemetry(state, runtimeAgents, allRuntimeAgents, needsAttention, workingCount, blockedRuntimeCount) { const source = runtimeSourceLabels[state?.sourceStatus] || "Unavailable"; const ids = runtimeAgents.map((agent) => String(agent?.agentId || "agent")).slice(0, maxVisibleAgents); runtimeTelemetryIds.textContent = `${source.toUpperCase()} · ${ids.length}/${allRuntimeAgents.length}${ids.length ? ` · ${ids.join(" · ")}` : ""}`; runtimeTelemetrySummary.textContent = `WORKING ${workingCount} · BLOCKED ${blockedRuntimeCount} · ATTENTION ${needsAttention}`; }
+    function renderRuntimeState(state) { const allRuntimeAgents = Array.isArray(state?.agents) ? state.agents : [], runtimeAgents = allRuntimeAgents.slice(0, maxVisibleAgents), hiddenCount = Math.max(0, allRuntimeAgents.length - runtimeAgents.length), attentionItems = Array.isArray(state?.attention) ? state.attention.filter((item) => attentionKinds.has(item?.kind)) : [], needsAttention = attentionItems.length, workingCount = runtimeAgents.filter((agent) => agent?.state === "working").length, blockedRuntimeCount = runtimeAgents.filter((agent) => agent?.state === "blocked" || agent?.state === "failed").length; attentionCapsule.dataset.attention = String(needsAttention > 0); capsuleAttention.textContent = `${needsAttention} attention`; runtimeAttentionSummary.dataset.attention = String(needsAttention > 0); runtimeAttentionSummary.textContent = needsAttention ? `${needsAttention} intervention signal` : "No runtime intervention signal"; const source = runtimeSourceLabels[state?.sourceStatus] || "Unavailable", visibility = hiddenCount ? `${runtimeAgents.length} visible of ${allRuntimeAgents.length} · ${hiddenCount} hidden` : `${allRuntimeAgents.length} agents`; runtimeSummary.textContent = `${source} · ${visibility} · ${workingCount} working · ${blockedRuntimeCount} blocked`; updateRuntimeTelemetry(state, runtimeAgents, allRuntimeAgents, needsAttention, workingCount, blockedRuntimeCount); runtimeList.innerHTML = renderRuntimeTopology(runtimeAgents); renderRuntimeAgents(runtimeAgents); }
+    async function loadRuntimeState() { try { const response = await fetch(`../mission-center-runtime/runtime-state.json?ts=${Date.now()}`, { cache: "no-store" }); if (!response.ok) throw new Error(`Runtime state HTTP ${response.status}`); const state = await response.json(); if (!state || typeof state !== "object" || !Array.isArray(state.agents) || !Array.isArray(state.attention)) throw new Error("Runtime state arrays are malformed"); lastValidRuntimeState = state; renderRuntimeState(state); if (state.sourceStatus === "stale") setNotice(runtimeNotice, "Runtime state stale · showing last valid snapshot"); else setNotice(runtimeNotice, "", "ok"); } catch { if (lastValidRuntimeState) { renderRuntimeState(lastValidRuntimeState); setNotice(runtimeNotice, "Runtime state stale · showing last valid snapshot"); } else { renderRuntimeState({ sourceStatus: "disconnected", agents: [], attention: [] }); setNotice(runtimeNotice, "Runtime unavailable · Task HUD remains active"); } } }
+    function runtimeFocusableElements() { return [...runtimeDrawer.querySelectorAll("button, [href], input, select, textarea, [tabindex]:not([tabindex=\"-1\"])")].filter((node) => !node.disabled && !node.hidden && node.offsetParent !== null); }
+    function trapRuntimeFocus(event) { if (event.key !== "Tab" || attentionCapsule.getAttribute("aria-expanded") !== "true") return; const focusable = runtimeFocusableElements(); if (!focusable.length) { event.preventDefault(); runtimeDrawer.focus(); return; } const first = focusable[0], last = focusable[focusable.length - 1]; if (!runtimeDrawer.contains(document.activeElement)) { event.preventDefault(); first.focus(); } else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); } }
+    function toggleRuntimeDrawer() { const expanded = attentionCapsule.getAttribute("aria-expanded") !== "true"; if (expanded) lastFocusElement = document.activeElement; attentionCapsule.setAttribute("aria-expanded", String(expanded)); runtimeDrawer.hidden = !expanded; hudShell.classList.toggle("runtime-dock-open", expanded); runtimeAgentsLayer.hidden = !expanded; runtimeAgentsLayer.setAttribute("aria-hidden", String(!expanded)); if (expanded) closeRuntimeDrawer.focus(); else if (lastFocusElement?.focus) lastFocusElement.focus(); } function closeRuntimeDrawerIfOpen() { if (attentionCapsule.getAttribute("aria-expanded") === "true") toggleRuntimeDrawer(); }
+    function updatePollingStrategy() { clearInterval(runtimePollTimer); clearInterval(taskPollTimer); clearInterval(clockTimer); const hidden = document.hidden; setEffectsPaused(hidden); runtimePollTimer = setInterval(loadRuntimeState, hidden ? runtimePollHiddenMs : runtimePollVisibleMs); taskPollTimer = setInterval(loadState, hidden ? taskPollHiddenMs : taskPollVisibleMs); clockTimer = hidden ? null : setInterval(updateClockReadouts, 1000); if (!hidden) { loadRuntimeState(); updateClockReadouts(); } }
+    loadState(); loadRuntimeState(); updateClockReadouts(); attentionCapsule.addEventListener("click", toggleRuntimeDrawer); closeRuntimeDrawer.addEventListener("click", closeRuntimeDrawerIfOpen); hudShell.addEventListener("pointermove", updateParallax, { passive: true }); hudShell.addEventListener("pointerleave", resetParallax, { passive: true }); window.addEventListener("resize", scheduleTaskTitleMarqueeMeasurement, { passive: true }); document.addEventListener("keydown", (event) => { trapRuntimeFocus(event); if (event.key === "Escape") closeRuntimeDrawerIfOpen(); }); document.addEventListener("visibilitychange", updatePollingStrategy); updatePollingStrategy();
   </script>
 </body>
 </html>

@@ -2,8 +2,8 @@
 
 - 專案: Codex Mission Center
 - 目標: 將 Mission Center 升級為研究驅動的自適應 Project OS，並提供可選的本機 Live Agent HUD
-- 週期: OWO+ v0.4 Causal Continuity and Evolution Loop
-- 標籤: mission-center, causal-continuity, execution-pulse, handoff, memory, verification, evolution
+- 週期: v0.5 Evidence and Reconciliation Hardening
+- 標籤: mission-center, reconciliation, evidence, runtime, ux, verification, hardening
 - 活動紀錄:
   - 完成 69 項 unittest、CLI doctor、skill validation 與 publish dry-run。 已記錄 Smoke tests: 8.
   - GitHub main branch protection 已要求 `test` 通過，且管理員不可繞過。
@@ -20,5 +20,8 @@
   - 2026-08-20：MC-051 本機 release gate 通過；242 tests＋74 subtests、Doctor、Skill／Plugin validators、manifest、publish dry-run 與 diff check 全綠，等待外部審查授權。
   - 2026-08-21：Antigravity 全工作區稽核與證據仲裁修正 Schema parity、因果時間、atomic handoff、Windows incident pointer 與 advisory artifact secret scan；246 tests＋74 subtests、Doctor、Skill／Plugin validators、publish dry-run 與 diff check 全綠。
   - 2026-08-21：完成 OWO+ v0.4 release：CodeRabbit scoped review 與 critic_full 3 critic＋1 arbiter／唯一 delta 收斂 17 項 finding；261 tests、Doctor、validators 與 critic record 全綠；personal／marketplace／cache 發布無 drift。
+  - 2026-08-24：啟動 v0.5 hardening；現場重現 Doctor false-green、execution ledger corrupt 與 handoff failure，核准 MC-052～MC-059，先修唯讀 reconciliation spine，再處理 evidence、runtime、UX 與供應鏈。
+  - 2026-08-24：完成 OWO+ v0.5；ledger／resume、五態對帳、scope-aware evidence、runtime boundedness、HUD 誠實性、Action／wheel hash lock 與 immutable cycle closeout 全部通過 282 tests、Doctor、Chrome desktop/mobile 與 publish dry-run。
 - 開放問題:
-  - 無。
+  - MC-001～MC-058 的歷史 evidence envelope 尚待漸進遷移；Doctor 以非阻塞 migration warning 如實揭露。
+  - HUD v2 視覺方向待使用者看過現行基準版後選擇；不影響本週期功能與安全 closeout。

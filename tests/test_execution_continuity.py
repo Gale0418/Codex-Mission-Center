@@ -145,6 +145,13 @@ class ExecutionContinuityTests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     module.main()
 
+            (mission / "snapshot.md").write_text("- Retry gate: verification_required\n", encoding="utf-8")
+            with patch.object(sys, "argv", ["snapshot", str(workspace), "--verification-result", "fail", "--verification-action", "unit_test", "--verification-evidence", "focused suite failed"]):
+                self.assertEqual(module.main(), 0)
+            verified = (mission / "snapshot.md").read_text(encoding="utf-8")
+            self.assertIn("- Retry gate: diagnosis", verified)
+            self.assertIn('"result":"fail"', verified)
+
     def test_snapshot_writes_canonical_state_for_english_and_traditional_chinese(self):
         for language, title in (('en', 'Task'), ('zh-TW', '任務')):
             with self.subTest(language=language), workspace_tempdir("snapshot-state-") as temporary:
@@ -171,14 +178,13 @@ class ExecutionContinuityTests(unittest.TestCase):
             with patch.object(module, 'detect_language', return_value='en'), \
                  patch.object(module, 'canonical_facts', return_value={'active': 'None', 'status': 'Inactive', 'revision': 'test', 'fingerprint': 'hash', 'dependencies': 'None', 'verification': 'None'}), \
                  patch.object(module.Path, 'mkdir'), \
-                 patch.object(module.Path, 'write_text') as write_text:
+                 patch.object(module, 'write_text_lf') as write_text:
                 self.assertEqual(module.main(), 0)
         finally:
             sys.argv = previous_argv
-        content = write_text.call_args.args[0]
+        content = write_text.call_args.args[1]
         self.assertIn('\n', content)
         self.assertNotIn('\\n', content)
-        self.assertEqual(write_text.call_args.kwargs["newline"], "\n")
 
 
 if __name__ == '__main__':

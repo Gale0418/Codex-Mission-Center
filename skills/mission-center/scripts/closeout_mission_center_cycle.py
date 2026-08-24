@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 
@@ -30,6 +31,8 @@ TEXT = {
     },
 }
 
+CYCLE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
 
 def detect_language(root: Path) -> str:
     markers = ("# 專案", "# 進度", "# 任務", "- 目標:", "- 目標：")
@@ -51,14 +54,23 @@ def main() -> int:
     parser.add_argument("--risks", default="")
     parser.add_argument("--smoke-tests", default="")
     parser.add_argument("--retro", default="")
+    parser.add_argument(
+        "--cycle",
+        help="Also persist an immutable copy at MissionCenter/closeouts/<cycle>.md",
+    )
     args = parser.parse_args()
+
+    if args.cycle and not CYCLE_ID.fullmatch(args.cycle):
+        parser.error("cycle must be a safe 1-64 character identifier")
 
     root = Path(args.workspace).resolve() / "MissionCenter"
     root.mkdir(parents=True, exist_ok=True)
     labels = TEXT[detect_language(root)]
     closeout = root / "closeout.md"
+    cycle_line = f"- {'週期' if detect_language(root) == 'zh-TW' else 'Cycle'}: {args.cycle}\n" if args.cycle else ""
     content = f"""# {labels['title']}
 
+{cycle_line}
 - {labels['summary']}: {args.summary}
 - {labels['completed']}: {args.completed or labels['none']}
 - {labels['unfinished']}: {args.unfinished or labels['none']}
@@ -66,6 +78,13 @@ def main() -> int:
 - {labels['smoke_tests']}: {args.smoke_tests or labels['none']}
 - {labels['retro']}: {args.retro or labels['none']}
 """
+    if args.cycle:
+        archive = root / "closeouts" / f"{args.cycle}.md"
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        if archive.exists() and archive.read_text(encoding="utf-8") != content:
+            parser.error(f"cycle closeout already exists with different content: {archive}")
+        if not archive.exists():
+            archive.write_text(content, encoding="utf-8")
     closeout.write_text(content, encoding="utf-8")
     print(closeout)
     return 0

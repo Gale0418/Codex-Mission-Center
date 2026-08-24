@@ -8,9 +8,9 @@ The HUD has three explicitly separate surfaces:
 - Live Agents is a collapsed-by-default drawer for optional `RuntimeState` telemetry.
 - Pixel Mission Map shows task lifecycle helpers from `visual-state.json`.
 
-The capsule surfaces only approval, question, blocked, error, and linked finished-awaiting-verification attention. Ordinary activity never raises attention. Mission state refreshes every 10 seconds. Runtime state refreshes every 2 seconds while visible and backs off to 30 seconds while the tab is hidden; it preserves the last valid snapshot across invalid JSON or atomic-write races. Missing runtime data is a normal state and must leave the static Task HUD usable.
+The capsule surfaces only approval, question, blocked, error, and linked finished-awaiting-verification attention. Ordinary activity never raises attention. Mission state refreshes every 10 seconds. Runtime state refreshes every 2 seconds while visible and backs off to 30 seconds while the tab is hidden; it preserves the last valid snapshot across invalid JSON or atomic-write races and labels that snapshot as stale. Missing or malformed runtime data is a normal unavailable state and must leave the static Task HUD usable with a truthful notice.
 
-Runtime agents and task helpers remain distinct entity types and DOM layers. Runtime map placement is presentation-only: map the verified privacy-safe `activityKind` enum to an existing zone, and never persist inferred coordinates, parse prompt text, or let runtime telemetry edit Task state. Unknown activity stays a generic working presentation rather than inventing a location.
+Runtime agents and task helpers remain distinct entity types and DOM layers. Runtime map placement is presentation-only: map the verified privacy-safe `activityKind` enum to an existing zone, and never persist inferred coordinates, parse prompt text, or let runtime telemetry edit Task state. Unknown, idle, stale, or disconnected activity stays in an explicitly neutral Unknown presentation rather than implying Done or inventing a location.
 
 When expanded, Live Agents may group cards by verified `parentAgentId` into a bounded five-generation topology. It may show agent ID, state, explicit Task links, and coarse activity only. Never invent progress percentages or persist model names, token totals, full task text, or a chatty event feed merely to imitate a control-room demo.
 
@@ -40,7 +40,9 @@ Map task statuses to HUD zones:
 | `Review` | `Review` |
 | `Done` | Rest area |
 
-Show the first 10 unfinished tasks. Completed tasks do not consume those slots. Keep at most 15 helpers total and retire the oldest completed tasks first.
+Show the first 10 unfinished tasks. Completed tasks do not consume those slots. Keep at most 15 helpers total and retire the oldest completed tasks first. If the source contains more than the visible limit, disclose the visible/total/hidden counts; never present the visible slice as the complete runtime picture.
+
+The static HUD must start from `Unknown`/`0%`/no fabricated tasks. If the task state cannot be loaded, show a fallback notice; after one valid load, show a stale notice while retaining the last valid snapshot. Task and Runtime collections use list/listitem semantics, the Runtime drawer has an explicit close and Escape path, and `prefers-reduced-motion` disables decorative motion.
 
 ## Bootstrap Output
 

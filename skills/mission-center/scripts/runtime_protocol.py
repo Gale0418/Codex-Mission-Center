@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from optimization_core import atomic_write_json, utc_now
+from security_scanner import scan_forbidden_content
 
 
 RUNTIME_STATES = {"idle", "working", "waiting_approval", "blocked", "finished", "failed", "stale", "disconnected"}
@@ -23,6 +24,22 @@ AGENT_FIELDS = {
     "provider", "sessionId", "threadId", "turnId", "agentId", "parentAgentId",
     "taskIds", "state", "activity", "attention", "requiresAttention", "startedAt",
     "lastSeenAt", "sequence", "recentEventIds", "activityKind",
+}
+
+# Runtime input is untrusted provider data.  These limits are intentionally
+# conservative: the adapter presents coarse state only, so accepting larger
+# values would add cost and privacy risk without adding useful observability.
+MAX_RUNTIME_LINE_BYTES = 1024 * 1024
+MAX_RUNTIME_FIELD_LENGTH = 512
+MAX_RUNTIME_VALUE_DEPTH = 32
+MAX_RUNTIME_VALUE_NODES = 2048
+MAX_RUNTIME_LIST_LENGTH = 64
+MAX_AGENT_STATE_COUNT = 64
+MAX_TASK_ID_COUNT = 64
+EVENT_FIELDS = {
+    "schemaVersion", "eventId", "timestamp", "provider", "sessionId", "threadId",
+    "turnId", "agentId", "parentAgentId", "taskIds", "eventType", "activity",
+    "attention", "sequence", "state", "activityKind",
 }
 
 
@@ -45,6 +62,48 @@ def sanitize(value: Any) -> Any:
     return value
 
 
+def _validate_bounded_values(value: Any, path: str = "$") -> None:
+    """Reject oversized nested values before they can enter runtime state."""
+    stack: list[tuple[Any, str, int]] = [(value, path, 0)]
+    nodes = 0
+    while stack:
+        current, current_path, depth = stack.pop()
+        if depth > MAX_RUNTIME_VALUE_DEPTH:
+            raise ValueError(f"{current_path} exceeds runtime value depth limit")
+        nodes += 1
+        if nodes > MAX_RUNTIME_VALUE_NODES:
+            raise ValueError(f"{current_path} exceeds runtime value node limit")
+        if isinstance(current, str):
+            if len(current) > MAX_RUNTIME_FIELD_LENGTH:
+                raise ValueError(f"{current_path} exceeds runtime field length limit")
+        elif isinstance(current, dict):
+            if len(current) > MAX_RUNTIME_LIST_LENGTH:
+                raise ValueError(f"{current_path} exceeds runtime object field limit")
+            for key, nested in current.items():
+                key_text = str(key)
+                if len(key_text) > MAX_RUNTIME_FIELD_LENGTH:
+                    raise ValueError(f"{current_path} has an oversized field name")
+                stack.append((nested, f"{current_path}.{key_text}", depth + 1))
+        elif isinstance(current, list):
+            if len(current) > MAX_RUNTIME_LIST_LENGTH:
+                raise ValueError(f"{current_path} exceeds runtime list length limit")
+            for index, nested in enumerate(current):
+                stack.append((nested, f"{current_path}[{index}]", depth + 1))
+
+
+def validate_runtime_event(event: dict[str, Any]) -> dict[str, Any]:
+    """Return an allowlisted event or fail closed on privacy/size violations."""
+    projected = {key: sanitize(value) for key, value in event.items() if key in EVENT_FIELDS}
+    _validate_bounded_values(projected)
+    privacy_errors = scan_forbidden_content(projected)
+    if privacy_errors:
+        raise ValueError(f"Runtime event rejected by privacy policy: {privacy_errors[0]}")
+    task_ids = projected.get("taskIds")
+    if isinstance(task_ids, list) and len(task_ids) > MAX_TASK_ID_COUNT:
+        raise ValueError("Runtime event exceeds task link limit")
+    return projected
+
+
 def sanitize_runtime_state(state: dict[str, Any]) -> dict[str, Any]:
     """Project runtime persistence onto the protocol's explicit allowlist."""
     root = {key: value for key, value in state.items() if key in RUNTIME_ROOT_FIELDS}
@@ -54,13 +113,21 @@ def sanitize_runtime_state(state: dict[str, Any]) -> dict[str, Any]:
         if isinstance(capabilities, dict) else {}
     )
     attention = root.get("attention")
-    root["attention"] = [
-        {key: sanitize(value) for key, value in item.items() if key in ATTENTION_FIELDS}
-        for item in attention if isinstance(item, dict)
-    ] if isinstance(attention, list) else []
+    root["attention"] = []
+    if isinstance(attention, list):
+        for item in attention[:MAX_RUNTIME_LIST_LENGTH]:
+            if not isinstance(item, dict):
+                continue
+            projected_attention = {key: sanitize(value) for key, value in item.items() if key in ATTENTION_FIELDS}
+            try:
+                _validate_bounded_values(projected_attention, "$.attention")
+                if not scan_forbidden_content(projected_attention):
+                    root["attention"].append(projected_attention)
+            except ValueError:
+                continue
     agents = root.get("agents")
     normalized_agents = []
-    for agent in agents if isinstance(agents, list) else []:
+    for agent in (agents[:MAX_AGENT_STATE_COUNT] if isinstance(agents, list) else []):
         if not isinstance(agent, dict):
             continue
         projected = {key: sanitize(value) for key, value in agent.items() if key in AGENT_FIELDS}
@@ -72,6 +139,12 @@ def sanitize_runtime_state(state: dict[str, Any]) -> dict[str, Any]:
         projected.setdefault("taskIds", [])
         if projected.get("activityKind") not in ACTIVITY_KINDS:
             projected["activityKind"] = "unknown"
+        try:
+            _validate_bounded_values(projected, "$.agents")
+            if scan_forbidden_content(projected):
+                continue
+        except ValueError:
+            continue
         normalized_agents.append(projected)
     root["agents"] = normalized_agents
     return sanitize(root)
@@ -132,8 +205,18 @@ def normalize_codex_message(message: dict[str, Any], sequence: int, task_links: 
         sender = str(item.get("senderThreadId") or agent_id)
         receivers = item.get("receiverThreadIds") if isinstance(item.get("receiverThreadIds"), list) else []
         if receivers:
-            return [sanitize({**event, "eventId": _identifier(event["eventId"], receiver), "agentId": str(receiver), "parentAgentId": sender, "threadId": str(receiver), "activity": "Subagent started"}) for receiver in receivers]
-    return [sanitize(event)]
+            safe_events = []
+            for receiver in receivers[:MAX_RUNTIME_LIST_LENGTH]:
+                candidate = sanitize({**event, "eventId": _identifier(event["eventId"], receiver), "agentId": str(receiver), "parentAgentId": sender, "threadId": str(receiver), "activity": "Subagent started"})
+                try:
+                    safe_events.append(validate_runtime_event(candidate))
+                except ValueError:
+                    continue
+            return safe_events
+    try:
+        return [validate_runtime_event(event)]
+    except ValueError:
+        return []
 
 
 def _map_codex_method(method: str, params: dict[str, Any], item: dict[str, Any]) -> tuple[str, str, str, str, str]:
@@ -206,13 +289,17 @@ def _is_collab_tool_call(item: dict[str, Any]) -> bool:
 
 def reduce_event(state: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
     """Apply one event without changing any MissionCenter task file."""
-    event = sanitize(event)
+    event = validate_runtime_event(event)
     if event.get("state") not in RUNTIME_STATES:
         raise ValueError(f"Unsupported runtime state: {event.get('state')}")
     if event.get("eventType") == "turn_finished" and not event.get("taskIds"):
         event = {**event, "activity": "Turn completed", "attention": "none", "activityKind": "idle"}
     agents = {agent["agentId"]: dict(agent) for agent in state.get("agents", []) if agent.get("agentId")}
     agent_id = str(event["agentId"])
+    if len(agents) > MAX_AGENT_STATE_COUNT:
+        raise ValueError("Runtime state already exceeds agent limit")
+    if agent_id not in agents and len(agents) >= MAX_AGENT_STATE_COUNT:
+        raise ValueError("Runtime state agent limit exceeded")
     current = agents.get(agent_id)
     if current and event.get("eventId") in current.get("recentEventIds", []):
         return state

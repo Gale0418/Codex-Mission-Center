@@ -1,0 +1,4 @@
+# CI/release lock. The pure-Python wheel keeps this artifact portable across
+# supported Python 3 platforms while --require-hashes verifies its contents.
+websockets @ https://files.pythonhosted.org/packages/66/58/bd83247f39ddc26ffc2c24eb05087a3b749e00cb4509fc6d19daa23c8495/websockets-16.1-py3-none-any.whl \
+    --hash=sha256:c5149dfe490ec7e5ee5dbf624c642fb725f93a5575c7f00ab594ca9eddb8dd81

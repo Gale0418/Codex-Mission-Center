@@ -20,7 +20,11 @@ from urllib.parse import urlparse
 
 from common.markdown_table import parse_table
 from optimization_core import atomic_write_json
-from runtime_protocol import age_runtime_state, empty_runtime_state, load_last_valid, normalize_codex_message, reduce_event, touch_runtime_state, validate_initialize_response, write_runtime_state
+from runtime_protocol import MAX_RUNTIME_LINE_BYTES, age_runtime_state, empty_runtime_state, load_last_valid, normalize_codex_message, reduce_event, touch_runtime_state, validate_initialize_response, write_runtime_state
+
+
+MAX_REPLAY_FILE_BYTES = 8 * 1024 * 1024
+MAX_REPLAY_EVENTS = 10_000
 
 
 def runtime_path(workspace: Path) -> Path:
@@ -36,15 +40,51 @@ def load_links(workspace: Path) -> dict[str, list[str]]:
         return {}
 
 
+def decode_json_frame(raw: str | bytes) -> dict[str, Any]:
+    """Decode one bounded JSON object from stdio/WebSocket input."""
+    if isinstance(raw, bytes):
+        raw_bytes = raw
+        text = raw.decode("utf-8")
+    elif isinstance(raw, str):
+        text = raw
+        raw_bytes = raw.encode("utf-8")
+    else:
+        raise ValueError("Runtime frame must be text or UTF-8 bytes")
+    if len(raw_bytes) > MAX_RUNTIME_LINE_BYTES:
+        raise RecoverableTransportError("Runtime frame exceeds line byte limit")
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Runtime frame is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Runtime frame must be a JSON object")
+    return payload
+
+
 def replay(workspace: Path, input_path: Path) -> dict:
+    try:
+        if input_path.stat().st_size > MAX_REPLAY_FILE_BYTES:
+            raise ValueError("Replay input exceeds file byte limit")
+    except OSError as exc:
+        raise ValueError(f"Unable to inspect replay input: {input_path}") from exc
     state = empty_runtime_state("replay")
     links = load_links(workspace)
-    for sequence, line in enumerate(input_path.read_text(encoding="utf-8").splitlines(), start=1):
-        if not line.strip():
-            continue
-        message = json.loads(line)
-        for event in normalize_codex_message(message, sequence, links):
-            state = reduce_event(state, event)
+    event_count = 0
+    with input_path.open("rb") as handle:
+        for line_number, raw_line in enumerate(handle, start=1):
+            if len(raw_line) > MAX_RUNTIME_LINE_BYTES:
+                raise ValueError(f"Replay line {line_number} exceeds line byte limit")
+            if not raw_line.strip():
+                continue
+            event_count += 1
+            if event_count > MAX_REPLAY_EVENTS:
+                raise ValueError("Replay input exceeds event count limit")
+            try:
+                message = decode_json_frame(raw_line)
+            except (UnicodeDecodeError, ValueError, RecoverableTransportError) as exc:
+                raise ValueError(f"Replay line {line_number} is invalid") from exc
+            for event in normalize_codex_message(message, line_number, links):
+                state = reduce_event(state, event)
     write_runtime_state(runtime_path(workspace), state)
     return state
 
@@ -338,8 +378,8 @@ async def connect_live(workspace: Path, url: str | None = None, token_env: str |
                 continue
             state = touch_runtime_state(state)
             try:
-                candidate = json.loads(initialize_raw)
-            except json.JSONDecodeError:
+                candidate = decode_json_frame(initialize_raw)
+            except (UnicodeDecodeError, ValueError, RecoverableTransportError):
                 continue
             if isinstance(candidate, dict) and candidate.get("id") == 1:
                 initialize_response = candidate
@@ -358,8 +398,8 @@ async def connect_live(workspace: Path, url: str | None = None, token_env: str |
             sequence += 1
             state = touch_runtime_state(state)
             try:
-                message = json.loads(raw)
-            except json.JSONDecodeError:
+                message = decode_json_frame(raw)
+            except (UnicodeDecodeError, ValueError, RecoverableTransportError):
                 continue
             events = normalize_codex_message(message, sequence, links)
             if not events:

@@ -453,6 +453,44 @@ class WorkspaceTemplateTests(unittest.TestCase):
             self.assertIn("- 摘要: 本輪完成同步與驗證", closeout)
             self.assertIn("- 冒煙測試: 2 項通過", closeout)
 
+    def test_named_closeout_is_archived_immutably(self):
+        with workspace_tempdir("workspace-cycle-closeout-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            run_script(BOOTSTRAP, workspace, "--language", "zh-TW")
+            run_script(
+                CLOSEOUT,
+                workspace,
+                "--cycle",
+                "OWO-v0.5",
+                "--summary",
+                "完成證據與對帳核心",
+                "--completed",
+                "MC-052 至 MC-059",
+            )
+            current = workspace / "MissionCenter" / "closeout.md"
+            archive = workspace / "MissionCenter" / "closeouts" / "OWO-v0.5.md"
+            self.assertEqual(current.read_bytes(), archive.read_bytes())
+            self.assertIn("- 週期: OWO-v0.5", current.read_text(encoding="utf-8"))
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(CLOSEOUT),
+                    str(workspace),
+                    "--cycle",
+                    "OWO-v0.5",
+                    "--summary",
+                    "不同內容",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=30,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("already exists with different content", result.stderr)
+            self.assertEqual(current.read_bytes(), archive.read_bytes())
+
     def test_sync_without_metadata_preserves_existing_project_identity(self):
         with workspace_tempdir("workspace-templates-") as temporary:
             workspace = Path(temporary) / "workspace"

@@ -2,12 +2,12 @@
 
 - 專案: Codex Mission Center
 - 目標: 將 Mission Center 升級為研究驅動的自適應 Project OS，並提供可選的本機 Live Agent HUD
-- 目前狀態: 本機 release gate 全綠，等待外部審查授權
-- 里程碑: OWO+ v0.4 Review, Compatibility and Release
-- 進度條: [########--] 4/5 verified slices
+- 目前狀態: 112/119 estimated；OWO+ v0.5 本週期已完成
+- 里程碑: Evidence and Reconciliation Kernel Released Locally
+- 進度條: [#########-] 94%
 - 進行中任務:
-  - MC-051 OWO+ v0.4 Review, Compatibility and Release (Review)
+  - MC-032 One-Action Improvement Loop (Backlog)
+  - MC-044 Codex CLI Agent Plugin Compatibility Spike (Backlog)
 - 阻塞原因:
-  - CodeRabbit scoped diff 上傳同意尚未取得。
-  - critic_full 的 total／per-seat／tool／wall-clock budget 尚未核准。
-- 下次更新: 取得授權後執行外部審查、處置 findings、publish write／verify 與 closeout。
+  - 無外部阻塞；HUD v2 視覺方向保留給使用者看過基準版後決定。
+- 下次更新: 由使用者選擇 HUD v2 方向；MC-032／MC-044 依優先級另開週期。
