@@ -219,6 +219,17 @@ if set(FILES_EN) != set(REQUIRED_FILES) or set(FILES_ZH_TW) != set(REQUIRED_FILE
     raise RuntimeError("Bootstrap templates do not match the canonical workspace contract")
 
 
+MANAGED_VISUAL_ASSETS = {
+    "visual-summary.html",
+    "mission-bridge-background.webp",
+    "mission-bridge-background.webp.json",
+    "mission-fleet-bridge-background.webp",
+    "mission-fleet-bridge-background.webp.json",
+    "mission-starfield.webp",
+    "mission-starfield.webp.json",
+}
+
+
 def choose_language(value: str) -> str:
     if value != "auto":
         return value
@@ -236,11 +247,12 @@ def copy_visual_assets(workspace_root: Path, force: bool) -> None:
     target = workspace_root / "output" / "mission-center-assets"
     target.mkdir(parents=True, exist_ok=True)
     for item in source.iterdir():
-        if not item.is_file():
+        if item.name not in MANAGED_VISUAL_ASSETS or not item.is_file() or item.is_symlink():
             continue
         destination = target / item.name
-        if destination.exists() and not force:
-            continue
+        # Files shipped by the skill are the managed HUD surface.  Keep any
+        # workspace-owned extras intact, but always synchronize these names so
+        # canonical and served HTML/assets cannot drift after an upgrade.
         shutil.copy2(item, destination)
 
 

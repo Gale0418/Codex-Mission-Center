@@ -10,7 +10,7 @@
 Mission Center 是一次只服務一個專案的離線、檔案型 Codex 外掛與 Skill。它協助釐清意圖、讓你核准滾動式計畫、保存因果式交接，並把驗證證據留在任務資料旁邊。它不是託管式專案管理服務，也不是 `pip` 或 `npm` 套件。
 
 <p align="center">
-  <img src="skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.png" alt="Mission Center fleet crossing a bridge" width="100%">
+  <img src="skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.webp" alt="Mission Center fleet crossing a bridge" width="100%">
 </p>
 
 <p align="center"><strong><a href="#快速開始">開始使用</a></strong> · <a href="README.md">English</a> · <a href="skills/mission-center/SKILL.md">閱讀 Skill 契約</a></p>

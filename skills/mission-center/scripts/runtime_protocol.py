@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,13 @@ MAX_RUNTIME_VALUE_NODES = 2048
 MAX_RUNTIME_LIST_LENGTH = 64
 MAX_AGENT_STATE_COUNT = 64
 MAX_TASK_ID_COUNT = 64
+MAX_LINK_AGENT_COUNT = 64
+MAX_OPAQUE_ID_LENGTH = 128
+OPAQUE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+TASK_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
+ALLOWED_PROVIDERS = {"codex"}
+TASK_LINK_ROOT_FIELDS = {"schemaVersion", "links", "source"}
+TASK_LINK_SOURCES = {"explicit_cli", "dispatch_metadata", "provider_metadata"}
 EVENT_FIELDS = {
     "schemaVersion", "eventId", "timestamp", "provider", "sessionId", "threadId",
     "turnId", "agentId", "parentAgentId", "taskIds", "eventType", "activity",
@@ -60,6 +68,49 @@ def sanitize(value: Any) -> Any:
     if isinstance(value, list):
         return [sanitize(item) for item in value]
     return value
+
+
+def is_opaque_id(value: Any, *, task: bool = False) -> bool:
+    """Return whether a value is a bounded protocol identifier, never prose."""
+    if not isinstance(value, str) or not value:
+        return False
+    return bool((TASK_ID_PATTERN if task else OPAQUE_ID_PATTERN).fullmatch(value))
+
+
+def opaque_id(value: Any, fallback: str, *, label: str = "id") -> str:
+    """Keep allowlisted IDs; hash untrusted provider labels before display/persistence."""
+    if is_opaque_id(value):
+        return value
+    if value is None or value == "":
+        return fallback
+    raw = str(value).encode("utf-8", "replace")
+    return f"{label}-hash-{hashlib.sha256(raw).hexdigest()[:24]}"
+
+
+def validate_task_links(value: Any) -> dict[str, list[str]]:
+    """Validate the complete task-links envelope, failing closed on any mismatch."""
+    if not isinstance(value, dict) or set(value) - TASK_LINK_ROOT_FIELDS:
+        raise ValueError("task-links root fields are not allowlisted")
+    if value.get("schemaVersion") != "1.0" or not isinstance(value.get("links"), dict):
+        raise ValueError("task-links schema is invalid")
+    source = value.get("source")
+    if not isinstance(source, str) or source not in TASK_LINK_SOURCES:
+        raise ValueError("task-links source is invalid")
+    links = value["links"]
+    if len(links) > MAX_LINK_AGENT_COUNT:
+        raise ValueError("task-links agent limit exceeded")
+    normalized: dict[str, list[str]] = {}
+    for agent_id, task_ids in links.items():
+        if not is_opaque_id(agent_id) or not isinstance(task_ids, list):
+            raise ValueError("task-links key/value types are invalid")
+        if len(task_ids) > MAX_TASK_ID_COUNT:
+            raise ValueError("task-links task limit exceeded")
+        if any(not is_opaque_id(task_id, task=True) for task_id in task_ids):
+            raise ValueError("task-links task IDs are invalid")
+        if len(set(task_ids)) != len(task_ids):
+            raise ValueError("task-links task IDs must be unique")
+        normalized[agent_id] = sorted(task_ids)
+    return normalized
 
 
 def _validate_bounded_values(value: Any, path: str = "$") -> None:
@@ -98,9 +149,16 @@ def validate_runtime_event(event: dict[str, Any]) -> dict[str, Any]:
     privacy_errors = scan_forbidden_content(projected)
     if privacy_errors:
         raise ValueError(f"Runtime event rejected by privacy policy: {privacy_errors[0]}")
+    if projected.get("provider") not in ALLOWED_PROVIDERS:
+        raise ValueError("Runtime event provider is not allowlisted")
+    for field in ("eventId", "sessionId", "threadId", "turnId", "agentId", "parentAgentId"):
+        if field in projected and projected[field] is not None and not is_opaque_id(projected[field]):
+            raise ValueError(f"Runtime event {field} is not an opaque ID")
     task_ids = projected.get("taskIds")
-    if isinstance(task_ids, list) and len(task_ids) > MAX_TASK_ID_COUNT:
-        raise ValueError("Runtime event exceeds task link limit")
+    if not isinstance(task_ids, list) or len(task_ids) > MAX_TASK_ID_COUNT or any(not is_opaque_id(item, task=True) for item in task_ids):
+        raise ValueError("Runtime event task links are invalid")
+    if len(set(task_ids)) != len(task_ids):
+        raise ValueError("Runtime event task links must be unique")
     return projected
 
 
@@ -119,6 +177,12 @@ def sanitize_runtime_state(state: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(item, dict):
                 continue
             projected_attention = {key: sanitize(value) for key, value in item.items() if key in ATTENTION_FIELDS}
+            if "agentId" in projected_attention:
+                projected_attention["agentId"] = opaque_id(projected_attention["agentId"], "agent", label="agent")
+            task_ids = projected_attention.get("taskIds", [])
+            if not isinstance(task_ids, list) or len(task_ids) > MAX_TASK_ID_COUNT or any(not is_opaque_id(task, task=True) for task in task_ids):
+                continue
+            projected_attention["taskIds"] = sorted(set(task_ids))
             try:
                 _validate_bounded_values(projected_attention, "$.attention")
                 if not scan_forbidden_content(projected_attention):
@@ -131,12 +195,19 @@ def sanitize_runtime_state(state: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(agent, dict):
             continue
         projected = {key: sanitize(value) for key, value in agent.items() if key in AGENT_FIELDS}
-        projected.setdefault("agentId", "unknown")
+        projected["provider"] = projected.get("provider") if projected.get("provider") in ALLOWED_PROVIDERS else "codex"
+        projected["agentId"] = opaque_id(projected.get("agentId"), "unknown", label="agent")
+        for field in ("sessionId", "threadId", "turnId", "parentAgentId"):
+            if projected.get(field) is not None:
+                projected[field] = opaque_id(projected[field], f"{field}-unknown", label=field)
         projected.setdefault("state", "disconnected")
         projected.setdefault("attention", "none")
         projected.setdefault("activity", "Unknown runtime activity")
         projected.setdefault("requiresAttention", False)
-        projected.setdefault("taskIds", [])
+        raw_tasks = projected.get("taskIds", [])
+        if not isinstance(raw_tasks, list) or len(raw_tasks) > MAX_TASK_ID_COUNT or any(not is_opaque_id(task, task=True) for task in raw_tasks):
+            continue
+        projected["taskIds"] = sorted(set(raw_tasks))
         if projected.get("activityKind") not in ACTIVITY_KINDS:
             projected["activityKind"] = "unknown"
         try:
@@ -147,6 +218,7 @@ def sanitize_runtime_state(state: dict[str, Any]) -> dict[str, Any]:
             continue
         normalized_agents.append(projected)
     root["agents"] = normalized_agents
+    root["sourceStatus"] = root.get("sourceStatus") if root.get("sourceStatus") in {"connected", "disconnected", "replay", "file", "file-fallback", "stale"} else "disconnected"
     return sanitize(root)
 
 
@@ -171,11 +243,23 @@ def normalize_codex_message(message: dict[str, Any], sequence: int, task_links: 
     """Convert one official app-server JSON-RPC notification/request to AgentEvent."""
     method = str(message.get("method") or "")
     params = message.get("params") if isinstance(message.get("params"), dict) else {}
-    thread_id = _first(params, "threadId", "thread_id") or _nested(params, "thread", "id")
-    turn_id = _first(params, "turnId", "turn_id") or _nested(params, "turn", "id")
     item = params.get("item") if isinstance(params.get("item"), dict) else {}
-    agent_id = str(_first(params, "agentId", "agent_id") or _nested(item, "agent", "id") or thread_id or "codex")
-    parent_id = _first(params, "parentAgentId", "parent_agent_id")
+    raw_thread_id = _first(params, "threadId", "thread_id") or _nested(params, "thread", "id")
+    raw_turn_id = _first(params, "turnId", "turn_id") or _nested(params, "turn", "id")
+    raw_agent_candidate = _first(params, "agentId", "agent_id") or _nested(item, "agent", "id")
+    raw_parent_candidate = _first(params, "parentAgentId", "parent_agent_id")
+    raw_session_candidate = _first(params, "sessionId", "session_id")
+    raw_event_candidate = _first(params, "eventId", "event_id")
+    if any(isinstance(value, str) and len(value) > MAX_RUNTIME_FIELD_LENGTH for value in (raw_thread_id, raw_turn_id, raw_agent_candidate, raw_parent_candidate, raw_session_candidate, raw_event_candidate)):
+        return []
+    if scan_forbidden_content({"threadId": raw_thread_id, "turnId": raw_turn_id, "agentId": raw_agent_candidate, "parentAgentId": raw_parent_candidate, "sessionId": raw_session_candidate, "eventId": raw_event_candidate}):
+        return []
+    thread_id = opaque_id(raw_thread_id, "thread-hash-missing", label="thread") if raw_thread_id else None
+    turn_id = opaque_id(raw_turn_id, "turn-hash-missing", label="turn") if raw_turn_id else None
+    raw_agent_id = raw_agent_candidate or thread_id or "codex"
+    agent_id = opaque_id(raw_agent_id, "codex", label="agent")
+    raw_parent_id = raw_parent_candidate
+    parent_id = opaque_id(raw_parent_id, "parent-hash-missing", label="parent") if raw_parent_id else None
     event_type, state, activity, attention, activity_kind = _map_codex_method(method, params, item)
     if not event_type:
         return []
@@ -185,14 +269,14 @@ def normalize_codex_message(message: dict[str, Any], sequence: int, task_links: 
     timestamp = _bounded_timestamp(_first(params, "timestamp", "createdAt", "created_at"))
     event = {
         "schemaVersion": "1.0",
-        "eventId": str(_first(params, "eventId", "event_id") or _identifier(method, thread_id, turn_id, item.get("id"), sequence)),
+        "eventId": opaque_id(_first(params, "eventId", "event_id"), _identifier(method, thread_id, turn_id, item.get("id"), sequence), label="event"),
         "timestamp": timestamp,
         "provider": "codex",
-        "sessionId": str(_first(params, "sessionId", "session_id") or thread_id or "connected-endpoint"),
-        "threadId": str(thread_id) if thread_id else None,
-        "turnId": str(turn_id) if turn_id else None,
+        "sessionId": opaque_id(_first(params, "sessionId", "session_id") or thread_id, "connected-endpoint", label="session"),
+        "threadId": thread_id,
+        "turnId": turn_id,
         "agentId": agent_id,
-        "parentAgentId": str(parent_id) if parent_id else None,
+        "parentAgentId": parent_id,
         "taskIds": task_ids,
         "eventType": event_type,
         "activity": activity,
@@ -202,12 +286,13 @@ def normalize_codex_message(message: dict[str, Any], sequence: int, task_links: 
         "activityKind": activity_kind,
     }
     if method.casefold() == "item/started" and _is_collab_tool_call(item):
-        sender = str(item.get("senderThreadId") or agent_id)
+        sender = opaque_id(item.get("senderThreadId"), agent_id, label="sender")
         receivers = item.get("receiverThreadIds") if isinstance(item.get("receiverThreadIds"), list) else []
         if receivers:
             safe_events = []
             for receiver in receivers[:MAX_RUNTIME_LIST_LENGTH]:
-                candidate = sanitize({**event, "eventId": _identifier(event["eventId"], receiver), "agentId": str(receiver), "parentAgentId": sender, "threadId": str(receiver), "activity": "Subagent started"})
+                receiver_id = opaque_id(receiver, "agent", label="agent")
+                candidate = sanitize({**event, "eventId": _identifier(event["eventId"], receiver_id), "agentId": receiver_id, "parentAgentId": sender, "threadId": receiver_id, "activity": "Subagent started"})
                 try:
                     safe_events.append(validate_runtime_event(candidate))
                 except ValueError:
@@ -357,7 +442,8 @@ def age_runtime_state(state: dict[str, Any], now: datetime | None = None, socket
             )
         agents.append(agent)
     aged["agents"] = agents
-    aged["sourceStatus"] = "disconnected" if socket_closed else state.get("sourceStatus", "connected")
+    has_stale_agent = any(agent.get("state") == "stale" for agent in agents)
+    aged["sourceStatus"] = "disconnected" if socket_closed else "stale" if has_stale_agent or state.get("sourceStatus") == "stale" else state.get("sourceStatus", "connected")
     aged["updatedAt"] = utc_now()
     aged["attention"] = [{"agentId": a["agentId"], "kind": a["attention"], "activity": a["activity"], "taskIds": a.get("taskIds", [])} for a in agents if a.get("requiresAttention")]
     return aged

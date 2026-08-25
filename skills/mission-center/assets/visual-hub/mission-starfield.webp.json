@@ -1,7 +1,18 @@
 {
+  "asset": "mission-starfield.webp",
   "role": "starfield-plate",
   "prompt": "Use case: stylized-concept\nAsset type: decorative starfield background plate for a mission-control visual hub HUD\nPrimary request: a wide 16:10 deep-space starfield background, 2048x1280, suitable as a quiet atmospheric plate behind interface text\nScene/backdrop: deep ink-navy outer space with a dense but restrained field of individually readable stars, subtle layered depth from nearer crisp pinprick stars to distant soft star clusters, and only a few thin wisps of cool cyan and blue-gray nebula haze near the outer regions\nSubject: the starfield itself; no foreground subject\nStyle/medium: polished cinematic digital environment texture, understated and atmospheric, clean enough for UI compositing\nComposition/framing: wide landscape 16:10; distribute stars across the full frame with natural clustering and parallax depth; preserve a broad central zone with noticeably lower contrast and fewer bright stars for HUD text overlay; no hard focal object\nLighting/mood: dark, calm, precise, spacious, low luminance; stars are clearly distinguishable but never glaring; gentle vignette toward the corners without crushing detail\nColor palette: deep ink navy, midnight blue, desaturated slate blue, restrained cool cyan accents only in the faint haze; no purple, magenta, red, orange, or warm galaxy colors\nMaterials/textures: subtle astrophysical dust and mist, soft grain-free gradients, no artificial geometric patterns\nText (verbatim): empty; no text\nConstraints: background-only decorative plate; central low-contrast text-safe area; clear but controlled star density; no visual clutter\nAvoid: spacecraft, bridge, cockpit, floor, people, characters, planets, moons, suns, black holes, comets, satellites, UI, HUD, nodes, lines, connectors, grids, labels, logos, symbols, text, watermark, neon cyberpunk glow, overexposure, blown highlights, purple or pink Milky Way, dramatic central object, bright central region, poster-like composition",
   "approved": true,
   "dimensions": "1600x1000",
+  "sha256": "0F5D136453C02C7B9CB1EE40AC51DF7691404A70DA739810C65C616E4B666CCC",
+  "sourceSha256": "0A94B88EF2837C0F092E51023DA27F68A054B005BE85A5E97FFA72695096B4F7",
+  "sourceFormat": "png",
+  "format": "webp",
+  "conversion": {
+    "tool": "ffmpeg",
+    "codec": "libwebp",
+    "quality": 92,
+    "compressionLevel": 6
+  },
   "source": "image_gen"
 }

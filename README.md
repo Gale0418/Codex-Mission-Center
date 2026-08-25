@@ -10,7 +10,7 @@
 Mission Center is an offline, file-based Codex plugin and skill for one project at a time. It clarifies intent, drafts a rolling plan for approval, preserves causal handoffs, and keeps verification close to the task data. It is not a hosted project-management service and is not a `pip` or `npm` package.
 
 <p align="center">
-  <img src="skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.png" alt="Mission Center fleet crossing a bridge" width="100%">
+  <img src="skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.webp" alt="Mission Center fleet crossing a bridge" width="100%">
 </p>
 
 <p align="center"><strong><a href="#quick-start">Start locally</a></strong> · <a href="README.zh-TW.md">繁體中文</a> · <a href="skills/mission-center/SKILL.md">Read the skill contract</a></p>

@@ -12,19 +12,34 @@ import secrets
 import shutil
 import socket
 import threading
+import time
+from dataclasses import dataclass
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from common.markdown_table import parse_table
 from optimization_core import atomic_write_json
-from runtime_protocol import MAX_RUNTIME_LINE_BYTES, age_runtime_state, empty_runtime_state, load_last_valid, normalize_codex_message, reduce_event, touch_runtime_state, validate_initialize_response, write_runtime_state
+from runtime_protocol import MAX_LINK_AGENT_COUNT, MAX_RUNTIME_LINE_BYTES, MAX_TASK_ID_COUNT, age_runtime_state, empty_runtime_state, load_last_valid, normalize_codex_message, reduce_event, touch_runtime_state, validate_initialize_response, validate_task_links, write_runtime_state, is_opaque_id
 
 
 MAX_REPLAY_FILE_BYTES = 8 * 1024 * 1024
 MAX_REPLAY_EVENTS = 10_000
+MAX_MALFORMED_FRAMES = 5
+MAX_MALFORMED_BYTES = 256 * 1024
+MAX_MALFORMED_WINDOW_SECONDS = 30.0
+# Descriptive aliases kept for callers/tests that name each budget dimension.
+MAX_MALFORMED_FRAME_COUNT = MAX_MALFORMED_FRAMES
+MAX_MALFORMED_FRAME_BYTES = MAX_MALFORMED_BYTES
+MAX_MALFORMED_FRAME_WINDOW_SECONDS = MAX_MALFORMED_WINDOW_SECONDS
+HUD_ALLOWED_ASSETS = frozenset({
+    "visual-summary.html", "visual-state.json",
+    "mission-starfield.webp", "mission-starfield.webp.json",
+    "mission-fleet-bridge-background.webp", "mission-fleet-bridge-background.webp.json",
+    "mission-bridge-background.webp", "mission-bridge-background.webp.json",
+})
 
 
 def runtime_path(workspace: Path) -> Path:
@@ -35,7 +50,7 @@ def load_links(workspace: Path) -> dict[str, list[str]]:
     path = workspace / "output" / "mission-center-runtime" / "task-links.json"
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-        return value.get("links", {}) if isinstance(value, dict) else {}
+        return validate_task_links(value)
     except (OSError, ValueError, json.JSONDecodeError):
         return {}
 
@@ -110,32 +125,105 @@ def packaged_runtime_requirements(script_path: Path | None = None) -> Path:
 
 
 def link_task(workspace: Path, agent_id: str, task_ids: list[str]) -> dict:
+    if not is_opaque_id(agent_id):
+        raise ValueError("Agent ID must be an opaque allowlisted ID")
+    if not isinstance(task_ids, list) or len(task_ids) > MAX_TASK_ID_COUNT or any(not is_opaque_id(task, task=True) for task in task_ids) or len(set(task_ids)) != len(task_ids):
+        raise ValueError("Task links exceed type/count limits")
     valid = task_ids_from_workspace(workspace)
     unknown = sorted(set(task_ids) - valid)
     if unknown:
         raise ValueError(f"Unknown MissionCenter task IDs: {', '.join(unknown)}")
     links = load_links(workspace)
+    if len(links) >= MAX_LINK_AGENT_COUNT and agent_id not in links:
+        raise ValueError("Task links agent limit exceeded")
     links[agent_id] = sorted(set(task_ids))
     payload = {"schemaVersion": "1.0", "links": links, "source": "explicit_cli"}
+    validate_task_links(payload)
     atomic_write_json(workspace / "output" / "mission-center-runtime" / "task-links.json", payload)
     return payload
 
 
+def health_payload(workspace_fingerprint: str, nonce: str | None = None, session_nonce: str | None = None) -> dict[str, str]:
+    payload = {
+        "service": "mission-center-hud",
+        "workspaceFingerprint": workspace_fingerprint,
+    }
+    if isinstance(nonce, str) and 0 < len(nonce) <= 128:
+        payload["nonce"] = nonce
+    if isinstance(session_nonce, str) and 0 < len(session_nonce) <= 128:
+        payload["sessionNonce"] = session_nonce
+    return payload
+
+
 class HudHandler(SimpleHTTPRequestHandler):
-    def __init__(self, *args, directory: str, session_token: str, **kwargs):
+    def __init__(self, *args, directory: str, session_token: str, workspace_fingerprint: str = "", health_nonce: str | None = None, session_nonce: str | None = None, **kwargs):
         self.session_token = session_token
+        self.workspace_fingerprint = workspace_fingerprint
+        self.health_nonce = health_nonce
+        self.session_nonce = session_nonce
         super().__init__(*args, directory=directory, **kwargs)
 
     def do_GET(self):
         if not is_loopback_host_header(self.headers.get("Host", "")):
             self.send_error(403)
             return
-        if self.path in {"/", "/index.html"}:
+        path = _safe_request_path(self.path)
+        if path is None:
+            self.send_error(404)
+            return
+        if path == "/_mission-center/health":
+            payload = health_payload(self.workspace_fingerprint, self.health_nonce, self.session_nonce)
+            body = (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path in {"/", "/index.html"}:
             self.send_response(302)
             self.send_header("Location", "/mission-center-assets/visual-summary.html")
             self.end_headers()
             return
-        super().do_GET()
+        if path == "/mission-center-runtime/runtime-state.json":
+            root = Path(self.directory).resolve()
+            candidate = root / "mission-center-runtime" / "runtime-state.json"
+            if not _safe_regular_file(root, candidate):
+                self.send_error(404)
+                return
+            self._serve_file(candidate)
+            return
+        relative = path.removeprefix("/")
+        if not relative.startswith("mission-center-assets/") or relative.count("/") != 1:
+            self.send_error(404)
+            return
+        name = relative.split("/", 1)[1]
+        if name not in HUD_ALLOWED_ASSETS:
+            self.send_error(404)
+            return
+        root = Path(self.directory).resolve()
+        candidate = root / relative
+        if not _safe_regular_file(root, candidate):
+            self.send_error(404)
+            return
+        self._serve_file(candidate)
+
+    def do_HEAD(self):
+        self.do_GET()
+
+    def _serve_file(self, path: Path) -> None:
+        try:
+            body = path.read_bytes()
+        except OSError:
+            self.send_error(404)
+            return
+        content_type = "text/html; charset=utf-8" if path.suffix == ".html" else "application/json; charset=utf-8" if path.suffix == ".json" else "image/webp"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if getattr(self, "command", "GET") != "HEAD":
+            self.wfile.write(body)
 
     def do_POST(self):
         if not is_loopback_host_header(self.headers.get("Host", "")):
@@ -152,8 +240,33 @@ class HudHandler(SimpleHTTPRequestHandler):
 
 def is_loopback_host_header(value: str) -> bool:
     try:
-        return urlparse(f"//{value}").hostname in {"127.0.0.1", "localhost", "::1"}
+        parsed = urlparse(f"//{value}")
+        return not parsed.username and not parsed.password and not parsed.path and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
     except ValueError:
+        return False
+
+
+def _safe_request_path(raw_path: str) -> str | None:
+    """Canonicalize URL paths and reject traversal before any filesystem lookup."""
+    try:
+        path = unquote(urlparse(raw_path).path)
+    except (TypeError, ValueError):
+        return None
+    if not path or "\x00" in path or "\\" in path or any(part == ".." for part in path.split("/")):
+        return None
+    return path if path.startswith("/") and not path.startswith("//") else None
+
+
+def _safe_regular_file(root: Path, candidate: Path) -> bool:
+    try:
+        relative = candidate.relative_to(root)
+        parents = (root, *(root / parent for parent in relative.parents if parent != Path(".")))
+        if any(part.is_symlink() for part in parents):
+            return False
+        if candidate.is_symlink() or not candidate.is_file():
+            return False
+        return candidate.resolve() == candidate and candidate.resolve().is_relative_to(root)
+    except (OSError, ValueError):
         return False
 
 
@@ -169,18 +282,27 @@ def loopback_server_type(host: str) -> type[LoopbackHTTPServer]:
     )
 
 
-def serve(workspace: Path, host: str, port: int) -> None:
+def serve(workspace: Path, host: str, port: int, session_nonce: str | None = None) -> None:
     if host not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("HUD companion must bind to loopback")
     output = workspace / "output"
     output.mkdir(parents=True, exist_ok=True)
     token = secrets.token_urlsafe(24)
-    handler = partial(HudHandler, directory=str(output), session_token=token)
+    fingerprint = fingerprint_workspace(workspace)
+    handler = partial(HudHandler, directory=str(output), session_token=token, workspace_fingerprint=fingerprint, session_nonce=session_nonce)
     server_type = loopback_server_type(host)
     server = server_type((host, port), handler)
     print(f"Mission Control HUD: http://{host}:{server.server_port}/")
     print(f"Session token (controls remain read-only): {token}")
     server.serve_forever()
+
+
+def fingerprint_workspace(workspace: Path) -> str:
+    """Return a stable, non-secret identity for this workspace."""
+    import hashlib
+
+    identity = os.path.normcase(str(workspace.resolve()))
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 
 class TransportAdapter:
@@ -199,6 +321,32 @@ class TransportAdapter:
 
 class RecoverableTransportError(ConnectionError):
     """A malformed transport frame that can be skipped without dropping the session."""
+
+
+@dataclass
+class MalformedFrameBudget:
+    """Bound malformed bursts so a peer cannot force an endless parse loop."""
+
+    consecutive: int = 0
+    bytes_seen: int = 0
+    started_at: float | None = None
+
+    def valid(self) -> None:
+        self.consecutive = 0
+        self.bytes_seen = 0
+        self.started_at = None
+
+    def record(self, raw: str | bytes, now: float | None = None) -> None:
+        now = time.monotonic() if now is None else now
+        size = len(raw) if isinstance(raw, bytes) else len(raw.encode("utf-8", "replace")) if isinstance(raw, str) else 0
+        if self.started_at is None or now - self.started_at > MAX_MALFORMED_WINDOW_SECONDS:
+            self.consecutive = 0
+            self.bytes_seen = 0
+            self.started_at = now
+        self.consecutive += 1
+        self.bytes_seen += size
+        if self.consecutive > MAX_MALFORMED_FRAMES or self.bytes_seen > MAX_MALFORMED_BYTES or now - self.started_at > MAX_MALFORMED_WINDOW_SECONDS:
+            raise ConnectionError("Malformed transport frame budget exceeded")
 
 
 class StdioTransport(TransportAdapter):
@@ -363,6 +511,7 @@ async def connect_live(workspace: Path, url: str | None = None, token_env: str |
     sequence = 0
     initialized = False
     has_persisted_live_event = False
+    malformed_budget = MalformedFrameBudget()
     try:
         await transport.connect()
         await transport.send({"id": 1, "method": "initialize", "params": {"clientInfo": {"name": "mission-center-runtime", "version": "0.2.0"}}})
@@ -375,12 +524,15 @@ async def connect_live(workspace: Path, url: str | None = None, token_env: str |
             try:
                 initialize_raw = await asyncio.wait_for(transport.recv(), timeout=remaining)
             except RecoverableTransportError:
+                malformed_budget.record(b"")
                 continue
             state = touch_runtime_state(state)
             try:
                 candidate = decode_json_frame(initialize_raw)
             except (UnicodeDecodeError, ValueError, RecoverableTransportError):
+                malformed_budget.record(initialize_raw)
                 continue
+            malformed_budget.valid()
             if isinstance(candidate, dict) and candidate.get("id") == 1:
                 initialize_response = candidate
         validate_initialize_response(initialize_response, 1)
@@ -394,13 +546,16 @@ async def connect_live(workspace: Path, url: str | None = None, token_env: str |
                 write_runtime_state(runtime_path(workspace), state)
                 continue
             except RecoverableTransportError:
+                malformed_budget.record(b"")
                 continue
             sequence += 1
             state = touch_runtime_state(state)
             try:
                 message = decode_json_frame(raw)
             except (UnicodeDecodeError, ValueError, RecoverableTransportError):
+                malformed_budget.record(raw)
                 continue
+            malformed_budget.valid()
             events = normalize_codex_message(message, sequence, links)
             if not events:
                 continue
@@ -421,6 +576,7 @@ def main() -> int:
     serve_cmd = commands.add_parser("serve")
     serve_cmd.add_argument("--host", default="127.0.0.1")
     serve_cmd.add_argument("--port", type=int, default=0)
+    serve_cmd.add_argument("--session-nonce")
     replay_cmd = commands.add_parser("replay")
     replay_cmd.add_argument("input")
     connect_cmd = commands.add_parser("connect")
@@ -436,7 +592,7 @@ def main() -> int:
     args = parser.parse_args()
     workspace = Path(args.workspace).resolve()
     if args.command == "serve":
-        serve(workspace, args.host, args.port)
+        serve(workspace, args.host, args.port, args.session_nonce)
     elif args.command == "replay":
         print(json.dumps(replay(workspace, Path(args.input)), ensure_ascii=False, indent=2))
     elif args.command == "connect":

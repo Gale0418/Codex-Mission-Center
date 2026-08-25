@@ -1,4 +1,5 @@
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -14,10 +15,12 @@ class HudAssetTests(unittest.TestCase):
         self.assertNotIn('name: "MissionHelper"', html)
         self.assertNotIn('"SmokeTest"', html)
         self.assertIn("const maxVisibleAgents = 15", html)
-        self.assertIn('url("mission-starfield.png")', html)
-        self.assertTrue((ROOT / "assets" / "visual-hub" / "mission-starfield.png").exists())
-        self.assertIn('url("mission-fleet-bridge-background.png")', html)
-        self.assertTrue((ROOT / "assets" / "visual-hub" / "mission-fleet-bridge-background.png").exists())
+        self.assertIn('url("mission-starfield.webp")', html)
+        self.assertTrue((ROOT / "assets" / "visual-hub" / "mission-starfield.webp").exists())
+        self.assertIn('url("mission-fleet-bridge-background.webp")', html)
+        self.assertTrue((ROOT / "assets" / "visual-hub" / "mission-fleet-bridge-background.webp").exists())
+        self.assertIn('url("mission-bridge-background.webp")', html)
+        self.assertTrue((ROOT / "assets" / "visual-hub" / "mission-bridge-background.webp").exists())
 
     def test_hud_keeps_task_and_runtime_entities_separate(self):
         html = (ROOT / "assets" / "visual-hub" / "visual-summary.html").read_text(encoding="utf-8")
@@ -107,7 +110,7 @@ class HudAssetTests(unittest.TestCase):
         self.assertIn('class="broadcast-waterfall broadcast-right" aria-hidden="true"', html)
         self.assertIn("@keyframes broadcastLtr", html)
         self.assertIn("@keyframes waterfallDown", html)
-        self.assertIn("POLL T10S · R2S/H30S", html)
+        self.assertIn("POLL T60S · R30S/H120S", html)
         self.assertNotIn("weather", html.lower())
         self.assertNotIn("sensor feed", html.lower().replace("no sensor feed", ""))
         self.assertIn("rgba(6,22,33,.5)", html)
@@ -126,6 +129,22 @@ class HudAssetTests(unittest.TestCase):
             "MISSION RECORD / SNAPSHOT ARCHIVE",
         ):
             self.assertIn(doctrine, html)
+        self.assertRegex(
+            html,
+            r"\.territory-header \{[^}]*grid-template-columns: minmax\(0,1fr\) auto;[^}]*min-height: 60px;",
+        )
+        self.assertIn("@media (max-width: 1080px)", html)
+        self.assertIn(".territory-header { min-height: 60px; }", html)
+        self.assertIn("@media (max-width: 620px)", html)
+        self.assertIn(".territory-header { min-height: auto; }", html)
+        self.assertIn('data-rotate="/"', html)
+        self.assertIn('data-full-text="TASK ORDER / FILE SNAPSHOT / READ ONLY"', html)
+        self.assertIn("@keyframes doctrineSweep", html)
+        self.assertIn("startTerritoryPhraseRotation", html)
+        self.assertIn("nodeIndex * 700", html)
+        self.assertIn("if (!reducedMotionQuery?.matches)", html)
+        self.assertIn("document.addEventListener(\"visibilitychange\", updatePollingStrategy)", html)
+        self.assertNotIn("loadState(); loadRuntimeState(); updateClockReadouts(); attentionCapsule", html)
         self.assertIn("width: 13px; writing-mode: vertical-rl", html)
         self.assertIn("opacity: .46;", html)
         self.assertIn(".broadcast-right { right: 6px; writing-mode: vertical-lr; opacity: .42;", html)
@@ -141,8 +160,13 @@ class HudAssetTests(unittest.TestCase):
 
     def test_hud_adapts_polling_when_hidden(self):
         html = (ROOT / "assets" / "visual-hub" / "visual-summary.html").read_text(encoding="utf-8")
-        self.assertIn("const runtimePollVisibleMs = 2000", html)
-        self.assertIn("const runtimePollHiddenMs = 30000", html)
+        self.assertIn("const runtimePollActiveMs = 30000", html)
+        self.assertIn("const runtimePollVisibleMs = 60000", html)
+        self.assertIn("const runtimePollHiddenMs = 120000", html)
+        self.assertIn("const taskPollVisibleMs = 60000", html)
+        self.assertIn("const taskPollHiddenMs = 120000", html)
+        self.assertIn("function runtimeCadenceMs()", html)
+        self.assertIn("if (refresh && !hidden)", html)
         self.assertIn('document.addEventListener("visibilitychange", updatePollingStrategy)', html)
         self.assertIn("clearInterval(runtimePollTimer)", html)
         self.assertNotIn("setInterval(loadRuntimeState, 2000)", html)
@@ -165,6 +189,81 @@ class HudAssetTests(unittest.TestCase):
         self.assertIn("agent.parentAgentId", html)
         self.assertNotIn("agent.progress", html)
         self.assertNotIn("agent.token", html)
+
+    def test_task_topology_uses_measured_cards_and_bounded_layout_reflow(self):
+        html = (ROOT / "assets" / "visual-hub" / "visual-summary.html").read_text(encoding="utf-8")
+        topology = html.split("function renderTopology", 1)[1].split(
+            "function scheduleTopologyMeasurement", 1
+        )[0]
+        self.assertIn('data-task-id="${escapeAttr(id)}"', html)
+        self.assertIn('id="taskTopology" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"', html)
+        self.assertIn('taskPlot = document.querySelector("#taskPlot")', html)
+        self.assertIn("function taskCardMap()", html)
+        self.assertIn("const cards = new Map()", html)
+        self.assertIn("Array.isArray(agent?.dependencies)", topology)
+        self.assertIn("dependencyLinks =", topology)
+        self.assertIn("dependencyLinks.length > links.length", topology)
+        self.assertNotIn("links.length === 24", topology)
+        self.assertIn('taskEndpoint(fromCard, "from"', topology)
+        self.assertIn('taskEndpoint(toCard, "to"', topology)
+        self.assertIn("getBoundingClientRect()", topology)
+        self.assertIn("topologyViewBox", topology)
+        self.assertIn(" C ${from.x + direction * bend}", topology)
+        self.assertIn("Math.max(1.5, Math.min(18", topology)
+        self.assertNotIn("Math.max(10, Math.min(30", topology)
+        self.assertNotIn("index %", topology)
+        self.assertIn("if (!from || !to) return", topology)
+        self.assertNotIn("topology-empty", html)
+        self.assertIn("const topologySummary = links.length", topology)
+        self.assertIn("if (topologyTextSummary.textContent !== topologySummary)", topology)
+        self.assertNotIn("topologyTextSummary.textContent = links.length", topology)
+        self.assertNotIn('.topology-layer[aria-hidden="true"] path', html)
+        self.assertIn('clip = card.closest(".agents-layer")?.getBoundingClientRect()', html)
+        self.assertIn("topologyFrame", html)
+        self.assertIn("requestAnimationFrame", html)
+        self.assertIn("new ResizeObserver", html)
+        self.assertIn('querySelectorAll(".territory, .agents-layer")', html)
+        self.assertIn('addEventListener("scroll", scheduleTopologyMeasurement', html)
+        self.assertIn('window.addEventListener("resize", scheduleTopologyMeasurement', html)
+        self.assertIn(".topology-layer, .runtime-agents-layer { display: none; }", html)
+
+    def test_task_cards_use_deterministic_id_color_tokens(self):
+        html = (ROOT / "assets" / "visual-hub" / "visual-summary.html").read_text(encoding="utf-8")
+        self.assertIn('function stableTaskColor(taskId, status = "Unknown")', html)
+        self.assertIn("data-task-color=\"${color.hue}\"", html)
+        self.assertIn("--task-accent:${color.accent}", html)
+        self.assertIn("--task-accent-soft:${color.soft}", html)
+        self.assertIn("path.dataset.taskColor", html)
+        self.assertIn("toCard?.style.getPropertyValue(\"--task-accent\")", html)
+        self.assertIn('.agent[data-status="Blocked"], .agent[data-attention="true"]', html)
+        self.assertIn("@media (prefers-reduced-motion: reduce)", html)
+
+    def test_task_cards_use_bounded_status_color_families(self):
+        html = (ROOT / "assets" / "visual-hub" / "visual-summary.html").read_text(encoding="utf-8")
+        expected_families = {
+            "Intake": ("BRIEFING", "[42, 54]", "[78, 90]", "[58, 70]"),
+            "In Progress": ("EXECUTION", "[132, 150]", "[58, 76]", "[48, 62]"),
+            "Blocked": ("HOLD", "[350, 359]", "[76, 90]", "[52, 66]"),
+            "Review": ("VERIFICATION", "[198, 222]", "[64, 82]", "[54, 68]"),
+            "Done": ("ARCHIVE", "[200, 220]", "[4, 12]", "[62, 76]"),
+        }
+        for family, (phase, hue, saturation, lightness) in expected_families.items():
+            family_key = rf'(?:"{re.escape(family)}"|{re.escape(family)})'
+            self.assertRegex(
+                html,
+                rf'{family_key}: \{{ phase: "{phase}", hue: {re.escape(hue)}, saturation: {re.escape(saturation)}, lightness: {re.escape(lightness)} \}}',
+            )
+        self.assertIn('function taskColorFamily(status)', html)
+        self.assertIn('function stableTaskColor(taskId, status = "Unknown")', html)
+        self.assertIn('color = stableTaskColor(id, zone)', html)
+        self.assertNotIn('color = stableTaskColor(id, attention ? "Blocked" : zone)', html)
+        self.assertIn('data-task-color-family="${color.family}"', html)
+        self.assertIn('((hash >>> shift) & 0xff)', html)
+        self.assertIn('@keyframes attentionAmberPulse', html)
+        self.assertIn('0 0 16px rgba(255,198,58,.32)', html)
+        self.assertIn('background: rgba(56,18,25,.72)', html)
+        self.assertIn('.agent[data-status="Blocked"], .agent[data-attention="true"] { animation: attentionAmberPulse', html)
+        self.assertNotIn('border-color: var(--amber); background: rgba(44,34,12,.7)', html)
 
     def test_default_state_is_empty(self):
         state = json.loads(

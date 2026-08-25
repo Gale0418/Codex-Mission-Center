@@ -5,6 +5,7 @@ reviews:
     - "!**/*.jpg"
     - "!**/*.jpeg"
     - "!**/*.gif"
+    - "!**/*.webp"
     - "!**/*.pyc"
     - "!**/__pycache__/**"
     - "!output/**"

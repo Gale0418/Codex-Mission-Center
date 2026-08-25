@@ -96,6 +96,28 @@ class BootstrapMissionCenterTests(unittest.TestCase):
                         f"{language}/{name} should begin with {heading}",
                     )
 
+    def test_bootstrap_refreshes_static_hud_without_overwriting_runtime_state(self):
+        with workspace_tempdir("bootstrap-hud-sync-") as temporary:
+            workspace = Path(temporary)
+            assets = workspace / "output" / "mission-center-assets"
+            assets.mkdir(parents=True)
+            state = b'{"schemaVersion":"1.0","goal":"keep-runtime-state"}\n'
+            (assets / "visual-state.json").write_bytes(state)
+            (assets / "visual-summary.html").write_text("stale HUD", encoding="utf-8")
+
+            result = subprocess.run(
+                [sys.executable, str(BOOTSTRAP), str(workspace), "--language", "en"],
+                capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((assets / "visual-state.json").read_bytes(), state)
+            self.assertEqual(
+                (assets / "visual-summary.html").read_bytes(),
+                (ROOT / "skills" / "mission-center" / "assets" / "visual-hub" / "visual-summary.html").read_bytes(),
+            )
+            self.assertFalse((assets / "readme-hero.png").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
