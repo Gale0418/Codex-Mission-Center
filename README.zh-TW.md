@@ -1,156 +1,209 @@
-# Codex Mission Center 任務中心套件
+# Codex Mission Center 任務中心
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
-[![Codex Integration](https://img.shields.io/badge/Codex-Plugin%20%2B%20Skill-brightgreen.svg)]()
+[![CI](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml/badge.svg)](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml)
+[![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![版本](https://img.shields.io/badge/version-0.5.0-F59E0B.svg)](.codex-plugin/plugin.json)
+[![Python](https://img.shields.io/badge/python-3.11-3776AB.svg)](https://www.python.org/downloads/release/python-3110/)
 
-**Codex Mission Center** 是一套完全離線、以檔案為核心的 Codex 外掛套件與 Skill。它受 Linear 式專案追蹤與 Superpowers 執行紀律啟發，能將模糊的目標逐步收斂並轉化為本地化的任務工作區 (`MissionCenter/`)。
+**把模糊目標變成 Codex 可持續接手、可審查、以證據收尾的本地任務工作區。**
 
-Mission Center 僅服務目前這一個專案。它只建立或讀取目前 repo 的 `./MissionCenter/`，不掃描其他倉庫、不合併跨專案任務，也不提供全局監控。
+Mission Center 是一次只服務一個專案的離線、檔案型 Codex 外掛與 Skill。它協助釐清意圖、讓你核准滾動式計畫、保存因果式交接，並把驗證證據留在任務資料旁邊。它不是託管式專案管理服務，也不是 `pip` 或 `npm` 套件。
 
-![skills/mission-center/assets/visual-hub/readme-hero.png](skills/mission-center/assets/visual-hub/readme-hero.png)
+<p align="center">
+  <img src="skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.png" alt="Mission Center fleet crossing a bridge" width="100%">
+</p>
 
----
+<p align="center"><strong><a href="#快速開始">開始使用</a></strong> · <a href="README.md">English</a> · <a href="skills/mission-center/SKILL.md">閱讀 Skill 契約</a></p>
 
-## 💡 核心功能
+## 適合與不適合的情境
 
-- **單一聚焦訪談 (North Star Intake)**：每輪僅提出一個針對性問題，直到目標、邊界與第一里程碑完全清晰。
-- **跨領域創意智囊團 (Cross-Domain Council)**：在面對開放式發想或架構設計時，引導跨領域類比與創新解法。
-- **先前技術先行檢查 (Prior Art Gate)**：在動手實作前，先搜尋既有方案與開源授權，避免重複造輪子。
-- **滾動式任務劃分 (Linear-style Parity)**：以 `Project -> Cycle -> Epic -> Task -> Subtask` 劃分完整目標，僅精細拆解第一里程碑。
-- **純檔案工作區與多語系支援**：於專案根目錄建立 `MissionCenter/`（包含 `project.md`、`progress.md`、`tasks.md`、`decisions.md` 等），並完全支援繁體中文 (zh-TW) 輸出。
-- **離線動態視覺 HUD (Visual Summary)**：提供網頁視覺化面板 (`output/mission-center-assets/visual-summary.html`)，以小人動態看板反應任務進度與狀態。
-- **自適應最佳化 Gate**：依可量測性、參數型態、噪聲、風險與預算，自動選擇決策分析、DOE、Taguchi、Bayesian Optimization、TPE、Pareto 或梯度法；證據不足時回到研究，不假裝有數值最佳解。
-- **動態專家會議 Gate**：依決策複雜度選擇跳過、精簡會議或完整會議；只在真正需要時搜尋最新資料與召集多角度觀點，避免讓例行工作變成額度焚化爐。
-- **有預算上限的 Shadow 實驗**：只產出人工審查建議，不會自動採用候選方案。
-- **可選 Live Agent HUD**：透過本機 companion 顯示已連接 Codex app-server endpoint 的 Agent；與 Task 小人完全分層，Runtime 永遠不修改 Task 狀態。
-- **低額度熱區記憶**：以零模型呼叫的每日紀錄、人工護欄、`working-set.md` 與經驗證的 `critical-lessons.md`，避免每次都重讀整座任務中心。
+適合需要明確目標、受控決策、可恢復交接或可重複完成證據的工作：
 
----
+- 需要跨日、跨 thread 或 context reset 後繼續的工作；
+- 分成多個已核准 Agent 或多階段執行的專案；
+- 需要防止 stale、矛盾、損壞或虛假 `Done` 狀態的高風險變更；
+- 希望規劃資料保持可讀、可 diff、可攜帶的本地專案。
 
-## 🏗️ 專案與工作區目錄結構
+短而單一連續的任務，裸 Codex 通常更簡單也更省；Mission Center 會增加工作區與流程，只有在連續性值得這份成本時才使用。
+
+## 核心工作流
+
+```mermaid
+flowchart LR
+    A[釐清一個目標] --> B[提出計畫與邊界]
+    B --> C{使用者核准？}
+    C -- 否 --> B
+    C -- 是 --> D[發布 tasks.md]
+    D --> E[執行最小切片]
+    E --> F[記錄證據]
+    F --> G[驗證後才 Done]
+    G --> H[同步／交接／恢復]
+    H --> E
+```
+
+## 真實來源與邊界
+
+Mission Center 故意保持狹窄：
+
+- **只限單一專案：** `MissionCenter/tasks.md` 是唯一的任務生命週期真實來源。`brief.md` 與 `working-set.md` 是可重建視圖；若存在，`focus.md` 是已棄用的相容視圖。
+- **Runtime 與任務分離：** 可選的 Runtime／HUD 只觀察明確啟動或連接的 endpoint，絕不修改 `tasks.md`、任務順序、狀態或生命週期真實來源。
+- **沒有全域服務：** Mission Center is per-project only. Use it inside the current repo/workspace. It creates or reads `./MissionCenter/`. It does not monitor all repositories. It does not merge tasks across projects.
+- **核准是真正的閘門：** 外部研究、真實 Agent 派遣、LLM 分類與額外預算都是 opt-in。本地 fixture 與合成評估不是生產效能測量。
+- **預設離線：** 核心使用 Python 標準函式庫。只有可選 WebSocket Runtime 需要 `requirements-runtime.txt`；CI／release 安裝使用有 hash 的 `requirements-runtime.lock`。
+
+## 快速開始
+
+先依[正式安裝與本機發布](#正式安裝與本機發布)使用支援的 wrapper 從此 source checkout 安裝 Mission Center，再用 Codex 開啟任意目標 repository／workspace，invoke 已安裝的 Skill：
 
 ```text
-Codex-Mission-Center/
-├── .codex-plugin/           # Codex 外掛定義檔
-├── SKILL.md                 # 核心技能規範
-├── README.md                # 英文說明文件
-├── README.zh-TW.md          # 繁體中文說明文件
-├── assets/                  # 視覺 HUD 基礎圖資
-├── docs/                    # 設計規範與導向文件
-├── scripts/                 # 自動化腳本 (bootstrap, sync, normalize, install)
-├── skills/
-│   └── mission-center/       # 外掛封裝 Skill 檔
-│       ├── SKILL.md
-│       ├── agents/
-│       ├── references/
-│       ├── scripts/
-│       └── assets/
-└── tests/                   # 自動化測試套件
+使用 $mission-center 釐清這個目標，先進行訪談，等我核准計畫後再建立 MissionCenter 工作區。
 ```
 
-執行後建立的本地工作區結構：
-
-```text
-MissionCenter/
-├── brief.md                 # 可重建的短摘要熱區
-├── working-set.md           # 有界、可重建的當前執行工作集
-├── critical-lessons.md      # 經驗證的重大教訓熱區
-├── focus.md                 # 已棄用的遷移期相容視圖（僅列未完成 P0）
-├── guardrails.md            # 人工核准的重要踩坑護欄
-├── daily-log.md             # 一天一區塊的日誌
-├── project.md               # 專案 North Star 目標與範圍
-├── progress.md              # 階段進度條與里程碑
-├── tasks.md                 # 核心任務清單 (唯一狀態來源)
-├── decisions.md             # 架構決策紀錄 (ADR)
-├── smoke-tests.md           # 煙霧測試與驗證清單
-├── notes.md                 # 研究筆記與討論紀錄
-├── snapshot.md              # 可恢復的工作快照
-├── closeout.md              # 週期收尾與回顧
-└── visual-hub.md            # 本專案 HUD 入口
-```
-
----
-
-## 🚀 快速開始與安裝
-
-### 選項 1：PowerShell 一鍵安裝 (Windows / macOS / Linux)
-
-```powershell
-pwsh -ExecutionPolicy Bypass -File ./scripts/install.ps1
-```
-
-### 選項 2：Python 跨平台安裝
+以下命令是此 source checkout 自己的 dogfood／維護流程，不是安裝前可以直接複製到任意 repository 的通用命令：
 
 ```bash
-python3 scripts/install.py
-```
-
-### 呼叫方式
-
-在 Codex 中直接輸入：
-
-```text
-使用 $mission-center 規劃這個專案目標，先進行訪談，然後建立 MissionCenter 工作區。
-```
-
-最短的單專案流程：
-
-```bash
+# 在此 repository 執行（source checkout／dogfood 維護）
 python skills/mission-center/scripts/bootstrap_mission_center.py . --language zh-TW
 python skills/mission-center/scripts/sync_mission_center.py .
 python skills/mission-center/scripts/doctor_mission_center.py .
 ```
 
-同步預設採安全遷移模式：既有、未標記的 `project.md` 與 `progress.md` 不會被覆寫，只更新 HUD 與 `brief.md`／`focus.md`。只有明確希望任務中心接管這兩份摘要時才使用 `--rewrite-summaries`。若舊工作區在證據政策建立前已有 Done 任務，可用逐項 `MissionCenter/legacy-done-audit.json` 記錄；doctor 仍會顯示未驗證警告，不會把它冒充成通過的 smoke test。
+安裝後，對應腳本位於已安裝 Skill（例如 `$CODEX_HOME/skills/mission-center/scripts/`），並且要把目標 repository 路徑傳給它；一般使用路徑是透過 Codex invoke `$mission-center`。
 
-恢復任務時先檢查短摘要，或用純規則記一筆今日事件：
+英文工作區可將語言改成 `--language en`。同步預設採安全遷移模式；只有你明確希望 Mission Center 重新生成既有 `project.md` 與 `progress.md` 摘要時，才使用 `--rewrite-summaries`。`doctor` 對沒有 passing evidence 的 Done 任務會報錯；只有逐項列在 `MissionCenter/legacy-done-audit.json` 的項目才會降為可見 warning，而且不算通過 smoke test。
 
-```bash
-python skills/mission-center/scripts/mission_maintenance.py . status
-python skills/mission-center/scripts/mission_maintenance.py . daily --message "完成 parser 驗證"
-python skills/mission-center/scripts/mission_maintenance.py . sync
+## 正式安裝與本機發布
+
+本 repository 是唯一的 authoring source。支援的安裝 wrapper 會發布 Skill 與本機 marketplace plugin；它們不會從 PyPI 或 npm 安裝套件。
+
+Windows（PowerShell）：
+
+```powershell
+pwsh -ExecutionPolicy Bypass -File ./scripts/install-windows.ps1
 ```
 
-`tasks.md` 仍是唯一 Task lifecycle 真實來源；`brief.md` 與 `working-set.md` 是有內容指紋的可重建快取。`focus.md` 僅為遷移期相容的衍生檢視，絕不可成為第二個真實來源。主動重大教訓上限為 6 KiB，詳細證據放在 `incidents/`。`guardrails.md` 的新增、升格、停用一律需要人工明確核准。
-
-最佳化與 Runtime CLI：
+macOS／Linux：
 
 ```bash
-python skills/mission-center/scripts/mission_optimizer.py profile --input project-profile.json
-python skills/mission-center/scripts/mission_optimizer.py route --profile project-profile.json
-python skills/mission-center/scripts/mission_optimizer.py shadow --manifest experiment.json --observations observations.json --workspace .
-python skills/mission-center/scripts/mission_runtime.py --workspace . replay events.jsonl
-python skills/mission-center/scripts/mission_runtime.py --workspace . connect --stdio
+bash ./scripts/install-unix.sh
+```
+
+只預覽或驗證衍生目標、不寫檔：
+
+```bash
+python scripts/publish_local.py --repo . \
+  --personal-skill ~/.codex/skills/mission-center \
+  --marketplace-plugin ~/.codex/local-marketplaces/mission-center/plugins/mission-center \
+  --dry-run
+
+python scripts/publish_local.py --repo . \
+  --personal-skill ~/.codex/skills/mission-center \
+  --marketplace-plugin ~/.codex/local-marketplaces/mission-center/plugins/mission-center \
+  --verify
+```
+
+Windows 可改用等價的絕對路徑，或使用 `%CODEX_HOME%`／`%USERPROFILE%\.codex` 下的 wrapper 預設值。Windows wrapper 在 `--write` 時會加入 `--register`；註冊需要可解析的 Codex CLI。若只要發布檔案、沒有可解析的 CLI，可直接執行 `publish_local.py --write` 且不加 `--register`：
+
+```powershell
+python .\scripts\publish_local.py --repo . `
+  --personal-skill "$env:USERPROFILE\.codex\skills\mission-center" `
+  --marketplace-plugin "$env:USERPROFILE\.codex\local-marketplaces\mission-center\plugins\mission-center" `
+  --write
+```
+
+## 工作區架構
+
+canonical 檔案契約位於 [`workspace_contract.py`](skills/mission-center/scripts/workspace_contract.py)。產生的工作區包含以下必要檔案：
+
+```text
+MissionCenter/
+├── brief.md
+├── working-set.md
+├── critical-lessons.md
+├── guardrails.md
+├── daily-log.md
+├── project.md
+├── progress.md
+├── tasks.md              # 唯一生命週期真實來源
+├── decisions.md
+├── smoke-tests.md
+├── notes.md
+├── snapshot.md
+├── closeout.md
+└── visual-hub.md
+```
+
+`brief.md` 與 `working-set.md` 是有內容指紋的 materialized view，可以重建。`critical-lessons.md` 的 Active Lessons 上限為 6 KiB，詳細事故證據放在 incidents。護欄變更需要人工明確核准。本 repository 自己的 dogfood 工作區也可被追蹤，並由 CI 檢查。
+
+## 可選能力
+
+> **路徑提醒：** 本節命令均以 source checkout 為例。安裝後，請改用 `$CODEX_HOME/skills/mission-center/` 下的腳本（Windows：`%CODEX_HOME%` 或 `%USERPROFILE%\.codex`），並以 `--workspace <target-repo>` 指定要觀察或分析的 repository。`requirements-runtime.txt` 位於 source checkout 根目錄；啟用 WebSocket Runtime 前，請從該 checkout（或等價的絕對路徑）安裝它。
+
+### HUD 與 Runtime
+
+靜態 HUD 由任務狀態產生。要看 live Runtime 資料，建議先啟動 loopback companion，再開啟它印出的 loopback URL：
+
+```bash
 python skills/mission-center/scripts/mission_runtime.py --workspace . serve --port 8765
 ```
 
-核心功能仍是零必要第三方依賴；stdio 可直接啟動目前 Codex app-server，只有連接 WebSocket live runtime 時才需執行 `python -m pip install -r requirements-runtime.txt`。HUD 平時只顯示安靜的注意力膠囊，展開後才看 Live Agents；缺少 Runtime 或可選依賴時會自動退回原本的靜態 Task 畫面。所有 Live 監看都只涵蓋明確連接的 endpoint，不宣稱全域監控 Codex Desktop。
+直接用 `file://` 開啟 HTML 只適合作為靜態 fallback；瀏覽器的 `fetch`／CORS 規則可能讓 live 資料變成 unavailable。
 
-Windows 的 Microsoft Store／WindowsApps 封裝版 Codex 可能拒絕被 Python 直接建立子程序；此時請用 `--codex-executable` 指向獨立 CLI。Mission Center 不會偷偷退回 shell wrapper。
+Runtime 可以重播隱私安全的 JSONL fixture、把明確連接的 Agent 綁到任務，或連接明確啟動的 stdio／WebSocket endpoint。它只保存有界 metadata，不保存 prompt、reasoning、完整命令、tool arguments、環境值或 secrets：
 
-被動的 Runtime 監看只整理本機事件與 JSON，**不會呼叫模型，也不會額外消耗模型額度**。已連接 Agent 本身執行任務時仍依原本方式計費；只有明確啟用 LLM 分類或 Agent 驅動的實驗 trial 才消耗模型 token，且必須受 manifest 預算限制。
-
----
-
-## 🧪 執行自動化測試
-
-要驗證任務種子生成、狀態規格化與 HUD 同步邏輯：
-
-### PowerShell Pester 測試
-
-```powershell
-pwsh -Command "Invoke-Pester -Path ./tests"
+```bash
+python skills/mission-center/scripts/mission_runtime.py --workspace . replay events.jsonl
+python skills/mission-center/scripts/mission_runtime.py --workspace . link --agent agent-id --task MC-009
+python skills/mission-center/scripts/mission_runtime.py --workspace . connect --stdio
+python -m pip install -r requirements-runtime.txt
+python skills/mission-center/scripts/mission_runtime.py --workspace . connect --url ws://127.0.0.1:4500
 ```
 
-### Python unittest 測試套件
+被動觀察不會呼叫模型；已連接 Agent 自己執行任務時仍使用原本額度。只有明確啟用的 LLM 分類或 Agent 驅動 trial 會消耗模型 token，且必須服從 manifest 預算。Runtime 或 `websockets` 不可用時，靜態 HUD 仍可使用。
+
+### 自適應最佳化與受控評估
+
+最佳化是一條路由，不承諾數值最佳解。它需要可量測訊號、硬限制、預算與停止規則；否則 Mission Center 會回到研究或決策。Shadow 評估只分析唯讀 fixture，不會自動採用勝出方案：
+
+```bash
+python skills/mission-center/scripts/mission_optimizer.py profile \
+  --input project-profile.json --output output/mission-center-optimization/profile.json
+python skills/mission-center/scripts/mission_optimizer.py route \
+  --profile output/mission-center-optimization/profile.json
+python skills/mission-center/scripts/mission_optimizer.py shadow \
+  --manifest experiment.json --observations observations.json --workspace .
+```
+
+其他受控路由包括 Pulse／Handoff continuity、Steelman Evolution、Research Portfolio／Saturation，以及隱私安全的 Shift-Loss self-evaluation。這些 artifact 是供審查的證據，不會自動改任務，也不是現實世界 benchmark 聲稱。
+
+## 實測效益：誠實版本
+
+Mission Center 的價值是連續性與證據品質，不是虛構的 token 節省統計：
+
+- 短而單一連續的任務，裸 Codex 通常比較省。
+- 跨日、跨 thread、跨 Agent 與多階段驗證，才是它的主場。
+- 目前 repository 沒有 paired same-model token telemetry，因此不能支持精確的 token 節省聲稱。
+- 真正的實務價值在較長或跨班工作中的 continuity：causal handoff、revision-bound evidence，以及明確的 stale／contradictory／corrupt／False Done gates。
+
+## 驗證
+
+CI 在 Ubuntu 與 Windows、Python 3.11 上執行單元測試與單一本地工作區檢查。本機可執行：
 
 ```bash
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
----
+Release checklist 另涵蓋 bootstrap、doctor、publish dry-run、publish verify 與單一專案邊界：[`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md)。
 
-## 📄 授權條款
+## 文件、安全與授權
 
-本專案採用 [MIT License](LICENSE) 條款開源發布。
+- 契約與路由：[`skills/mission-center/SKILL.md`](skills/mission-center/SKILL.md)
+- 設計說明：[`DESIGN.md`](DESIGN.md)
+- Supply-chain policy：[`docs/supply-chain-policy.md`](docs/supply-chain-policy.md)
+- 隱私：[`PRIVACY.md`](PRIVACY.md)
+- Attribution 與 notices：[`NOTICE.md`](NOTICE.md)
+- Release 流程：[`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md)
+
+本專案獨立撰寫與維護，靈感來自 Linear 與 Superpowers 的工作流概念，但不包含其應用程式整合、商標、程式碼、文件、圖示或品牌。
+
+本專案依 [MIT License](LICENSE) 發布。
