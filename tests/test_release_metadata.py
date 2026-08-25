@@ -13,9 +13,9 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertTrue(url.endswith("/PRIVACY.md"))
         self.assertTrue((ROOT / "PRIVACY.md").is_file())
 
-    def test_plugin_version_is_owo_v04_release(self):
+    def test_plugin_version_is_v05_release(self):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "0.4.0")
+        self.assertEqual(manifest["version"].split("+", 1)[0], "0.5.0")
 
     def test_plugin_default_prompt_has_at_most_three_entries(self):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
