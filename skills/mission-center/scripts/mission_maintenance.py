@@ -9,6 +9,7 @@ import json
 import os
 import re
 import tempfile
+import threading
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -747,6 +748,16 @@ def _read_execution_ledger(workspace: Path) -> list[dict[str, Any]]:
     return records
 
 
+_PROCESS_INTERPROCESS_LOCKS: dict[str, threading.Lock] = {}
+_PROCESS_INTERPROCESS_LOCKS_GUARD = threading.Lock()
+
+
+def _process_interprocess_lock(path_identity: str) -> threading.Lock:
+    """Return the stable in-process mutex for one canonical lock path."""
+    with _PROCESS_INTERPROCESS_LOCKS_GUARD:
+        return _PROCESS_INTERPROCESS_LOCKS.setdefault(path_identity, threading.Lock())
+
+
 @contextmanager
 def _path_keyed_interprocess_lock(path: Path):
     """Serialize one path's read-modify-write section across Windows/Linux processes."""
@@ -755,29 +766,34 @@ def _path_keyed_interprocess_lock(path: Path):
     lock_root = Path(tempfile.gettempdir()) / "mission-center-locks"
     lock_root.mkdir(parents=True, exist_ok=True)
     lock_path = lock_root / f"{lock_key}.lock"
-    with lock_path.open("a+b") as lock_file:
-        lock_file.seek(0, os.SEEK_END)
-        if lock_file.tell() == 0:
-            lock_file.write(b"\0")
-            lock_file.flush()
-        lock_file.seek(0)
-        if os.name == "nt":
-            import msvcrt
+    # ``msvcrt.locking`` is process-wide, so concurrent threads in this
+    # process can collide while creating/initialising the one-byte lock file.
+    # Keep one stable mutex per canonical path; unlike a temporary entry, a
+    # stable registry cannot be replaced while another thread is waiting.
+    with _process_interprocess_lock(path_identity):
+        with lock_path.open("a+b") as lock_file:
+            lock_file.seek(0, os.SEEK_END)
+            if lock_file.tell() == 0:
+                lock_file.write(b"\0")
+                lock_file.flush()
+            lock_file.seek(0)
+            if os.name == "nt":
+                import msvcrt
 
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
-            try:
-                yield
-            finally:
-                lock_file.seek(0)
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+                try:
+                    yield
+                finally:
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
 
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 @contextmanager

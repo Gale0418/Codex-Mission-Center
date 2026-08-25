@@ -1,3 +1,5 @@
+import json
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -9,7 +11,13 @@ from tests import workspace_tempdir
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from publish_local import main, validate_target
+from publish_local import (
+    FileTransaction,
+    main,
+    normalized_version,
+    register_marketplace_and_plugin,
+    validate_target,
+)
 
 
 def write(path: Path, content: str) -> None:
@@ -19,7 +27,7 @@ def write(path: Path, content: str) -> None:
 
 def make_fake_repo(root: Path) -> Path:
     repo = root / "repo"
-    write(repo / ".codex-plugin" / "plugin.json", '{"name":"mission-center"}\n')
+    write(repo / ".codex-plugin" / "plugin.json", '{"name":"mission-center","version":"0.1.0"}\n')
     write(repo / "assets" / "icon.svg", "<svg/>\n")
     write(repo / "scripts" / "install.txt", "installer\n")
     write(repo / "README.md", "readme\n")
@@ -40,6 +48,11 @@ def make_fake_repo(root: Path) -> Path:
 
 
 class PublishLocalTests(unittest.TestCase):
+    def test_semver_normalization_discards_arbitrary_build_metadata(self):
+        self.assertEqual(normalized_version("1.2.3-beta.2+vendor.build"), "1.2.3-beta.2")
+        with self.assertRaises(ValueError):
+            normalized_version("1.2")
+
     def test_dry_run_does_not_create_targets(self):
         with workspace_tempdir("publish-local-") as temporary:
             root = Path(temporary)
@@ -123,7 +136,7 @@ class PublishLocalTests(unittest.TestCase):
             repo = make_fake_repo(root)
             write(
                 repo / ".codex-plugin" / "plugin.json",
-                '{"name":"mission-center","version":"0.1.0","interface":{"displayName":"Mission Center","category":"Productivity"}}\n',
+                '{"name":"mission-center","version":"0.1.0+codex.previous","interface":{"displayName":"Mission Center","category":"Productivity"}}\n',
             )
             personal = root / "personal" / "skills" / "mission-center"
             marketplace = root / "marketplace" / "plugins" / "mission-center"
@@ -151,7 +164,10 @@ class PublishLocalTests(unittest.TestCase):
             manifest = (marketplace / ".codex-plugin" / "plugin.json").read_text(
                 encoding="utf-8"
             )
-            self.assertIn('"version": "0.1.0+codex.', manifest)
+            stamped_version = json.loads(manifest)["version"]
+            self.assertEqual(stamped_version.count("+"), 1)
+            self.assertTrue(stamped_version.startswith("0.1.0+codex."))
+            self.assertNotIn("codex.previous", stamped_version)
             marketplace_manifest = (
                 marketplace.parent.parent / ".agents" / "plugins" / "marketplace.json"
             ).read_text(encoding="utf-8")
@@ -294,6 +310,101 @@ class PublishLocalTests(unittest.TestCase):
                             "--register",
                         ]
                     )
+
+    def test_register_preflight_happens_before_existing_targets_change(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            root = Path(temporary)
+            repo = make_fake_repo(root)
+            personal = root / "personal" / "skills" / "mission-center"
+            marketplace = root / "marketplace" / "plugins" / "mission-center"
+            write(personal / "old.txt", "keep\n")
+            write(marketplace / "old.txt", "keep\n")
+            with patch("publish_local.get_codex_executable", return_value=None):
+                with self.assertRaisesRegex(RuntimeError, "Codex executable not found"):
+                    main([
+                        "--repo", str(repo), "--personal-skill", str(personal),
+                        "--marketplace-plugin", str(marketplace), "--write", "--register",
+                    ])
+            self.assertEqual((personal / "old.txt").read_text(encoding="utf-8"), "keep\n")
+            self.assertEqual((marketplace / "old.txt").read_text(encoding="utf-8"), "keep\n")
+
+    def test_registration_failure_rolls_back_both_published_targets(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            root = Path(temporary)
+            repo = make_fake_repo(root)
+            personal = root / "personal" / "skills" / "mission-center"
+            marketplace = root / "marketplace" / "plugins" / "mission-center"
+            write(personal / "old.txt", "personal-old\n")
+            write(marketplace / "old.txt", "marketplace-old\n")
+            fake_codex = root / "fake-codex"
+            fake_codex.write_text("fake\n", encoding="utf-8")
+            failure = subprocess.CalledProcessError(7, [str(fake_codex), "plugin", "marketplace", "add"])
+            outcomes = [
+                subprocess.CompletedProcess([], 0),
+                subprocess.CompletedProcess([], 0),
+                failure,
+                *([subprocess.CompletedProcess([], 0)] * 4),
+            ]
+            with patch("publish_local.subprocess.run", side_effect=outcomes) as run:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    main([
+                        "--repo", str(repo), "--personal-skill", str(personal),
+                        "--marketplace-plugin", str(marketplace), "--write", "--register",
+                        "--codex-cli", str(fake_codex),
+                    ])
+            self.assertEqual((personal / "old.txt").read_text(encoding="utf-8"), "personal-old\n")
+            self.assertEqual((marketplace / "old.txt").read_text(encoding="utf-8"), "marketplace-old\n")
+            self.assertEqual(len(run.call_args_list), 7)
+            self.assertFalse(any("staging-" in item.name or "backup-" in item.name for item in personal.parent.iterdir()))
+
+    def test_file_transaction_rollback_is_idempotent_after_commit_failure(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            root = Path(temporary)
+            first_target = root / "first"
+            first_target.mkdir()
+            write(first_target / "state.txt", "original\n")
+            first_staging = root / ".first.staging"
+            first_staging.mkdir()
+            write(first_staging / "state.txt", "replacement\n")
+            second_target = root / "second"
+            second_staging = root / ".second.staging"
+            first_backup = root / ".first.backup"
+            second_backup = root / ".second.backup"
+            transaction = FileTransaction(
+                [
+                    (first_target, first_staging, first_backup),
+                    (second_target, second_staging, second_backup),
+                ]
+            )
+
+            with self.assertRaises(FileNotFoundError):
+                transaction.commit()
+            # commit() already rolls back its partial commit; the caller's
+            # defensive rollback must not remove the restored target.
+            transaction.rollback()
+            self.assertEqual(
+                (first_target / "state.txt").read_text(encoding="utf-8"),
+                "original\n",
+            )
+
+    def test_registration_oserror_does_not_recreate_unknown_registrations(self):
+        fake_codex = Path("codex")
+        with patch("publish_local.subprocess.run", side_effect=OSError("unavailable")) as run:
+            with self.assertRaisesRegex(OSError, "unavailable"):
+                register_marketplace_and_plugin(
+                    fake_codex,
+                    Path("marketplace-root"),
+                    {"name": "mission-center"},
+                )
+        commands = [call.args[0][1:] for call in run.call_args_list]
+        self.assertEqual(
+            commands,
+            [
+                ["plugin", "remove", "mission-center@mission-center-local"],
+                ["plugin", "remove", "mission-center@mission-center-local"],
+                ["plugin", "marketplace", "remove", "mission-center-local"],
+            ],
+        )
 
 
 if __name__ == "__main__":

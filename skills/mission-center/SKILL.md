@@ -24,6 +24,8 @@ Mission Center 僅處理目前 repo 的 `./MissionCenter/`，不掃描、註冊�
 
 HUD helper 一對一 task，來源永遠是 `tasks.md`，依 [視覺 HUD](references/visual-hub.md) 同步；Runtime 僅可選遙測，依 [Runtime 協定](references/runtime-agent-protocol.md) 顯示在獨立 Live Agents 面板，不改任務狀態、排序或唯一真實來源。
 
+選用後先啟動 HUD：checkout 用 `python skills/mission-center/scripts/hud_autolaunch.py show --workspace .`；安裝版以本 `SKILL.md` 的父目錄解析 `scripts/hud_autolaunch.py` 絕對路徑並執行。失敗不阻塞，bootstrap/sync 後再試。
+
 ## 驗證、Done 與收尾
 
 每項任務須有低成本可重複驗證，依 [煙霧測試模式](references/smoke-test-patterns.md) 與 [目錄](references/smoke-test-catalog.md) 記錄指令／動作、預期、觀察、結果、日期、task ID；無通過證據不得 Done。收尾依 [快照格式](references/snapshot-format.md) 產生 checkpoint、依 [收尾格式](references/closeout-format.md) 保存結果／未完成工作，並遵守 [專案生命週期](references/project-lifecycle.md)。

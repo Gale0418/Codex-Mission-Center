@@ -16,7 +16,7 @@ SCRIPTS = ROOT / "skills" / "mission-center" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 import mission_runtime
-from mission_runtime import HudHandler, RecoverableTransportError, StdioTransport, codex_stdio_command, connect_live, decode_json_frame, is_loopback_host_header, link_task, loopback_server_type, packaged_runtime_requirements, replay, task_ids_from_workspace, validate_websockets_version
+from mission_runtime import HudHandler, RecoverableTransportError, StdioTransport, _safe_regular_file, codex_stdio_command, connect_live, decode_json_frame, is_loopback_host_header, link_task, loopback_server_type, packaged_runtime_requirements, replay, task_ids_from_workspace, validate_websockets_version
 from runtime_protocol import MAX_AGENT_STATE_COUNT, MAX_RUNTIME_FIELD_LENGTH, MAX_RUNTIME_LINE_BYTES, age_runtime_state, empty_runtime_state, load_last_valid, normalize_codex_message, reduce_event, sanitize, touch_runtime_state, validate_initialize_response, write_runtime_state
 
 
@@ -128,7 +128,7 @@ class RuntimeProtocolTests(unittest.TestCase):
         later = datetime(2026, 8, 9, 0, 3, 1, tzinfo=timezone.utc)
         aged = age_runtime_state(state, later)
         self.assertEqual(aged["agents"][0]["state"], "stale")
-        self.assertEqual(aged["sourceStatus"], "connected")
+        self.assertEqual(aged["sourceStatus"], "stale")
         self.assertFalse(aged["agents"][0]["requiresAttention"])
         self.assertEqual(aged["attention"], [])
         disconnected = age_runtime_state(state, later, socket_closed=True)
@@ -374,6 +374,20 @@ class RuntimeProtocolTests(unittest.TestCase):
         self.assertFalse(is_loopback_host_header("evil.example:8765"))
         self.assertEqual(loopback_server_type("127.0.0.1").address_family, socket.AF_INET)
         self.assertEqual(loopback_server_type("::1").address_family, socket.AF_INET6)
+
+    def test_safe_regular_file_rejects_symlinked_intermediate_parent(self):
+        with workspace_tempdir() as temp:
+            root = Path(temp) / "output"
+            root.mkdir()
+            outside = Path(temp) / "outside"
+            outside.mkdir()
+            (outside / "runtime-state.json").write_text("{}\n", encoding="utf-8")
+            link = root / "mission-center-runtime"
+            try:
+                link.symlink_to(outside, target_is_directory=True)
+            except OSError:
+                self.skipTest("directory symlinks are unavailable")
+            self.assertFalse(_safe_regular_file(root, link / "runtime-state.json"))
 
     def test_hud_root_redirects_to_asset_directory_for_relative_images(self):
         handler = object.__new__(HudHandler)

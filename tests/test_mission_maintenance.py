@@ -201,7 +201,7 @@ class MissionMaintenanceTests(unittest.TestCase):
                     "causalParent": None,
                 })
 
-            with ThreadPoolExecutor(max_workers=8) as executor:
+            with ThreadPoolExecutor(max_workers=16) as executor:
                 results = list(executor.map(append, range(16)))
             self.assertTrue(all(result["appended"] for result in results))
             ledger = workspace / "MissionCenter/execution-ledger.jsonl"

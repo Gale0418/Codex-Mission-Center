@@ -119,7 +119,7 @@ components:
 
 ### Secondary
 
-- **Intervention Amber** (`{colors.amber}`)：Blocked、attention、stale 警示與 Runtime `requiresAttention`。只有確實需要人介入時才使用。
+- **Intervention Amber** (`{colors.amber}`)：attention、stale 警示與 Runtime `requiresAttention` 的次要 pulse/glow。只有 Blocked task 的主色是 HOLD red；其他 attention task 保留自己的 lifecycle family，不得被琥珀覆蓋。
 
 ### Neutral
 
@@ -134,6 +134,8 @@ components:
 - **Titanium Lines** (`{colors.line}` / `{colors.line-strong}`)：分隔線與 panel 邊框；維持 1px。
 
 **The Amber Coordinate Rule.** 琥珀只回答「哪裡需要人介入」；不得拿來當一般品牌色、裝飾或完成狀態。其他彩譜顏色是視覺能量，不是資料狀態。
+
+**The Task Status Family Rule.** Task card 主色依 lifecycle 固定落在 bounded family：`BRIEFING / Intake` 黃、`EXECUTION / In Progress` 綠、`HOLD / Blocked` 紅、`VERIFICATION / Review` 藍、`ARCHIVE / Done` 低彩度銀灰。每張卡以 task ID 做 deterministic 的細微 hue/saturation/lightness 變體，但不得跨出 family；卡片內可疊加約 8% alpha、由一角漸淡的同色 tint，保留深色底與文字對比；attention 只增加 amber pulse/glow，不改寫 lifecycle family；卡片永遠同時顯示 task ID 與文字狀態。
 
 ## Typography
 
@@ -187,7 +189,7 @@ Runtime 展開時是右側 fixed dock（桌面寬度 `min(420px, 30vw)`、距右
 
 ## Shapes
 
-所有容器使用小而一致的矩形圓角：panel 約 5px、task/territory 約 4–5px、控制約 3px；禁止 oversized pill。panel、territory、task、evidence 與 drawer 都以 1px titanium line 分界；shell 邊框改由 conic-gradient spectrum 流光描繪，focal/attention 邊框仍可提升對比，Blocked task 與 attention Runtime 使用 amber 邊框。拓撲 edge 使用 1.4px SVG stroke；逆向同心環與軌道光跡是不可互動的幾何裝飾。
+所有容器使用小而一致的矩形圓角：panel 約 5px、task/territory 約 4–5px、控制約 3px；禁止 oversized pill。panel、territory、task、evidence 與 drawer 都以 1px titanium line 分界；shell 邊框改由 conic-gradient spectrum 流光描繪，focal/attention 邊框仍可提升對比，Blocked task 維持 red 邊框並以 amber pulse/glow 作次要提示，attention Runtime 仍使用 amber 邊框。拓撲 edge 使用 1.4px SVG stroke；逆向同心環與軌道光跡是不可互動的幾何裝飾。
 
 ## Components
 
@@ -195,7 +197,7 @@ Runtime 展開時是右側 fixed dock（桌面寬度 `min(420px, 30vw)`、距右
 
 ### Rainbow Singularity effects
 
-- **Cosmic field:** 現行 `.rainbow-background` hook 實際載入 `mission-fleet-bridge-background.png` 作為 primary background，opacity `1`、`saturate(1.24)`、`contrast(1.08)`、`brightness(.9)`，並隨 pointer 以 far-layer `translate3d(... * -3px)`、scale `1.04` 產生 700ms parallax；starfield depth support 另以 `-6px` 移動。`cosmic-spectrum-rainbow.jpg` 僅是色彩/風格 reference，不是目前主背景。
+- **Cosmic field:** 現行 `.rainbow-background` hook 實際載入 `mission-fleet-bridge-background.webp` 作為 primary background，opacity `1`、`saturate(1.24)`、`contrast(1.08)`、`brightness(.9)`，並隨 pointer 以 far-layer `translate3d(... * -3px)`、scale `1.04` 產生 700ms parallax；starfield depth support 另以 `-6px` 移動。`cosmic-spectrum-rainbow.jpg` 僅是色彩/風格 reference，不是目前主背景。
 - **Counter-rotating rings:** 三層以中心約 `50% / 46%` 的同心 ring 疊加；primary `min(74vw, 980px)` / 30s 逆向旋轉，secondary `min(56vw, 700px)` / 22s、`scaleY(.7)`，tertiary `min(38vw, 500px)` / 16s、`scaleY(.48)`。
 - **Orbital trails and pulse:** primary orbital trail 約 12s、secondary 約 9s 反向運動，分別使用 cyan/pink、amber/violet 邊緣；中心 energy pulse 約 4.8s。不再有 radial scan 或背景掃描亮帶。
 - **Masked edge energy flow:** HUD shell 使用 1px masked conic edge，色序為 cyan → white → magenta → amber，透過 typed `--edge-angle` 約 9s 流動；mission plot/evidence rail 使用同樣 1px masked edge、typed `--panel-edge-angle` 約 12s 流動。mask 把能量限制在邊框，內容維持 z-index 1，絕不穿過內容；這些元素皆 `pointer-events: none`。
@@ -207,7 +209,7 @@ Runtime 展開時是右側 fixed dock（桌面寬度 `min(420px, 30vw)`、距右
 - **Shape:** 5px plot panel；內部 canvas 16px padding，territory 12px padding、4–5px 圓角。
 - **Structure:** 依序呈現 `BRIEFING`（Intake）、`EXECUTION`（In Progress）、`HOLD`（Blocked）、`VERIFICATION`（Review）、`ARCHIVE`（Done）；主標下保留原 lifecycle 副標與每區數量。
 - **Doctrine:** phase header 的輔助文案只說明 task order、file snapshot、read-only、command link 或 human intervention；它不是 sensor feed，也不補造座標、事件或任務真相。
-- **Task helper:** semantic `li`，顯示 ID、title、textual state；最多 15 個，map placement 只是展示。
+- **Task helper:** semantic `li`，顯示 ID、title、textual state；最多 15 個，map placement 只是展示。主色使用依 lifecycle bounded 的 status family，只有 Blocked 維持 red，amber 只作 attention pulse/glow。
 - **Task title / nameplate:** title 預設最多兩行 clamp；task helper 取得 keyboard focus 時顯示同一 task 的 nameplate（hover 也顯示），作為被截斷標題的補充資訊。
 - **Bounded marquee:** 只有實際 DOM intrinsic width 超過可用寬度 2px 以上時，才由 JS 自動設定 `data-marquee="true"`，以 bounded ping-pong（`alternate`）在約 7–20s 間移動標題；不需 click 或 hover。未溢出時保持靜態；不得為了裝飾強迫所有標題跑馬。
 - **Active binding:** 只有資料中的 `agent.active === true` 才能加上 `data-active="true"`；Done、idle/Idle task 即使有 active 欄位也不套用 active treatment。不要從 status、位置或 Runtime 推測 active。
@@ -237,7 +239,7 @@ Runtime 展開時是右側 fixed dock（桌面寬度 `min(420px, 30vw)`、距右
 - **Layout:** `.telemetry-rail` 位於 plot heading 下方，桌面以約 `1.2fr / .8fr` 分成 Task Signal 與 Runtime Signal，最小高度約 42px、上下 7px、左右 18px；strip 使用 1px cyan border、3px radius、corner brackets 與 repeating linear grid。
 - **Broadcast orientation:** 頂部 broadcast 為 LTR（約 34s）；footer telemetry ticker 為 RTL（約 24s，`<=620px` 約 36s）；左右 vertical waterfalls 各自維持相反方向（約 30s）。它們是 `aria-hidden` 的節奏層，`<=760px` 隱藏 secondary flows。
 - **Task Signal:** `ACTIVE` IDs 只取 `state.agents` 中 `agent.active === true`（最多 15）；lifecycle count 只依五個 zone 計算；freshness/progress 直接取 task snapshot。
-- **Runtime Signal:** source、visible/total IDs、working、blocked、attention 只依 runtime snapshot；visible agent 上限 15，總數與隱藏數保持 truthful。Runtime polling 為可見約 2000ms、hidden 約 30000ms；Task polling 為可見約 10000ms、hidden 約 30000ms。
+- **Runtime Signal:** source、visible/total IDs、working、blocked、attention 只依 runtime snapshot；visible agent 上限 15，總數與隱藏數保持 truthful。Runtime polling 為可見且有 active agent 約 30 秒、一般靜置約 60 秒、hidden 約 120 秒；Task polling 為可見約 60 秒、hidden 約 120 秒。
 - **No phantom telemetry:** rail 不顯示 Runtime map 座標、猜測的依賴、mock 值或第二套狀態；視覺上的 bracket/grid 只是 decoration。
 
 ### Evidence rail
@@ -260,8 +262,8 @@ Runtime 展開時是右側 fixed dock（桌面寬度 `min(420px, 30vw)`、距右
 - **Reduced motion:** `prefers-reduced-motion: reduce` 時 transition/animation 壓至約 0.001ms，HUD shell 與 mission plot/evidence rail 的 edge flow 固定靜止，singularity-effects opacity 降到 `.38`；ticker 停止在靜態訊息、active card 僅保留靜態 aura/edge、operation scan 與 overflow title 停止，scroll behavior 回到 auto。
 - **Responsive simplification:** `760px` 以下改為單欄、隱藏 desktop 雙層 telemetry rail 與次要高密度資訊，保留 plot、task state、evidence 與可操作 Runtime；`620px` 以下再隱藏拓撲/Runtime map 並執行既有 singularity load-shed。不要把隱藏的 rail 內容改成虛構的 mobile summary。
 - **Mobile load-shed:** `620px` 以下 effects opacity 降到 `.44`，只保留 primary ring；secondary/tertiary ring、orbital trail 隱藏，geometry structure 降到 opacity `.28`，mid/near parallax 幅度縮至約 `+5/+3` 與 `-3/-2px`，Runtime map/topology 隱藏；ticker 改為滿寬、loop 36s，保留 task DOM 與 Runtime drawer。
-- **Hidden load-shed:** 頁面 hidden 時由 JS 設定 `is-paused`，暫停所有 CSS animation、停止 pointer parallax 更新，並把 task/Runtime polling 降至約 30 秒；重新可見後恢復。
-- **Polling:** 可見 Runtime 約 2 秒、Task 約 10 秒；hidden 時兩者約 30 秒。LOCAL/UTC clock 僅在頁面可見時更新。這是資料新鮮度與效能行為，不是裝飾語意。
+- **Hidden load-shed:** 頁面 hidden 時由 JS 設定 `is-paused`，暫停所有 CSS animation、停止 pointer parallax 更新，並把 task/Runtime polling 降至約 120 秒；重新可見後立即 refresh 並恢復可見 cadence。
+- **Polling:** 可見且有 active Runtime 約 30 秒，無 active Runtime 約 60 秒；Task 約 60 秒；hidden 時兩者約 120 秒。WebSocket event 仍即時，LOCAL/UTC clock 僅在頁面可見時更新。這是資料新鮮度與效能行為，不是裝飾語意。
 
 ### Accessibility
 
@@ -274,12 +276,12 @@ Runtime 展開時是右側 fixed dock（桌面寬度 `min(420px, 30vw)`、距右
 ### Generated material provenance
 
 - Approved comp：`.impeccable/mocks/orbital-bridge-c.png`。它是方向參考，不是 runtime task truth；mock 裡的 ID、日期、數字、座標與依賴不可硬編碼。
-- Fleet bridge primary：`skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.png`，對應 `mission-fleet-bridge-background.png.json`；approved、`generated-background-plate`、generator `image_gen built-in`，generated `2026-08-24`。畫面構圖是多艘星艦向 upper-center 遠方目的地航行、行星位於 lower center，下方是 polished obsidian panoramic flagship window frame；無 UI、文字、logo、人像、水印、複製艦體或 product state。
-- Fleet provenance：JSON 記錄 SHA-256 `F49F5BBEE8377A48A5B7C777851BB9F99442DCEADA224C2EDAAA66751C744AE0`、usage `Mission Center Rainbow Singularity fleet-and-bridge background`，並標示 `containsProductState: false`。這是目前 primary background 的唯一素材真相。
+- Fleet bridge primary：`skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.webp`，對應 `mission-fleet-bridge-background.webp.json`；approved、`generated-background-plate`、generator `image_gen built-in`，generated `2026-08-24`。畫面構圖是多艘星艦向 upper-center 遠方目的地航行、行星位於 lower center，下方是 polished obsidian panoramic flagship window frame；無 UI、文字、logo、人像、水印、複製艦體或 product state。
+- Fleet provenance：JSON 記錄 WebP SHA-256 `321FC5A4F79317CED834E0DD9096A39614A27928B4F7C50348D224A5D4CF3D61`、usage `Mission Center Rainbow Singularity fleet-and-bridge background`，並標示 `containsProductState: false`。這是目前 primary background 的唯一素材真相。
 - Rainbow reference：`skills/mission-center/assets/visual-hub/cosmic-spectrum-rainbow.jpg`，對應 `cosmic-spectrum-rainbow.jpg.json`；approved 的 reference-derived-background，來源為 Chat Observatory repository `Gale0418/Chat-Observatory` 的 `assets/themes/cosmic-spectrum-rainbow.jpg`、ref `agent/chat-observatory-rename`。它現在只提供色彩/風格方向，HTML 不把它當 primary background。
 - Rainbow provenance：JSON 記錄 source blob SHA `c37fbabf08c952d5e05b1ca502c7c6c28ea4c94a`、asset SHA-256 `783CCFD32E9417BE77CFE9770259DFF00741F5E9FEB725A6007FB42D36045106`，並明確標示 `containsProductState: false`。
-- Bridge plate：`skills/mission-center/assets/visual-hub/mission-bridge-background.png` 與 `mission-bridge-background.png.json`；仍是 approved 的裝飾 depth support，現行 opacity `.06`。
-- Starfield plate：`skills/mission-center/assets/visual-hub/mission-starfield.png` 與 `mission-starfield.png.json`；仍是 approved 的裝飾 depth support，現行 opacity `.1`。四種 raster 都不得承擔 task/runtime state；只有 fleet PNG 是目前主背景，Rainbow JPG 是色彩/風格參考。
+- Bridge plate：`skills/mission-center/assets/visual-hub/mission-bridge-background.webp` 與 `mission-bridge-background.webp.json`；仍是 approved 的裝飾 depth support，現行 opacity `.06`。
+- Starfield plate：`skills/mission-center/assets/visual-hub/mission-starfield.webp` 與 `mission-starfield.webp.json`；仍是 approved 的裝飾 depth support，現行 opacity `.1`。四種 raster 都不得承擔 task/runtime state；只有 fleet WebP 是目前主背景，Rainbow JPG 是色彩/風格參考。
 
 ## Do's and Don'ts
 
@@ -296,7 +298,7 @@ Runtime 展開時是右側 fixed dock（桌面寬度 `min(420px, 30vw)`、距右
 - **Do** 顯示 truthful LOCAL/UTC、Task/Runtime snapshot 與 polling；broadcast/doctrine 只標示 `FILE SNAPSHOT`、`READ ONLY`、`NO SENSOR FEED`。
 - **Do** 在桌面保留 top LTR broadcast、bottom RTL telemetry 與雙側 vertical waterfalls；`<=760px` 隱藏 secondary flows。
 - **Do** 只在標題真的溢出時啟動自動 bounded ping-pong marquee；reduced-motion 時保持靜止。
-- **Do** 將 fleet bridge PNG 視為 primary background：保留多艘遠航星艦、lower-center 行星與底部旗艦窗框的構圖意圖。
+- **Do** 將 `skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.webp` 視為 primary background：保留多艘遠航星艦、lower-center 行星與底部旗艦窗框的構圖意圖；其相鄰 `.webp.json` 是素材 provenance 的唯一 metadata 真相。
 - **Do** 保留 4–6px corners、compact controls、mono metadata 與 responsive regrouping。
 - **Do** 讓 Runtime 維持獨立、唯讀、預設收合，並保留 visible/total/hidden、stale/unavailable 的誠實揭露。
 - **Do** 維持 Chat Observatory Rainbow JPG、bridge/starfield 與相鄰 provenance JSON 的來源鏈；修改素材前先更新對應 metadata。

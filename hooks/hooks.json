@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$PLUGIN_ROOT/skills/mission-center/scripts/hud_autolaunch.py\" hook",
+            "commandWindows": "python \"%PLUGIN_ROOT%\\skills\\mission-center\\scripts\\hud_autolaunch.py\" hook",
+            "async": true,
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

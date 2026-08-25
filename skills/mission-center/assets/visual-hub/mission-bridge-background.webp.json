@@ -1,7 +1,18 @@
 {
+  "asset": "mission-bridge-background.webp",
   "role": "background-plate",
   "prompt": "Use case: stylized-concept\nAsset type: non-informational background plate for a Constellation Tactical Plot HUD, project raster asset\nPrimary request: a premium deep-space flagship bridge environment with a wide cinematic 16:10 composition, designed as a quiet atmospheric plate behind semantic interface overlays. No interface elements are drawn into the image.\nScene/backdrop: dark ink-blue flagship bridge interior seen from a calm forward-facing operator viewpoint; continuous low-reflection glass surfaces and restrained structural planes create spatial depth without readable instrumentation.\nSubject: the bridge environment itself, with an empty central and right-side dark field reserved for UI overlay; subtle horizon-like architectural geometry only.\nStyle/medium: refined high-end cinematic 3D environment concept render, tactile and believable, restrained and elegant, not a poster.\nComposition/framing: wide 16:10 frame, at least 1600px wide; central and right regions remain clean, dark, uncluttered negative space; softly suggested bridge architecture stays mostly toward the outer edges and lower periphery; no focal object in the overlay field.\nLighting/mood: very low-key controlled illumination, deep navy-black shadows, gentle volumetric space depth, faint dust motes and sparse star-dust only, soft indirect reflections, no glowing panels.\nColor palette: deep ink blue, midnight navy, graphite, muted blue-black, tiny neutral ceramic-white reflections, subtle cool titanium highlights.\nMaterials/textures: continuous low-reflection glass, anodized titanium edge trims, dark ceramic surfaces with weak white reflections, precise premium industrial finish, realistic micro-roughness.\nText (verbatim): \"\"\nConstraints: purely atmospheric background plate; preserve large dark usable overlay areas in the center and right; no readable information; no UI, no controls, no nodes, no topology lines, no logos, no symbols, no text, no watermark, no branded architecture.\nAvoid: neon cyberpunk, saturated cyan or magenta, bright sci-fi cockpit clichés, busy consoles, holograms, screens, buttons, mission maps, diagrams, poster composition, excessive stars, lens flares, overexposure, recognizable brand or trademark trade dress.",
   "approved": true,
   "dimensions": "1600x1000",
+  "sha256": "0325FC4ACA767C72E89924A51AA094FBFC1AB562DE12E0864E97734A90E7B3A5",
+  "sourceSha256": "BFC993951EC7168C740320EA4D0A60A7818972F51D4C272848C3DC85462B3256",
+  "sourceFormat": "png",
+  "format": "webp",
+  "conversion": {
+    "tool": "ffmpeg",
+    "codec": "libwebp",
+    "quality": 92,
+    "compressionLevel": 6
+  },
   "source": "image_gen"
 }
