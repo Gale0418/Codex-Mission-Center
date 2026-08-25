@@ -342,7 +342,7 @@ class HudAutolaunchTests(unittest.TestCase):
         kernel32 = FakeKernel32(handle=handle, exit_code=259)
         with patch.object(hud.os, "name", "nt"), patch.object(
             hud.ctypes, "WinDLL", create=True, return_value=kernel32
-        ), patch.object(hud.ctypes, "get_last_error", return_value=0):
+        ), patch.object(hud.ctypes, "get_last_error", create=True, return_value=0):
             self.assertTrue(hud._pid_alive(42))
         self.assertEqual(kernel32.OpenProcess.argtypes, [hud.wintypes.DWORD, hud.wintypes.BOOL, hud.wintypes.DWORD])
         self.assertIs(kernel32.OpenProcess.restype, hud.wintypes.HANDLE)
@@ -361,7 +361,7 @@ class HudAutolaunchTests(unittest.TestCase):
                 kernel32 = FakeKernel32(handle=0)
                 with patch.object(hud.os, "name", "nt"), patch.object(
                     hud.ctypes, "WinDLL", create=True, return_value=kernel32
-                ), patch.object(hud.ctypes, "get_last_error", return_value=error):
+                ), patch.object(hud.ctypes, "get_last_error", create=True, return_value=error):
                     self.assertIs(hud._pid_alive(42), expected)
                 self.assertEqual(kernel32.GetExitCodeProcess.calls, [])
                 self.assertEqual(kernel32.CloseHandle.calls, [])
@@ -370,7 +370,7 @@ class HudAutolaunchTests(unittest.TestCase):
         kernel32 = FakeKernel32(handle=0x123456789ABCDEF0, exit_code=0)
         with patch.object(hud.os, "name", "nt"), patch.object(
             hud.ctypes, "WinDLL", create=True, return_value=kernel32
-        ), patch.object(hud.ctypes, "get_last_error", return_value=0):
+        ), patch.object(hud.ctypes, "get_last_error", create=True, return_value=0):
             self.assertFalse(hud._pid_alive(42))
         self.assertEqual(len(kernel32.CloseHandle.calls), 1)
 

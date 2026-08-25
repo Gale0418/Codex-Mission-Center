@@ -43,7 +43,7 @@ Map task statuses to HUD zones:
 | `Review` | `Review` |
 | `Done` | Rest area |
 
-Task card color families are intentionally bounded: `Intake`/`BRIEFING` is yellow, `In Progress`/`EXECUTION` is green, `Blocked`/`HOLD` is red, `Review`/`VERIFICATION` is blue, and `Done`/`ARCHIVE` is low-saturation silver-gray. A deterministic task-ID hash varies hue, saturation, and lightness only inside the selected family. The visible task ID and textual status remain in every card, so status is never conveyed by color alone.
+Task card color families are intentionally bounded: `Intake`/`BRIEFING` is yellow, `In Progress`/`EXECUTION` is green, `Blocked`/`HOLD` is red, `Review`/`VERIFICATION` is blue, and `Done`/`ARCHIVE` is low-saturation silver-gray. A deterministic task-ID hash varies hue, saturation, and lightness only inside the selected family; the card may add a static same-color tint at roughly 8% alpha that fades from one corner over the deep surface. The visible task ID and textual status remain in every card, so status is never conveyed by color alone.
 
 Show the first 10 unfinished tasks. Completed tasks do not consume those slots. Keep at most 15 helpers total and retire the oldest completed tasks first. If the source contains more than the visible limit, disclose the visible/total/hidden counts; never present the visible slice as the complete runtime picture.
 

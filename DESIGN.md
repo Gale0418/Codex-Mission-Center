@@ -135,7 +135,7 @@ components:
 
 **The Amber Coordinate Rule.** 琥珀只回答「哪裡需要人介入」；不得拿來當一般品牌色、裝飾或完成狀態。其他彩譜顏色是視覺能量，不是資料狀態。
 
-**The Task Status Family Rule.** Task card 主色依 lifecycle 固定落在 bounded family：`BRIEFING / Intake` 黃、`EXECUTION / In Progress` 綠、`HOLD / Blocked` 紅、`VERIFICATION / Review` 藍、`ARCHIVE / Done` 低彩度銀灰。每張卡以 task ID 做 deterministic 的細微 hue/saturation/lightness 變體，但不得跨出 family；attention 只增加 amber pulse/glow，不改寫 lifecycle family；卡片永遠同時顯示 task ID 與文字狀態。
+**The Task Status Family Rule.** Task card 主色依 lifecycle 固定落在 bounded family：`BRIEFING / Intake` 黃、`EXECUTION / In Progress` 綠、`HOLD / Blocked` 紅、`VERIFICATION / Review` 藍、`ARCHIVE / Done` 低彩度銀灰。每張卡以 task ID 做 deterministic 的細微 hue/saturation/lightness 變體，但不得跨出 family；卡片內可疊加約 8% alpha、由一角漸淡的同色 tint，保留深色底與文字對比；attention 只增加 amber pulse/glow，不改寫 lifecycle family；卡片永遠同時顯示 task ID 與文字狀態。
 
 ## Typography
 

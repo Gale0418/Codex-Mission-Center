@@ -233,6 +233,9 @@ class HudAssetTests(unittest.TestCase):
         self.assertIn("data-task-color=\"${color.hue}\"", html)
         self.assertIn("--task-accent:${color.accent}", html)
         self.assertIn("--task-accent-soft:${color.soft}", html)
+        self.assertIn("--task-tint:${color.tint}", html)
+        self.assertIn("tint: `hsl(${hue} ${saturation}% ${lightness}% / .08)`", html)
+        self.assertIn("linear-gradient(135deg, var(--task-tint, transparent), transparent 78%)", html)
         self.assertIn("path.dataset.taskColor", html)
         self.assertIn("toCard?.style.getPropertyValue(\"--task-accent\")", html)
         self.assertIn('.agent[data-status="Blocked"], .agent[data-attention="true"]', html)
@@ -261,7 +264,10 @@ class HudAssetTests(unittest.TestCase):
         self.assertIn('((hash >>> shift) & 0xff)', html)
         self.assertIn('@keyframes attentionAmberPulse', html)
         self.assertIn('0 0 16px rgba(255,198,58,.32)', html)
-        self.assertIn('background: rgba(56,18,25,.72)', html)
+        self.assertIn(
+            'background: linear-gradient(135deg, var(--task-tint, transparent), transparent 78%), rgba(56,18,25,.72)',
+            html,
+        )
         self.assertIn('.agent[data-status="Blocked"], .agent[data-attention="true"] { animation: attentionAmberPulse', html)
         self.assertNotIn('border-color: var(--amber); background: rgba(44,34,12,.7)', html)
 
