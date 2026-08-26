@@ -68,13 +68,13 @@ python skills/mission-center/scripts/sync_mission_center.py .
 python skills/mission-center/scripts/doctor_mission_center.py .
 ```
 
-安裝後，對應腳本位於已安裝 Skill（例如 `$CODEX_HOME/skills/mission-center/scripts/`），並且要把目標 repository 路徑傳給它；一般使用路徑是透過 Codex invoke `$mission-center`。
+以上指令是在本 source checkout 內執行。使用預設的 plugin-only 安裝時，一般路徑是直接由 Codex invoke Mission Center；只有使用 `--with-personal-skill`（或 `-WithPersonalSkill`）時，才會有穩定的 `$CODEX_HOME/skills/mission-center/scripts/` 路徑。
 
 英文工作區可將語言改成 `--language en`。同步預設採安全遷移模式；只有你明確希望 Mission Center 重新生成既有 `project.md` 與 `progress.md` 摘要時，才使用 `--rewrite-summaries`。`doctor` 對沒有 passing evidence 的 Done 任務會報錯；只有逐項列在 `MissionCenter/legacy-done-audit.json` 的項目才會降為可見 warning，而且不算通過 smoke test。
 
 ## 正式安裝與本機發布
 
-本 repository 是唯一的 authoring source。支援的安裝 wrapper 會發布 Skill 與本機 marketplace plugin；它們不會從 PyPI 或 npm 安裝套件。
+本 repository 是唯一的 authoring source。支援的安裝 wrapper 預設只發布並註冊本機 marketplace plugin；它們不會從 PyPI 或 npm 安裝套件。修改這個 checkout 的檔案不會即時更新 Codex 的已安裝快取，source 變更後必須重新執行 wrapper。
 
 Windows（PowerShell）：
 
@@ -88,28 +88,41 @@ macOS／Linux：
 bash ./scripts/install-unix.sh
 ```
 
+Plugin 已內含 Mission Center Skill。若仍需要舊式的獨立個人 Skill 相容副本，必須明確選用：
+
+```powershell
+pwsh -ExecutionPolicy Bypass -File ./scripts/install-windows.ps1 -WithPersonalSkill
+```
+
+```bash
+bash ./scripts/install-unix.sh --with-personal-skill
+```
+
+預設 wrapper 也會清除既有的獨立個人 Skill，但只有內容與受管理副本完全一致時才會移除；若曾修改或屬於使用者自有內容，安裝會保留它並以可操作的錯誤停止。
+
+相容入口 `scripts/install.py` 與 `scripts/install.ps1` 也會預設註冊 Plugin。只有在刻意進行純檔案／離線發布時，才設定 `MISSION_CENTER_PUBLISH_REGISTER=0`。
+
 只預覽或驗證衍生目標、不寫檔：
 
 ```bash
 python scripts/publish_local.py --repo . \
-  --personal-skill ~/.codex/skills/mission-center \
   --marketplace-plugin ~/.codex/local-marketplaces/mission-center/plugins/mission-center \
   --dry-run
 
 python scripts/publish_local.py --repo . \
-  --personal-skill ~/.codex/skills/mission-center \
   --marketplace-plugin ~/.codex/local-marketplaces/mission-center/plugins/mission-center \
   --verify
 ```
 
-Windows 可改用等價的絕對路徑，或使用 `%CODEX_HOME%`／`%USERPROFILE%\.codex` 下的 wrapper 預設值。Windows wrapper 在 `--write` 時會加入 `--register`；註冊需要可解析的 Codex CLI。若只要發布檔案、沒有可解析的 CLI，可直接執行 `publish_local.py --write` 且不加 `--register`：
+Windows 可改用等價的絕對路徑，或使用 `%CODEX_HOME%`／`%USERPROFILE%\.codex` 下的 wrapper 預設值。Windows wrapper 在 `--write` 時會加入 `--register`，用 cachebuster 重新整理已安裝 Plugin；註冊需要可解析的 Codex CLI。若只要發布檔案、沒有可解析的 CLI，可直接執行 `publish_local.py --write` 且不加 `--register`：
 
 ```powershell
 python .\scripts\publish_local.py --repo . `
-  --personal-skill "$env:USERPROFILE\.codex\skills\mission-center" `
   --marketplace-plugin "$env:USERPROFILE\.codex\local-marketplaces\mission-center\plugins\mission-center" `
   --write
 ```
+
+只有在確實需要獨立相容副本時，才傳入 `--personal-skill <以 skills/mission-center 結尾的路徑>`。
 
 ## 工作區架構
 
@@ -137,7 +150,7 @@ MissionCenter/
 
 ## 可選能力
 
-> **路徑提醒：** 本節命令均以 source checkout 為例。安裝後，請改用 `$CODEX_HOME/skills/mission-center/` 下的腳本（Windows：`%CODEX_HOME%` 或 `%USERPROFILE%\.codex`），並以 `--workspace <target-repo>` 指定要觀察或分析的 repository。`requirements-runtime.txt` 位於 source checkout 根目錄；啟用 WebSocket Runtime 前，請從該 checkout（或等價的絕對路徑）安裝它。
+> **路徑提醒：** 本節命令均以 source checkout 為例。plugin-only 安裝請直接由 Codex 使用 Mission Center；只有需要穩定的 `$CODEX_HOME/skills/mission-center/` 手動腳本路徑時，才選用獨立個人 Skill。請以 `--workspace <target-repo>` 指定要觀察或分析的 repository。`requirements-runtime.txt` 位於 source checkout 根目錄；啟用 WebSocket Runtime 前，請從該 checkout（或等價的絕對路徑）安裝它。
 
 ### HUD 與 Runtime
 

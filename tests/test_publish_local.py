@@ -129,6 +129,137 @@ class PublishLocalTests(unittest.TestCase):
             self.assertFalse(personal.exists())
             self.assertFalse(marketplace.exists())
 
+    def test_plugin_only_write_and_verify_do_not_create_personal_skill(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            root = Path(temporary)
+            repo = make_fake_repo(root)
+            personal = root / "personal" / "skills" / "mission-center"
+            marketplace = root / "marketplace" / "plugins" / "mission-center"
+
+            self.assertEqual(
+                main(
+                    [
+                        "--repo",
+                        str(repo),
+                        "--marketplace-plugin",
+                        str(marketplace),
+                        "--write",
+                    ]
+                ),
+                0,
+            )
+            self.assertFalse(personal.exists())
+            self.assertTrue((marketplace / ".codex-plugin" / "plugin.json").is_file())
+            self.assertEqual(
+                main(
+                    [
+                        "--repo",
+                        str(repo),
+                        "--marketplace-plugin",
+                        str(marketplace),
+                        "--verify",
+                    ]
+                ),
+                0,
+            )
+
+    def test_plugin_only_upgrade_removes_matching_legacy_personal_skill(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            root = Path(temporary)
+            repo = make_fake_repo(root)
+            personal = root / "personal" / "skills" / "mission-center"
+            marketplace = root / "marketplace" / "plugins" / "mission-center"
+            self.assertEqual(
+                main(
+                    [
+                        "--repo",
+                        str(repo),
+                        "--personal-skill",
+                        str(personal),
+                        "--marketplace-plugin",
+                        str(marketplace),
+                        "--write",
+                    ]
+                ),
+                0,
+            )
+
+            self.assertEqual(
+                main(
+                    [
+                        "--repo",
+                        str(repo),
+                        "--remove-personal-skill",
+                        str(personal),
+                        "--marketplace-plugin",
+                        str(marketplace),
+                        "--write",
+                    ]
+                ),
+                0,
+            )
+            self.assertFalse(personal.exists())
+
+    def test_plugin_only_upgrade_preserves_modified_personal_skill(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            root = Path(temporary)
+            repo = make_fake_repo(root)
+            personal = root / "personal" / "skills" / "mission-center"
+            marketplace = root / "marketplace" / "plugins" / "mission-center"
+            self.assertEqual(
+                main(
+                    [
+                        "--repo",
+                        str(repo),
+                        "--personal-skill",
+                        str(personal),
+                        "--marketplace-plugin",
+                        str(marketplace),
+                        "--write",
+                    ]
+                ),
+                0,
+            )
+            write(personal / "custom.txt", "keep me\n")
+
+            with self.assertRaisesRegex(RuntimeError, "differs from the managed copy"):
+                main(
+                    [
+                        "--repo",
+                        str(repo),
+                        "--remove-personal-skill",
+                        str(personal),
+                        "--marketplace-plugin",
+                        str(marketplace),
+                        "--write",
+                    ]
+                )
+            self.assertEqual(
+                (personal / "custom.txt").read_text(encoding="utf-8"),
+                "keep me\n",
+            )
+
+    def test_remove_personal_skill_rejects_canonical_source(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            root = Path(temporary)
+            repo = make_fake_repo(root)
+            canonical = repo / "skills" / "mission-center"
+            marketplace = root / "marketplace" / "plugins" / "mission-center"
+
+            with self.assertRaisesRegex(ValueError, "canonical repository Skill"):
+                main(
+                    [
+                        "--repo",
+                        str(repo),
+                        "--remove-personal-skill",
+                        str(canonical),
+                        "--marketplace-plugin",
+                        str(marketplace),
+                        "--write",
+                    ]
+                )
+            self.assertTrue((canonical / "SKILL.md").is_file())
+
     def test_write_syncs_skill_and_plugin_without_generated_files(self):
         with workspace_tempdir("publish-local-") as temporary:
             root = Path(temporary)
@@ -413,6 +544,60 @@ class PublishLocalTests(unittest.TestCase):
             self.assertEqual((marketplace / "old.txt").read_text(encoding="utf-8"), "marketplace-old\n")
             self.assertEqual(len(run.call_args_list), 7)
             self.assertFalse(any("staging-" in item.name or "backup-" in item.name for item in personal.parent.iterdir()))
+
+    def test_registration_failure_restores_removed_legacy_personal_skill(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            root = Path(temporary)
+            repo = make_fake_repo(root)
+            personal = root / "personal" / "skills" / "mission-center"
+            marketplace = root / "marketplace" / "plugins" / "mission-center"
+            self.assertEqual(
+                main(
+                    [
+                        "--repo", str(repo),
+                        "--personal-skill", str(personal),
+                        "--marketplace-plugin", str(marketplace),
+                        "--write",
+                    ]
+                ),
+                0,
+            )
+            fake_codex = root / "fake-codex"
+            fake_codex.write_text("fake\n", encoding="utf-8")
+            fake_codex.chmod(fake_codex.stat().st_mode | stat.S_IXUSR)
+            failure = subprocess.CalledProcessError(
+                7,
+                [str(fake_codex), "plugin", "marketplace", "add"],
+            )
+            outcomes = [
+                subprocess.CompletedProcess([], 0),
+                subprocess.CompletedProcess([], 0),
+                failure,
+                *([subprocess.CompletedProcess([], 0)] * 4),
+            ]
+
+            with patch("publish_local.subprocess.run", side_effect=outcomes):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    main(
+                        [
+                            "--repo", str(repo),
+                            "--remove-personal-skill", str(personal),
+                            "--marketplace-plugin", str(marketplace),
+                            "--write", "--register",
+                            "--codex-cli", str(fake_codex),
+                        ]
+                    )
+
+            self.assertEqual(
+                (personal / "SKILL.md").read_text(encoding="utf-8"),
+                "canonical\n",
+            )
+            self.assertFalse(
+                any(
+                    "staging-" in item.name or "backup-" in item.name
+                    for item in personal.parent.iterdir()
+                )
+            )
 
     def test_file_transaction_rollback_is_idempotent_after_commit_failure(self):
         with workspace_tempdir("publish-local-") as temporary:

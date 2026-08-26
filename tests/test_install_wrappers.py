@@ -58,7 +58,7 @@ def run_wrapper(
 
 
 class InstallWrapperTests(unittest.TestCase):
-    def test_python_wrapper_registration_is_explicit_opt_in(self):
+    def test_python_wrapper_registration_defaults_on_with_explicit_opt_out(self):
         scripts = str(ROOT / "scripts")
         if scripts not in sys.path:
             sys.path.insert(0, scripts)
@@ -66,9 +66,17 @@ class InstallWrapperTests(unittest.TestCase):
 
         base_env = {"HOME": str(ROOT), "USERPROFILE": str(ROOT)}
         with patch.dict(os.environ, base_env, clear=True):
-            self.assertNotIn("--register", install_wrapper.build_publish_command(ROOT))
-        with patch.dict(os.environ, {**base_env, "MISSION_CENTER_PUBLISH_REGISTER": "1"}, clear=True):
             self.assertIn("--register", install_wrapper.build_publish_command(ROOT))
+            self.assertNotIn("--personal-skill", install_wrapper.build_publish_command(ROOT))
+            self.assertIn("--remove-personal-skill", install_wrapper.build_publish_command(ROOT))
+        with patch.dict(os.environ, {**base_env, "MISSION_CENTER_PUBLISH_REGISTER": "0"}, clear=True):
+            self.assertNotIn("--register", install_wrapper.build_publish_command(ROOT))
+        with patch.dict(os.environ, base_env, clear=True):
+            command = install_wrapper.build_publish_command(ROOT, with_personal_skill=True)
+            self.assertIn("--personal-skill", command)
+            self.assertNotIn("--remove-personal-skill", command)
+        powershell = (ROOT / "scripts" / "install.ps1").read_text(encoding="utf-8")
+        self.assertIn("MISSION_CENTER_PUBLISH_REGISTER -ne '0'", powershell)
 
     def test_python_wrapper_executes_publisher(self):
         with workspace_tempdir("install-wrapper-") as temporary:
@@ -77,11 +85,10 @@ class InstallWrapperTests(unittest.TestCase):
                 [sys.executable, str(ROOT / "scripts" / "install.py")],
                 root,
                 mode="--write",
+                register="0",
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertTrue(
-                (root / "codex-home" / "skills" / "mission-center" / "SKILL.md").is_file()
-            )
+            self.assertFalse((root / "codex-home" / "skills" / "mission-center").exists())
             self.assertTrue(
                 (
                     root
@@ -93,6 +100,24 @@ class InstallWrapperTests(unittest.TestCase):
                     / ".codex-plugin"
                     / "plugin.json"
                 ).is_file()
+            )
+
+    def test_python_wrapper_personal_skill_is_explicit_opt_in(self):
+        with workspace_tempdir("install-wrapper-") as temporary:
+            root = Path(temporary)
+            result = run_wrapper(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "install.py"),
+                    "--with-personal-skill",
+                ],
+                root,
+                mode="--write",
+                register="0",
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(
+                (root / "codex-home" / "skills" / "mission-center" / "SKILL.md").is_file()
             )
 
     def test_formal_wrappers_request_registration_only_for_write(self):
@@ -111,6 +136,24 @@ class InstallWrapperTests(unittest.TestCase):
                     self.assertIn("py -3", normalized)
                 else:
                     self.assertIn('[ "$mode" = "--write" ]', normalized)
+
+    def test_formal_wrappers_default_to_plugin_only_with_explicit_personal_opt_in(self):
+        wrappers = (
+            "install-windows.ps1",
+            "install-plugin-windows.ps1",
+            "install-unix.sh",
+            "install-plugin-unix.sh",
+        )
+        for name in wrappers:
+            normalized = (ROOT / "scripts" / name).read_text(encoding="utf-8").casefold()
+            with self.subTest(name=name):
+                self.assertIn("mission_center_with_personal_skill", normalized)
+                self.assertIn("--personal-skill", normalized)
+                self.assertIn("--remove-personal-skill", normalized)
+                if name.endswith(".ps1"):
+                    self.assertIn("withpersonalskill", normalized)
+                else:
+                    self.assertIn("--with-personal-skill", normalized)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell wrapper prerequisites are unavailable")
     def test_formal_powershell_write_fails_before_publish_without_cli(self):
@@ -158,20 +201,15 @@ class InstallWrapperTests(unittest.TestCase):
                     ],
                     Path(temporary),
                     mode=mode,
+                    register="0" if name == "install.ps1" else None,
                     extra_env={"MISSION_CENTER_PYTHON": f'"{sys.executable}" -B'},
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 if mode == "--dry-run":
                     self.assertIn("Dry-run completed", result.stdout)
                 else:
-                    self.assertTrue(
-                        (
-                            Path(temporary)
-                            / "codex-home"
-                            / "skills"
-                            / "mission-center"
-                            / "SKILL.md"
-                        ).is_file()
+                    self.assertFalse(
+                        (Path(temporary) / "codex-home" / "skills" / "mission-center").exists()
                     )
 
     @unittest.skipUnless(
@@ -198,19 +236,14 @@ class InstallWrapperTests(unittest.TestCase):
                     ["pwsh", "-NoLogo", "-NoProfile", "-File", str(ROOT / "scripts" / name)],
                     Path(temporary),
                     mode=mode,
+                    register="0" if name == "install.ps1" else None,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 if mode == "--dry-run":
                     self.assertIn("Dry-run completed", result.stdout)
                 else:
-                    self.assertTrue(
-                        (
-                            Path(temporary)
-                            / "codex-home"
-                            / "skills"
-                            / "mission-center"
-                            / "SKILL.md"
-                        ).is_file()
+                    self.assertFalse(
+                        (Path(temporary) / "codex-home" / "skills" / "mission-center").exists()
                     )
 
     @unittest.skipUnless(
@@ -225,14 +258,15 @@ class InstallWrapperTests(unittest.TestCase):
                     ["pwsh", "-NoLogo", "-NoProfile", "-File", str(ROOT / "scripts" / name)],
                     Path(temporary),
                     mode=mode,
+                    register="0" if name == "install.ps1" else None,
                     python_override=None,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 if mode == "--dry-run":
                     self.assertIn("Dry-run completed", result.stdout)
                 else:
-                    self.assertTrue(
-                        (Path(temporary) / "codex-home" / "skills" / "mission-center" / "SKILL.md").is_file()
+                    self.assertFalse(
+                        (Path(temporary) / "codex-home" / "skills" / "mission-center").exists()
                     )
 
 

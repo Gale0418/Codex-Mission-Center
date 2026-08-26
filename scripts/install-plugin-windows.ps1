@@ -1,3 +1,6 @@
+[CmdletBinding()]
+param([switch]$WithPersonalSkill)
+
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
@@ -56,12 +59,15 @@ $pythonArguments = @($pythonLauncher.Arguments) + @(
   (Join-Path $PSScriptRoot "publish_local.py")
   "--repo"
   $root
-  "--personal-skill"
-  $personalSkill
   "--marketplace-plugin"
   $marketplacePlugin
   $mode
 )
+if ($WithPersonalSkill -or $env:MISSION_CENTER_WITH_PERSONAL_SKILL -eq "1") {
+  $pythonArguments += @("--personal-skill", $personalSkill)
+} else {
+  $pythonArguments += @("--remove-personal-skill", $personalSkill)
+}
 if ($mode -eq "--write") { $pythonArguments += "--register" }
 & $pythonLauncher.Source @pythonArguments
 if ($LASTEXITCODE -ne 0) {
@@ -70,6 +76,6 @@ if ($LASTEXITCODE -ne 0) {
 
 switch ($mode) {
   "--dry-run" { Write-Output "Dry-run completed. No files were modified." }
-  "--write" { Write-Output "Published Mission Center to personal Skill and local marketplace plugin, then refreshed Codex plugin registration." }
+  "--write" { Write-Output "Published Mission Center local marketplace plugin and refreshed Codex plugin registration." }
   "--verify" { Write-Output "Verification completed successfully." }
 }

@@ -68,13 +68,13 @@ python skills/mission-center/scripts/sync_mission_center.py .
 python skills/mission-center/scripts/doctor_mission_center.py .
 ```
 
-After installation, the equivalent scripts live under the installed skill (for example, `$CODEX_HOME/skills/mission-center/scripts/`) and must be pointed at the target repository; invoking `$mission-center` is the normal route.
+The commands above run from this source checkout. With the default plugin-only install, invoking Mission Center through Codex is the normal route. A stable `$CODEX_HOME/skills/mission-center/scripts/` path exists only when installation uses `--with-personal-skill` (or `-WithPersonalSkill`).
 
 For a Traditional Chinese workspace, use `--language zh-TW`. Sync is migration-safe by default; use `--rewrite-summaries` only when you intentionally want Mission Center to regenerate existing `project.md` and `progress.md` summaries. `doctor` treats Done tasks without passing evidence as errors; only entries listed individually in `MissionCenter/legacy-done-audit.json` are downgraded to visible warnings, and they never count as passing smoke tests.
 
 ## Install and publish locally
 
-This repository is the authoring source. The supported installation wrappers publish the skill and local marketplace plugin; they do not install a package from PyPI or npm.
+This repository is the authoring source. The supported installation wrappers publish and register the local marketplace plugin; they do not install a package from PyPI or npm. Updating files in this checkout does not hot-update Codex's installed cache, so rerun the wrapper after source changes.
 
 Windows (PowerShell):
 
@@ -88,28 +88,41 @@ macOS / Linux:
 bash ./scripts/install-unix.sh
 ```
 
+The plugin already packages the Mission Center skill. To also create the legacy standalone personal Skill compatibility copy, opt in explicitly:
+
+```powershell
+pwsh -ExecutionPolicy Bypass -File ./scripts/install-windows.ps1 -WithPersonalSkill
+```
+
+```bash
+bash ./scripts/install-unix.sh --with-personal-skill
+```
+
+By default, the wrappers also remove an existing standalone personal Skill only when it exactly matches the managed copy. A modified or user-owned copy is preserved and stops the upgrade with an actionable error.
+
+The compatibility entry points `scripts/install.py` and `scripts/install.ps1` also register the plugin by default. Set `MISSION_CENTER_PUBLISH_REGISTER=0` only for a deliberate files-only/offline publish.
+
 Preview or verify the derived targets without writing them:
 
 ```bash
 python scripts/publish_local.py --repo . \
-  --personal-skill ~/.codex/skills/mission-center \
   --marketplace-plugin ~/.codex/local-marketplaces/mission-center/plugins/mission-center \
   --dry-run
 
 python scripts/publish_local.py --repo . \
-  --personal-skill ~/.codex/skills/mission-center \
   --marketplace-plugin ~/.codex/local-marketplaces/mission-center/plugins/mission-center \
   --verify
 ```
 
-On Windows, set equivalent absolute paths or use the wrapper defaults under `%CODEX_HOME%` / `%USERPROFILE%\.codex`. The Windows wrapper adds `--register` for `--write`; registration requires a resolvable Codex CLI. If you only need the published files and do not have a resolvable CLI, run `publish_local.py --write` without `--register`:
+On Windows, set equivalent absolute paths or use the wrapper defaults under `%CODEX_HOME%` / `%USERPROFILE%\.codex`. The Windows wrapper adds `--register` for `--write`; registration refreshes the cachebuster-backed installed plugin and requires a resolvable Codex CLI. If you only need the published files and do not have a resolvable CLI, run `publish_local.py --write` without `--register`:
 
 ```powershell
 python .\scripts\publish_local.py --repo . `
-  --personal-skill "$env:USERPROFILE\.codex\skills\mission-center" `
   --marketplace-plugin "$env:USERPROFILE\.codex\local-marketplaces\mission-center\plugins\mission-center" `
   --write
 ```
+
+Pass `--personal-skill <path-ending-in-skills/mission-center>` only when the standalone compatibility copy is intentionally required.
 
 ## Workspace architecture
 
@@ -137,7 +150,7 @@ MissionCenter/
 
 ## Optional capabilities
 
-> **Path note:** The commands in this section use a source checkout. After installation, call the scripts from `$CODEX_HOME/skills/mission-center/` (Windows: `%CODEX_HOME%` or `%USERPROFILE%\.codex`) and pass `--workspace <target-repo>` for the repository you want to observe or analyze. `requirements-runtime.txt` lives at the source-checkout root; install it from that checkout (or an equivalent absolute path) before enabling WebSocket Runtime.
+> **Path note:** The commands in this section use a source checkout. A plugin-only install should invoke Mission Center through Codex; opt into the standalone personal Skill only when you need the stable `$CODEX_HOME/skills/mission-center/` manual script path. Pass `--workspace <target-repo>` for the repository you want to observe or analyze. `requirements-runtime.txt` lives at the source-checkout root; install it from that checkout (or an equivalent absolute path) before enabling WebSocket Runtime.
 
 ### HUD and Runtime
 

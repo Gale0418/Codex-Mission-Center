@@ -6,6 +6,7 @@
 [CmdletBinding()]
 param(
     [string]$TargetSkillsDir = "",
+    [switch]$WithPersonalSkill,
     [switch]$Force
 )
 
@@ -16,8 +17,13 @@ $RepoRoot = Split-Path -Parent $ScriptDir
 $CodexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
 $PersonalSkill = if ($TargetSkillsDir) { $TargetSkillsDir } elseif ($env:MISSION_CENTER_PERSONAL_SKILL) { $env:MISSION_CENTER_PERSONAL_SKILL } else { Join-Path $CodexHome 'skills\mission-center' }
 $MarketplacePlugin = if ($env:MISSION_CENTER_MARKETPLACE_PLUGIN) { $env:MISSION_CENTER_MARKETPLACE_PLUGIN } else { Join-Path $CodexHome 'local-marketplaces\mission-center\plugins\mission-center' }
-$Arguments = @((Join-Path $ScriptDir 'publish_local.py'), '--repo', $RepoRoot, '--personal-skill', $PersonalSkill, '--marketplace-plugin', $MarketplacePlugin, '--write')
-if ($env:MISSION_CENTER_PUBLISH_REGISTER -eq '1') { $Arguments += '--register' }
+$Arguments = @((Join-Path $ScriptDir 'publish_local.py'), '--repo', $RepoRoot, '--marketplace-plugin', $MarketplacePlugin, '--write')
+if ($WithPersonalSkill -or $TargetSkillsDir -or $env:MISSION_CENTER_WITH_PERSONAL_SKILL -eq '1') {
+    $Arguments += @('--personal-skill', $PersonalSkill)
+} else {
+    $Arguments += @('--remove-personal-skill', $PersonalSkill)
+}
+if ($env:MISSION_CENTER_PUBLISH_REGISTER -ne '0') { $Arguments += '--register' }
 $PythonCandidates = if ($env:MISSION_CENTER_PYTHON) {
     @($env:MISSION_CENTER_PYTHON)
 } elseif ($env:OS -eq 'Windows_NT') {
