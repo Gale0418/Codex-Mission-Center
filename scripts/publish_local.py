@@ -318,7 +318,7 @@ def replace_from_stage(target: Path, stage_writer) -> None:
 
 
 class FileTransaction:
-    def __init__(self, entries: list[tuple[Path, Path, Path]]) -> None:
+    def __init__(self, entries: list[tuple[Path, Path | None, Path]]) -> None:
         self.entries = entries
         self.committed: list[tuple[Path, Path]] = []
 
@@ -328,7 +328,8 @@ class FileTransaction:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if target.exists() or target.is_symlink():
                     target.rename(backup)
-                staging.rename(target)
+                if staging is not None:
+                    staging.rename(target)
                 self.committed.append((target, backup))
         except Exception:
             self.rollback()
@@ -342,7 +343,7 @@ class FileTransaction:
                 backup.rename(target)
         self.committed.clear()
         for target, staging, backup in self.entries:
-            if staging.exists() or staging.is_symlink():
+            if staging is not None and (staging.exists() or staging.is_symlink()):
                 shutil.rmtree(staging)
             if backup.exists() or backup.is_symlink():
                 # A backup not yet committed belongs to the original target.
@@ -351,7 +352,7 @@ class FileTransaction:
 
     def finalize(self) -> None:
         for _, staging, backup in self.entries:
-            if staging.exists() or staging.is_symlink():
+            if staging is not None and (staging.exists() or staging.is_symlink()):
                 shutil.rmtree(staging)
             if backup.exists() or backup.is_symlink():
                 shutil.rmtree(backup)
@@ -359,8 +360,9 @@ class FileTransaction:
 
 def prepare_file_transaction(
     writers: list[tuple[Path, object]],
+    removals: list[Path] | None = None,
 ) -> FileTransaction:
-    entries: list[tuple[Path, Path, Path]] = []
+    entries: list[tuple[Path, Path | None, Path]] = []
     try:
         for target, writer in writers:
             reject_symlink_components(target, "target")
@@ -373,10 +375,18 @@ def prepare_file_transaction(
             staging.mkdir()
             entries.append((target, staging, backup))
             writer(staging)
+        for target in removals or []:
+            reject_symlink_components(target, "target")
+            if not target.exists() and not target.is_symlink():
+                continue
+            token = uuid.uuid4().hex
+            backup = target.parent / f".{target.name}.backup-{token}"
+            assert_within(target.parent, backup, "backup path")
+            entries.append((target, None, backup))
         return FileTransaction(entries)
     except Exception:
         for _, staging, backup in entries:
-            if staging.exists() or staging.is_symlink():
+            if staging is not None and (staging.exists() or staging.is_symlink()):
                 shutil.rmtree(staging)
             if backup.exists() or backup.is_symlink():
                 shutil.rmtree(backup)
@@ -394,15 +404,15 @@ def print_changes(label: str, changes: list[str]) -> None:
 
 def verify_targets(
     canonical: Path,
-    personal: Path,
+    personal: Path | None,
+    removed_personal: Path | None,
     repo: Path,
     marketplace_root: Path,
     cache_skill: Path | None,
 ) -> bool:
-    targets = [
-        ("personal", skill_file_map(repo), file_map(personal)),
-        ("marketplace", marketplace_file_map(repo), file_map(marketplace_root)),
-    ]
+    targets = [("marketplace", marketplace_file_map(repo), file_map(marketplace_root))]
+    if personal is not None:
+        targets.insert(0, ("personal", skill_file_map(repo), file_map(personal)))
     if cache_skill is not None:
         targets.append(("cache", file_map(canonical), file_map(cache_skill)))
 
@@ -410,6 +420,10 @@ def verify_targets(
     for label, expected, actual in targets:
         changes = map_diff(expected, actual)
         print_changes(label, changes)
+        valid = valid and not changes
+    if removed_personal is not None:
+        changes = ["- managed duplicate remains"] if removed_personal.exists() else []
+        print_changes("legacy-personal", changes)
         valid = valid and not changes
     return valid
 
@@ -539,13 +553,14 @@ def rollback_registration(
 
 def preflight(
     repo: Path,
-    personal: Path,
+    personal: Path | None,
+    removed_personal: Path | None,
     marketplace: Path,
     cache_skill: Path | None,
     write: bool,
     register: bool,
     codex_cli: Path | None,
-) -> tuple[Path, Path | None, dict, Path | None]:
+) -> tuple[Path | None, Path | None, Path | None, dict, Path | None]:
     reject_symlink_components(repo, "source repository")
     ensure_source_tree(repo)
     canonical = repo / "skills" / PLUGIN_NAME
@@ -555,7 +570,30 @@ def preflight(
     if not manifest_path.is_file():
         raise ValueError(f"Plugin manifest not found: {repo}")
     plugin_manifest = load_plugin_manifest(repo)
-    personal_target = validate_target(personal, ("skills", PLUGIN_NAME))
+    personal_target = (
+        validate_target(personal, ("skills", PLUGIN_NAME))
+        if personal is not None
+        else None
+    )
+    removed_personal_target = (
+        validate_target(removed_personal, ("skills", PLUGIN_NAME))
+        if removed_personal is not None
+        else None
+    )
+    if removed_personal_target == canonical:
+        raise ValueError(
+            "--remove-personal-skill must not target the canonical repository Skill"
+        )
+    if removed_personal_target is not None and removed_personal_target.exists():
+        differences = map_diff(
+            skill_file_map(repo),
+            file_map(removed_personal_target),
+        )
+        if differences:
+            raise RuntimeError(
+                "Legacy personal Skill differs from the managed copy; refusing to remove it. "
+                f"Back up or remove it manually: {removed_personal_target}"
+            )
     marketplace_target = validate_target(marketplace, ("plugins", PLUGIN_NAME))
     marketplace_root = marketplace_target.parent.parent
     assert_within(marketplace_root, marketplace_target, "marketplace plugin target")
@@ -577,7 +615,13 @@ def preflight(
     # source path and catches symlink/escape attempts during --register preflight.
     skill_file_map(repo)
     marketplace_file_map(repo)
-    return personal_target, cache_target, plugin_manifest, codex_executable
+    return (
+        personal_target,
+        removed_personal_target,
+        cache_target,
+        plugin_manifest,
+        codex_executable,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -585,7 +629,17 @@ def build_parser() -> argparse.ArgumentParser:
         description="Publish Mission Center from its canonical repository source."
     )
     parser.add_argument("--repo", required=True, type=Path)
-    parser.add_argument("--personal-skill", required=True, type=Path)
+    personal_mode = parser.add_mutually_exclusive_group()
+    personal_mode.add_argument(
+        "--personal-skill",
+        type=Path,
+        help="Optional compatibility copy. Omit to publish only the marketplace plugin.",
+    )
+    personal_mode.add_argument(
+        "--remove-personal-skill",
+        type=Path,
+        help="Remove an exact managed legacy copy during a plugin-only upgrade.",
+    )
     parser.add_argument("--marketplace-plugin", required=True, type=Path)
     parser.add_argument("--cache-skill", type=Path)
     parser.add_argument("--register", action="store_true")
@@ -603,9 +657,10 @@ def main(argv: list[str] | None = None) -> int:
     reject_symlink_components(repo_input, "source repository")
     repo = repo_input.resolve()
     canonical = repo / "skills" / PLUGIN_NAME
-    personal, cache_skill, plugin_manifest, codex_executable = preflight(
+    personal, removed_personal, cache_skill, plugin_manifest, codex_executable = preflight(
         repo,
         args.personal_skill,
+        args.remove_personal_skill,
         args.marketplace_plugin,
         args.cache_skill,
         args.write,
@@ -616,26 +671,38 @@ def main(argv: list[str] | None = None) -> int:
     marketplace_root = marketplace.parent.parent
 
     if args.dry_run:
-        print_changes("personal", map_diff(skill_file_map(repo), file_map(personal)))
+        if personal is not None:
+            print_changes("personal", map_diff(skill_file_map(repo), file_map(personal)))
         print_changes(
             "marketplace",
             map_diff(marketplace_file_map(repo), file_map(marketplace_root)),
         )
         if cache_skill is not None:
             print_changes("cache", map_diff(file_map(canonical), file_map(cache_skill)))
+        if removed_personal is not None:
+            print_changes(
+                "legacy-personal",
+                ["- managed duplicate"] if removed_personal.exists() else [],
+            )
         return 0
 
     if args.write:
-        transaction = prepare_file_transaction(
-            [
-                (personal, lambda staging: stage_skill(repo, canonical, staging)),
-                (
-                    marketplace_root,
-                    lambda staging: stage_marketplace(
-                        repo, staging, stamp_version=args.register
-                    ),
+        writers = []
+        if personal is not None:
+            writers.append(
+                (personal, lambda staging: stage_skill(repo, canonical, staging))
+            )
+        writers.append(
+            (
+                marketplace_root,
+                lambda staging: stage_marketplace(
+                    repo, staging, stamp_version=args.register
                 ),
-            ]
+            )
+        )
+        transaction = prepare_file_transaction(
+            writers,
+            removals=[removed_personal] if removed_personal is not None else [],
         )
         try:
             transaction.commit()
@@ -650,7 +717,14 @@ def main(argv: list[str] | None = None) -> int:
             raise
         transaction.finalize()
 
-    return 0 if verify_targets(canonical, personal, repo, marketplace_root, cache_skill) else 1
+    return 0 if verify_targets(
+        canonical,
+        personal,
+        removed_personal,
+        repo,
+        marketplace_root,
+        cache_skill,
+    ) else 1
 
 
 if __name__ == "__main__":

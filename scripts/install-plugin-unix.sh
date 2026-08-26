@@ -7,21 +7,35 @@ PERSONAL_SKILL="${MISSION_CENTER_PERSONAL_SKILL:-$CODEX_ROOT/skills/mission-cent
 MARKETPLACE_PLUGIN="${MISSION_CENTER_MARKETPLACE_PLUGIN:-$CODEX_ROOT/local-marketplaces/mission-center/plugins/mission-center}"
 MODE="${MISSION_CENTER_PUBLISH_MODE:---write}"
 PYTHON_BIN="${MISSION_CENTER_PYTHON:-python3}"
+WITH_PERSONAL_SKILL="${MISSION_CENTER_WITH_PERSONAL_SKILL:-0}"
+
+if [ "${1:-}" = "--with-personal-skill" ]; then
+  WITH_PERSONAL_SKILL=1
+  shift
+fi
+if [ "$#" -ne 0 ]; then
+  echo "Usage: $0 [--with-personal-skill]" >&2
+  exit 2
+fi
 
 case "$MODE" in
   --dry-run|--write|--verify) ;;
   *) echo "MISSION_CENTER_PUBLISH_MODE must be --dry-run, --write, or --verify" >&2; exit 2 ;;
 esac
 
-"$PYTHON_BIN" "$ROOT/scripts/publish_local.py" \
-  --repo "$ROOT" \
-  --personal-skill "$PERSONAL_SKILL" \
-  --marketplace-plugin "$MARKETPLACE_PLUGIN" \
-  "$MODE" \
-  $( [ "$MODE" = "--write" ] && printf '%s' "--register" )
+ARGS=(--repo "$ROOT" --marketplace-plugin "$MARKETPLACE_PLUGIN" "$MODE")
+if [ "$WITH_PERSONAL_SKILL" = "1" ]; then
+  ARGS+=(--personal-skill "$PERSONAL_SKILL")
+else
+  ARGS+=(--remove-personal-skill "$PERSONAL_SKILL")
+fi
+if [ "$MODE" = "--write" ]; then
+  ARGS+=(--register)
+fi
+"$PYTHON_BIN" "$ROOT/scripts/publish_local.py" "${ARGS[@]}"
 
 case "$MODE" in
   --dry-run) echo "Dry-run completed. No files were modified." ;;
-  --write) echo "Published Mission Center to personal Skill and local marketplace plugin, then refreshed Codex plugin registration." ;;
+  --write) echo "Published Mission Center local marketplace plugin and refreshed Codex plugin registration." ;;
   --verify) echo "Verification completed successfully." ;;
 esac

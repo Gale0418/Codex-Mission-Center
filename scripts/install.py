@@ -6,26 +6,37 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import argparse
 from pathlib import Path
 
 
-def build_publish_command(repo_root: Path) -> list[str]:
+def build_publish_command(repo_root: Path, *, with_personal_skill: bool = False) -> list[str]:
     codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser()
     personal = Path(os.environ.get("MISSION_CENTER_PERSONAL_SKILL", codex_home / "skills" / "mission-center")).expanduser()
     marketplace = Path(os.environ.get("MISSION_CENTER_MARKETPLACE_PLUGIN", codex_home / "local-marketplaces" / "mission-center" / "plugins" / "mission-center")).expanduser()
     command = [
         sys.executable, str(repo_root / "scripts" / "publish_local.py"),
-        "--repo", str(repo_root), "--personal-skill", str(personal),
-        "--marketplace-plugin", str(marketplace), "--write",
+        "--repo", str(repo_root), "--marketplace-plugin", str(marketplace),
     ]
-    if os.environ.get("MISSION_CENTER_PUBLISH_REGISTER", "0") == "1":
+    if with_personal_skill or os.environ.get("MISSION_CENTER_WITH_PERSONAL_SKILL") == "1":
+        command.extend(["--personal-skill", str(personal)])
+    else:
+        command.extend(["--remove-personal-skill", str(personal)])
+    command.append("--write")
+    if os.environ.get("MISSION_CENTER_PUBLISH_REGISTER", "1") != "0":
         command.append("--register")
     return command
 
 
-def install() -> int:
+def install(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Install the Mission Center local plugin.")
+    parser.add_argument("--with-personal-skill", action="store_true")
+    args = parser.parse_args(argv)
     repo_root = Path(__file__).resolve().parent.parent
-    completed = subprocess.run(build_publish_command(repo_root), check=False)
+    completed = subprocess.run(
+        build_publish_command(repo_root, with_personal_skill=args.with_personal_skill),
+        check=False,
+    )
     return int(completed.returncode)
 
 

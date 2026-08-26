@@ -1,6 +1,6 @@
 {
   "name": "mission-center",
-  "version": "0.5.0+codex.20260825025418",
+  "version": "0.5.0+codex.20260826172508",
   "description": "Offline OWO+ v0.4 MissionCenter planning with causal continuity, bounded Steelman and research gates, privacy-safe self-evaluation, adaptive optimization, and an optional runtime HUD.",
   "author": {
     "name": "Gale0418",
