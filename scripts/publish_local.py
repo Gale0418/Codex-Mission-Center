@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -212,6 +213,22 @@ def reject_symlink_components(path: Path, label: str) -> None:
     for part in candidate.parts[1:]:
         current /= part
         if current.is_symlink():
+            # macOS exposes a few fixed root aliases (for example /var ->
+            # /private/var). These are part of the platform layout, not
+            # user-controlled source or target redirects. All other symlink
+            # components remain forbidden.
+            trusted_macos_aliases = {
+                Path("/etc"): Path("/private/etc"),
+                Path("/tmp"): Path("/private/tmp"),
+                Path("/var"): Path("/private/var"),
+            }
+            trusted_target = trusted_macos_aliases.get(current)
+            if (
+                sys.platform == "darwin"
+                and trusted_target is not None
+                and current.resolve() == trusted_target
+            ):
+                continue
             raise ValueError(f"{label} must not contain symlinks: {path}")
 
 
@@ -397,6 +414,24 @@ def verify_targets(
     return valid
 
 
+def is_usable_codex_executable(candidate: Path, *, from_path: bool = False) -> bool:
+    """Return whether a candidate is a usable CLI file.
+
+    WindowsApps command aliases can be discoverable through PATH while still
+    rejecting direct subprocess launches.  They are intentionally ignored
+    when discovered through PATH; an explicit path or CODEX_CLI_PATH remains
+    an intentional override and is validated only as a file.
+    """
+    try:
+        if not candidate.is_file() or not os.access(candidate, os.X_OK):
+            return False
+        if from_path and os.name == "nt":
+            return not any(part.casefold() == "windowsapps" for part in candidate.parts)
+    except OSError:
+        return False
+    return True
+
+
 def get_codex_executable(explicit: Path | None = None) -> Path | None:
     candidates: list[Path] = []
     if explicit is not None:
@@ -415,12 +450,12 @@ def get_codex_executable(explicit: Path | None = None) -> Path | None:
     )
 
     for candidate in candidates:
-        if candidate.exists():
+        if is_usable_codex_executable(candidate):
             return candidate.resolve()
 
     for name in ("codex", "codex.exe"):
         resolved = shutil.which(name)
-        if resolved:
+        if resolved and is_usable_codex_executable(Path(resolved), from_path=True):
             return Path(resolved).resolve()
 
     return None

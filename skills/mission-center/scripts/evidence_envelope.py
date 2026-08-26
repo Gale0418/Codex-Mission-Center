@@ -177,8 +177,8 @@ def validate_envelope(
         _text(envelope.get("sourceRevision"), "sourceRevision", errors)
     if "supersedes" in envelope:
         _text(envelope.get("supersedes"), "supersedes", errors, pattern=ENVELOPE_ID)
-    if status == "superseded" and "supersedes" in envelope:
-        errors.append("superseded envelopes must not supersede another envelope")
+    # A superseded record may retain its own predecessor link so a chain of
+    # immutable historical envelopes remains traversable.
 
     if workspace is not None and not errors:
         root = workspace_root(workspace)

@@ -1,6 +1,12 @@
 # 每日紀錄
 
-- 最後整理： 2026-08-25
+- 最後整理： 2026-08-26
+
+## 2026-08-26
+- 完成 Mission Center semantic Hook、HUD asset fingerprint／可攜側欄意圖、Windows launcher 與安裝回歸修正；HUD 預設不啟動 Chrome 或系統瀏覽器。
+- 完成 MC-032 Persistent Project Map：獨立 JSON／HTML、canonical fingerprint、atomic lock、跨語言與 adversarial regression；與 RuntimeState 分離。
+- 完成 MC-044 Codex CLI Plugin Compatibility Spike：官方安裝／搜尋／更新文件與 Windows／WSL 本機探測矩陣；WindowsApps binary 權限受限，離線 publisher fallback 保留。
+- 完成沙盒外 371 項完整測試與 HUD 併發壓測；Project Map manifest、Doctor 與 reconcile release gate 通過。
 
 ## 2026-08-21
 - 完成 OWO+ v0.4：隔離 CodeRabbit review、critic_full 3 critic＋1 arbiter 與唯一 delta 共收斂 17 項 finding；261 tests、Doctor、Skill／Plugin validators、critic record 與本機 personal／marketplace／cache 發布全綠；MC-046、MC-051 關閉為 Done。

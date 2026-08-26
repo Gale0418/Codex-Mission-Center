@@ -86,6 +86,11 @@ def build_visual_state(
 ) -> dict[str, object]:
     """Create the JSON-serializable state consumed by the visual HUD."""
     visible = select_visible_tasks(tasks)
+    task_counts = {
+        "visible": len(visible),
+        "total": len(tasks),
+        "hidden": max(0, len(tasks) - len(visible)),
+    }
     active = [
         task["Title"] for task in tasks if task["Status"].lower() != "done"
     ][:5]
@@ -113,4 +118,5 @@ def build_visual_state(
         "active": active,
         "blocked": blocked,
         "agents": agents,
+        "taskCounts": task_counts,
     }

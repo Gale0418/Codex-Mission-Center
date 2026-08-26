@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import hashlib
 import json
 import os
 import secrets
@@ -20,6 +21,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+from bootstrap_mission_center import MANAGED_VISUAL_ASSETS
 from common.markdown_table import parse_table
 from optimization_core import atomic_write_json
 from runtime_protocol import MAX_LINK_AGENT_COUNT, MAX_RUNTIME_LINE_BYTES, MAX_TASK_ID_COUNT, age_runtime_state, empty_runtime_state, load_last_valid, normalize_codex_message, reduce_event, touch_runtime_state, validate_initialize_response, validate_task_links, write_runtime_state, is_opaque_id
@@ -143,7 +145,34 @@ def link_task(workspace: Path, agent_id: str, task_ids: list[str]) -> dict:
     return payload
 
 
-def health_payload(workspace_fingerprint: str, nonce: str | None = None, session_nonce: str | None = None) -> dict[str, str]:
+def fingerprint_hud_assets(output: Path) -> str | None:
+    """Fingerprint the managed files this server is currently able to serve."""
+    if output.is_symlink():
+        return None
+    target = output / "mission-center-assets"
+    if target.is_symlink():
+        return None
+    digest = hashlib.sha256()
+    try:
+        for name in sorted(MANAGED_VISUAL_ASSETS):
+            asset = target / name
+            if asset.is_symlink() or not asset.is_file():
+                return None
+            digest.update(name.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(asset.read_bytes())
+            digest.update(b"\0")
+    except OSError:
+        return None
+    return digest.hexdigest()
+
+
+def health_payload(
+    workspace_fingerprint: str,
+    nonce: str | None = None,
+    session_nonce: str | None = None,
+    hud_asset_fingerprint: str | None = None,
+) -> dict[str, str]:
     payload = {
         "service": "mission-center-hud",
         "workspaceFingerprint": workspace_fingerprint,
@@ -152,6 +181,8 @@ def health_payload(workspace_fingerprint: str, nonce: str | None = None, session
         payload["nonce"] = nonce
     if isinstance(session_nonce, str) and 0 < len(session_nonce) <= 128:
         payload["sessionNonce"] = session_nonce
+    if isinstance(hud_asset_fingerprint, str) and 0 < len(hud_asset_fingerprint) <= 128:
+        payload["hudAssetFingerprint"] = hud_asset_fingerprint
     return payload
 
 
@@ -172,7 +203,12 @@ class HudHandler(SimpleHTTPRequestHandler):
             self.send_error(404)
             return
         if path == "/_mission-center/health":
-            payload = health_payload(self.workspace_fingerprint, self.health_nonce, self.session_nonce)
+            payload = health_payload(
+                self.workspace_fingerprint,
+                self.health_nonce,
+                self.session_nonce,
+                fingerprint_hud_assets(Path(self.directory)),
+            )
             body = (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -186,7 +222,7 @@ class HudHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             return
         if path == "/mission-center-runtime/runtime-state.json":
-            root = Path(self.directory).resolve()
+            root = Path(self.directory)
             candidate = root / "mission-center-runtime" / "runtime-state.json"
             if not _safe_regular_file(root, candidate):
                 self.send_error(404)
@@ -201,7 +237,7 @@ class HudHandler(SimpleHTTPRequestHandler):
         if name not in HUD_ALLOWED_ASSETS:
             self.send_error(404)
             return
-        root = Path(self.directory).resolve()
+        root = Path(self.directory)
         candidate = root / relative
         if not _safe_regular_file(root, candidate):
             self.send_error(404)
@@ -285,8 +321,14 @@ def loopback_server_type(host: str) -> type[LoopbackHTTPServer]:
 def serve(workspace: Path, host: str, port: int, session_nonce: str | None = None) -> None:
     if host not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("HUD companion must bind to loopback")
+    workspace = workspace.resolve()
     output = workspace / "output"
+    if output.is_symlink():
+        raise OSError("HUD output directory must not be a symlink")
     output.mkdir(parents=True, exist_ok=True)
+    asset_fingerprint = fingerprint_hud_assets(output)
+    if asset_fingerprint is None:
+        raise OSError("HUD managed assets are unavailable")
     token = secrets.token_urlsafe(24)
     fingerprint = fingerprint_workspace(workspace)
     handler = partial(HudHandler, directory=str(output), session_token=token, workspace_fingerprint=fingerprint, session_nonce=session_nonce)

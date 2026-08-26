@@ -389,6 +389,35 @@ class RuntimeProtocolTests(unittest.TestCase):
                 self.skipTest("directory symlinks are unavailable")
             self.assertFalse(_safe_regular_file(root, link / "runtime-state.json"))
 
+    def test_safe_regular_file_rejects_symlinked_output_root(self):
+        with workspace_tempdir() as temp:
+            workspace = Path(temp)
+            outside = workspace / "outside"
+            outside.mkdir()
+            (outside / "mission-center-assets").mkdir()
+            (outside / "mission-center-assets" / "visual-summary.html").write_text("outside", encoding="utf-8")
+            output = workspace / "output"
+            try:
+                output.symlink_to(outside, target_is_directory=True)
+            except OSError:
+                self.skipTest("directory symlinks are unavailable")
+            self.assertFalse(
+                _safe_regular_file(output, output / "mission-center-assets" / "visual-summary.html")
+            )
+
+    def test_serve_rejects_symlinked_output_root(self):
+        with workspace_tempdir() as temp:
+            workspace = Path(temp)
+            outside = workspace / "outside"
+            outside.mkdir()
+            output = workspace / "output"
+            try:
+                output.symlink_to(outside, target_is_directory=True)
+            except OSError:
+                self.skipTest("directory symlinks are unavailable")
+            with self.assertRaisesRegex(OSError, "must not be a symlink"):
+                mission_runtime.serve(workspace, "127.0.0.1", 0)
+
     def test_hud_root_redirects_to_asset_directory_for_relative_images(self):
         handler = object.__new__(HudHandler)
         handler.path = "/"

@@ -2,6 +2,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tests import workspace_tempdir
 
@@ -12,6 +13,7 @@ BOOTSTRAP = SCRIPTS / "bootstrap_mission_center.py"
 sys.path.insert(0, str(SCRIPTS))
 
 from workspace_contract import REQUIRED_FILES
+import bootstrap_mission_center as bootstrap
 
 
 class BootstrapMissionCenterTests(unittest.TestCase):
@@ -117,6 +119,33 @@ class BootstrapMissionCenterTests(unittest.TestCase):
                 (ROOT / "skills" / "mission-center" / "assets" / "visual-hub" / "visual-summary.html").read_bytes(),
             )
             self.assertFalse((assets / "readme-hero.png").exists())
+
+    def test_copy_visual_assets_rejects_managed_destination_symlink(self):
+        with workspace_tempdir("bootstrap-hud-symlink-") as temporary:
+            workspace = Path(temporary)
+            assets = workspace / "output" / "mission-center-assets"
+            assets.mkdir(parents=True)
+            outside = workspace / "outside.html"
+            outside.write_text("keep", encoding="utf-8")
+            destination = assets / "visual-summary.html"
+            try:
+                destination.symlink_to(outside)
+            except OSError:
+                self.skipTest("file symlinks are unavailable")
+            with self.assertRaisesRegex(OSError, "must not be a symlink"):
+                bootstrap.copy_visual_assets(workspace, force=True)
+            self.assertEqual(outside.read_text(encoding="utf-8"), "keep")
+
+    def test_copy_visual_assets_rejects_missing_packaged_asset(self):
+        with workspace_tempdir("bootstrap-hud-missing-") as temporary:
+            workspace = Path(temporary)
+            with patch.object(
+                bootstrap,
+                "MANAGED_VISUAL_ASSETS",
+                set(bootstrap.MANAGED_VISUAL_ASSETS) | {"missing.webp"},
+            ):
+                with self.assertRaisesRegex(FileNotFoundError, "missing.webp"):
+                    bootstrap.copy_visual_assets(workspace, force=True)
 
 
 if __name__ == "__main__":

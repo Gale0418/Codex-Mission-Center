@@ -1,0 +1,143 @@
+{
+  "schemaVersion": "1.0",
+  "spike": "MC-044",
+  "title": "Codex CLI 0.147 Agent Plugin Compatibility Spike",
+  "observedAt": "2026-08-26",
+  "scope": "Codex CLI installation, plugin browser/search/install, update/reinstall, and offline publisher fallback",
+  "officialSources": [
+    {
+      "topic": "cli-install-and-update",
+      "url": "https://learn.chatgpt.com/docs/codex/cli",
+      "evidence": "Official quickstart documents installing Codex CLI and rerunning the installer to update it."
+    },
+    {
+      "topic": "plugin-browser",
+      "url": "https://learn.chatgpt.com/docs/plugins",
+      "evidence": "Official docs specify codex /plugins, configured marketplaces, plugin search/install, and a new session after installation."
+    },
+    {
+      "topic": "hooks-and-background-output",
+      "url": "https://learn.chatgpt.com/docs/hooks",
+      "evidence": "Official docs define event-specific JSON output and say background-hook output is delivered at the next safe point, not as a new turn."
+    }
+  ],
+  "localProbe": {
+    "platform": "Windows",
+    "command": "Get-Command codex",
+    "observedPath": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.818.5229.0_x64__2p2nqsd0c76g0\\app\\resources\\codex.exe",
+    "packageEvidence": "OpenAI.Codex_26.818.5229.0_x64__2p2nqsd0c76g0; resources also contain codex and codex.exe binaries.",
+    "cliExecution": "blocked",
+    "cliExecutionEvidence": "codex --version and codex --help both failed with WindowsApps access denied, including an escalated read-only retry.",
+    "wslShell": "available",
+    "wslShellEvidence": "wsl -d Ubuntu started successfully and command -v codex resolved /mnt/c/Program Files/WindowsApps/.../resources/codex.",
+    "wslExecution": "cli-permission-denied",
+    "wslExecutionEvidence": "Within the available WSL shell, codex --version and codex --help resolved to the mounted WindowsApps binary and both failed with Permission denied.",
+    "nonDestructiveProbe": "python scripts/publish_local.py --help",
+    "nonDestructiveProbeEvidence": "Publisher exposes --dry-run, --verify, --write, --register, and --codex-cli; no install/update command was executed."
+  },
+  "probeRecords": [
+    {
+      "id": "mc044-windows-path",
+      "command": "Get-Command codex",
+      "platform": "Windows",
+      "recordedAt": "2026-08-26T00:00:00+08:00",
+      "exitCode": 0,
+      "resultCategory": "pass",
+      "evidenceLocator": "MissionCenter/smoke-tests.md#MC-044"
+    },
+    {
+      "id": "mc044-windows-help",
+      "command": "codex --version; codex --help",
+      "platform": "Windows",
+      "recordedAt": "2026-08-26T00:00:00+08:00",
+      "exitCode": null,
+      "resultCategory": "blocked",
+      "evidenceLocator": "MissionCenter/smoke-tests.md#MC-044"
+    },
+    {
+      "id": "mc044-wsl-help",
+      "command": "codex --version; codex --help",
+      "platform": "WSL",
+      "recordedAt": "2026-08-26T00:00:00+08:00",
+      "exitCode": null,
+      "resultCategory": "blocked",
+      "evidenceLocator": "MissionCenter/smoke-tests.md#MC-044"
+    },
+    {
+      "id": "mc044-publisher-help",
+      "command": "python scripts/publish_local.py --help",
+      "platform": "Windows",
+      "recordedAt": "2026-08-26T00:00:00+08:00",
+      "exitCode": 0,
+      "resultCategory": "pass",
+      "evidenceLocator": "MissionCenter/smoke-tests.md#MC-044"
+    },
+    {
+      "id": "mc044-plugin-browser-not-executed",
+      "command": "codex /plugins",
+      "platform": "Windows",
+      "recordedAt": "2026-08-26T00:00:00+08:00",
+      "exitCode": null,
+      "resultCategory": "not-executed",
+      "evidenceLocator": "MissionCenter/smoke-tests.md#MC-044"
+    },
+    {
+      "id": "mc044-update-not-executed",
+      "command": "official Codex installer (not executed)",
+      "platform": "Windows",
+      "recordedAt": "2026-08-26T00:00:00+08:00",
+      "exitCode": null,
+      "resultCategory": "not-executed",
+      "evidenceLocator": "MissionCenter/smoke-tests.md#MC-044"
+    }
+  ],
+  "matrix": [
+    {
+      "surface": "installation",
+      "officialCommand": "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+      "localEvidence": "Installed Store package resolves on PATH.",
+      "status": "observed-install",
+      "probeRecordIds": ["mc044-windows-path"]
+    },
+    {
+      "surface": "version-and-help",
+      "localCommand": "codex --version; codex --help",
+      "localEvidence": "Execution blocked by WindowsApps access denied.",
+      "status": "blocked-local",
+      "probeRecordIds": ["mc044-windows-help", "mc044-wsl-help"]
+    },
+    {
+      "surface": "plugin-search-and-list",
+      "officialCommand": "codex /plugins",
+      "localEvidence": "Cannot execute installed binary, so interactive search/list was not claimed as locally verified.",
+      "status": "officially-documented-local-unverified",
+      "probeRecordIds": ["mc044-plugin-browser-not-executed"]
+    },
+    {
+      "surface": "plugin-install-and-reload",
+      "officialCommand": "codex /plugins; select a configured marketplace plugin; start a new session",
+      "localEvidence": "Cannot execute installed binary; repository publisher remains file-based and local.",
+      "status": "officially-documented-local-unverified",
+      "probeRecordIds": ["mc044-plugin-browser-not-executed"]
+    },
+    {
+      "surface": "update-and-reinstall",
+      "officialCommand": "Rerun the official Codex installer; do not infer a version migration from news.",
+      "localEvidence": "Not executed because it downloads or mutates installation state.",
+      "status": "officially-documented-not-executed",
+      "probeRecordIds": ["mc044-update-not-executed"]
+    },
+    {
+      "surface": "offline-fallback",
+      "localCommand": "python scripts/publish_local.py --dry-run/--verify without --register",
+      "localEvidence": "Core publisher is Python stdlib/file based; --register explicitly requires a resolvable Codex executable, while publish/verify do not require one. Existing publish_local tests cover this boundary.",
+      "status": "repo-source-and-test-verified",
+      "probeRecordIds": ["mc044-publisher-help"]
+    }
+  ],
+  "decision": {
+    "retainCompatibilityLayer": true,
+    "reason": "The installed Windows package is present and WSL can locate its mounted CLI binary, but Windows and WSL execution are blocked by package permissions; official docs prove plugin-browser semantics, while local search/update behavior remains unverified.",
+    "nextVerification": "Run codex --version, codex /plugins search/install, and a controlled update/reinstall on a host where the standalone CLI is executable; then append observed evidence without removing the publisher fallback."
+  }
+}

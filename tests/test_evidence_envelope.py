@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import shutil
 import sys
@@ -125,6 +127,31 @@ class EvidenceEnvelopeTests(unittest.TestCase):
             self.write_envelope(workspace, current)
             checks = {item["name"]: item for item in reconcile_workspace(workspace)["checks"]}
             self.assertEqual(checks["evidence_envelope"]["status"], "unknown")
+
+        with workspace_tempdir("envelope-superseded-stale-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            old = self.envelope(workspace, envelope_id="env-old", status="superseded")
+            tasks = workspace / "MissionCenter" / "tasks.md"
+            tasks.write_text(tasks.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+            current = self.envelope(workspace, envelope_id="env-new", supersedes="env-old")
+            self.write_envelope(workspace, old)
+            self.write_envelope(workspace, current)
+            checks = {item["name"]: item for item in reconcile_workspace(workspace)["checks"]}
+            self.assertEqual(checks["evidence_envelope"]["status"], "unknown")
+            self.assertNotIn("scopeDigest does not match", checks["evidence_envelope"]["message"])
+
+        with workspace_tempdir("envelope-superseded-stale-current-conflict-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            old = self.envelope(workspace, envelope_id="env-old", status="superseded")
+            tasks = workspace / "MissionCenter" / "tasks.md"
+            tasks.write_text(tasks.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+            current = self.envelope(workspace, envelope_id="env-new", supersedes="env-old")
+            current["result"] = "fail"
+            self.write_envelope(workspace, old)
+            self.write_envelope(workspace, current)
+            checks = {item["name"]: item for item in reconcile_workspace(workspace)["checks"]}
+            self.assertEqual(checks["evidence_envelope"]["status"], "conflict")
+            self.assertIn("current evidence result is fail", checks["evidence_envelope"]["message"])
 
         with workspace_tempdir("envelope-stale-reconcile-") as temporary:
             workspace = self.copy_fixture(Path(temporary))

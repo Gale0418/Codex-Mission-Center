@@ -5,6 +5,14 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python3 \"$PLUGIN_ROOT/skills/mission-center/scripts/prompt_router.py\"",
+            "commandWindows": "python \"%PLUGIN_ROOT%\\skills\\mission-center\\scripts\\prompt_router.py\"",
+            "async": false,
+            "timeout": 3,
+            "additionalContextLimit": 400
+          },
+          {
+            "type": "command",
             "command": "python3 \"$PLUGIN_ROOT/skills/mission-center/scripts/hud_autolaunch.py\" hook",
             "commandWindows": "python \"%PLUGIN_ROOT%\\skills\\mission-center\\scripts\\hud_autolaunch.py\" hook",
             "async": true,

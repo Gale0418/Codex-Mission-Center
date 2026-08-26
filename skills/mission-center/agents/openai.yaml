@@ -1,4 +1,4 @@
 interface:
   display_name: "Mission Center"
   short_description: "Clarify, research, approve, and track local missions."
-  default_prompt: "Use $mission-center to resume from bounded local context or route this mission by intent and risk, preserving tasks.md as the only lifecycle truth and requiring evidence before Done."
+  default_prompt: "Use $mission-center for a high-impact or multi-step mission with bounded local context and routing by intent and risk: clarification, research, project planning, approval, or recovery of an existing MissionCenter workspace (高影響／多步驟目標、專案規劃，或既有 MissionCenter 恢復／繼續). Skip a single-step change, generic plan or continue wording, and explanation or quotation only. Preserve tasks.md as the only lifecycle truth and require evidence before Done. HUD is portable by default: hook/show must not open Chrome or another external browser; use Codex Desktop's built-in sidebar/preview when supported, otherwise provide the clickable loopback URL. External browser use requires explicit --open-browser, and an async hook cannot guarantee same-turn sidebar opening."

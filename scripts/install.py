@@ -18,7 +18,7 @@ def build_publish_command(repo_root: Path) -> list[str]:
         "--repo", str(repo_root), "--personal-skill", str(personal),
         "--marketplace-plugin", str(marketplace), "--write",
     ]
-    if os.environ.get("MISSION_CENTER_PUBLISH_REGISTER", "1") != "0":
+    if os.environ.get("MISSION_CENTER_PUBLISH_REGISTER", "0") == "1":
         command.append("--register")
     return command
 

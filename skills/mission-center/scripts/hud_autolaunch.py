@@ -25,6 +25,10 @@ import webbrowser
 from ctypes import wintypes
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+
+from bootstrap_mission_center import MANAGED_VISUAL_ASSETS, copy_visual_assets
+from mission_runtime import fingerprint_hud_assets
 
 
 MAX_STDIN_BYTES = 64 * 1024
@@ -34,6 +38,9 @@ MAX_LOCK_BYTES = 4096
 # through that bounded transaction so concurrent hooks reuse its result.
 LOCK_ACQUIRE_RETRIES = 120
 LOCK_RETRY_DELAY_SECONDS = 0.05
+# Windows may briefly deny unlink while a concurrent exclusive-create attempt
+# is being resolved.  Keep release bounded and only retry an unchanged lock.
+LOCK_RELEASE_RETRIES = 20
 COOLDOWN_SECONDS = 3.0
 HEALTH_TIMEOUT_SECONDS = 0.8
 VISUAL_SUMMARY = Path("output/mission-center-assets/visual-summary.html")
@@ -41,18 +48,51 @@ TASKS = Path("MissionCenter/tasks.md")
 RUNTIME_DIR = Path("output/mission-center-runtime")
 METADATA_NAME = "hud-autolaunch.json"
 LOCK_NAME = "hud-autolaunch.lock"
+HOOK_EVENT_NAME = "UserPromptSubmit"
+PERMISSION_MODES = frozenset({"default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"})
+METADATA_FIELDS = frozenset(
+    {
+        "workspaceFingerprint",
+        "port",
+        "sessionNonce",
+        "url",
+        "lastLaunchAt",
+        "hudAssetFingerprint",
+        "lastSessionId",
+        "lastTurnId",
+    }
+)
 INVOCATION_PATTERNS = (
     re.compile(r"(?<![\\\w])\$mission-center(?![\w-])", re.IGNORECASE),
     re.compile(r"(?<![\\\w])plugin://mission-center(?:[/?#][^\s]*)?(?![\w-])", re.IGNORECASE),
     re.compile(r"(?<![\\\w])@mission[ \t]+center(?![\w-])", re.IGNORECASE),
 )
+QUOTED_SPAN_PATTERN = re.compile(
+    r"```.*?```|`[^`\r\n]*`|(?<![\w'])'[^'\r\n]*'(?!\w)|\"[^\"\r\n]*\"|「[^」\r\n]*」|『[^』\r\n]*』",
+    re.DOTALL,
+)
+NEGATED_PREFIX_PATTERN = re.compile(
+    r"(?:不要|別|勿|不必|禁止)(?:使用|啟動|開啟|執行|呼叫)?\s*$|"
+    r"(?:do not|don't|dont|no need to)"
+    r"(?:\s+(?:use|invoke|open|launch|run|activate))?\s*$",
+    re.IGNORECASE,
+)
 
 
 def invocation_matches(prompt: object) -> bool:
-    """Return true only for an explicit, unescaped Mission Center invocation."""
+    """Return true for an explicit invocation outside inline code spans."""
     if not isinstance(prompt, str) or not prompt:
         return False
-    return any(pattern.search(prompt) for pattern in INVOCATION_PATTERNS)
+    # Code/quotation spans and an immediate, unambiguous negation are not a
+    # request to open the HUD. This is intentionally bounded lexical handling;
+    # semantic routing remains in the skill description.
+    visible = QUOTED_SPAN_PATTERN.sub(" ", prompt)
+    for pattern in INVOCATION_PATTERNS:
+        for match in pattern.finditer(visible):
+            prefix = visible[max(0, match.start() - 64) : match.start()]
+            if not NEGATED_PREFIX_PATTERN.search(prefix):
+                return True
+    return False
 
 
 def bounded_hook_input(stream: Any = None) -> dict[str, Any] | None:
@@ -70,6 +110,23 @@ def bounded_hook_input(stream: Any = None) -> dict[str, Any] | None:
 
 def workspace_paths(workspace: Path) -> tuple[Path, Path]:
     return workspace / TASKS, workspace / VISUAL_SUMMARY
+
+
+def sync_packaged_hud_assets(workspace: Path) -> str | None:
+    """Refresh managed HUD files and return their content fingerprint."""
+    tasks, visual = workspace_paths(workspace)
+    if not tasks.is_file():
+        return None
+    target = visual.parent
+    if any(path.is_symlink() for path in (target.parent, target)):
+        return None
+    if any((target / name).is_symlink() for name in MANAGED_VISUAL_ASSETS):
+        return None
+    try:
+        copy_visual_assets(workspace, force=True)
+        return fingerprint_hud_assets(target.parent)
+    except OSError:
+        return None
 
 
 def workspace_fingerprint(workspace: Path) -> str:
@@ -94,13 +151,25 @@ def read_metadata(workspace: Path) -> dict[str, Any] | None:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError, json.JSONDecodeError):
         return None
-    return value if isinstance(value, dict) else None
+    return _sanitize_metadata(value)
+
+
+def _sanitize_metadata(value: object) -> dict[str, Any] | None:
+    """Keep only launcher-owned, non-secret metadata fields."""
+    if not isinstance(value, dict):
+        return None
+    return {key: value[key] for key in METADATA_FIELDS if key in value}
 
 
 def atomic_metadata(workspace: Path, value: dict[str, Any]) -> None:
     path = metadata_path(workspace)
     path.parent.mkdir(parents=True, exist_ok=True)
-    encoded = (json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+    sanitized = _sanitize_metadata(value)
+    if sanitized is None:
+        raise TypeError("HUD metadata must be an object")
+    encoded = (
+        json.dumps(sanitized, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+    ).encode("utf-8")
     if len(encoded) > MAX_METADATA_BYTES:
         raise ValueError("HUD metadata exceeds byte limit")
     fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
@@ -154,6 +223,11 @@ class MetadataLock:
             except FileExistsError:
                 state = _existing_lock_state(self.path)
                 if state is None:
+                    # A release can unlink the lock between open("x") and
+                    # observation. Retry only when the path truly vanished;
+                    # an existing malformed/unknown lock remains fail-closed.
+                    if not self.path.exists() and not self.path.is_symlink():
+                        continue
                     raise TimeoutError("HUD launcher is already running")
                 if state is True and not _lock_has_creation_identity(self.path):
                     raise TimeoutError("HUD launcher is already running")
@@ -166,11 +240,17 @@ class MetadataLock:
     def __exit__(self, *_exc):
         if self.handle:
             self.handle.close()
-        try:
-            if self.path.read_text(encoding="ascii") == self.contents:
+        for attempt in range(LOCK_RELEASE_RETRIES):
+            try:
+                if self.path.read_text(encoding="ascii") != self.contents:
+                    return
                 self.path.unlink()
-        except (FileNotFoundError, OSError, UnicodeDecodeError):
-            pass
+                return
+            except FileNotFoundError:
+                return
+            except (OSError, UnicodeDecodeError):
+                if attempt + 1 < LOCK_RELEASE_RETRIES:
+                    time.sleep(LOCK_RETRY_DELAY_SECONDS)
 
 
 def _pid_alive(pid: int) -> bool | None:
@@ -360,10 +440,12 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
 _NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler)
 
 
-def check_health(port: object, fingerprint: str, session_nonce: object) -> bool:
+def check_health(port: object, fingerprint: str, session_nonce: object, asset_fingerprint: object) -> bool:
     try:
         url = health_url(port)
         if not isinstance(session_nonce, str) or not session_nonce:
+            return False
+        if not isinstance(asset_fingerprint, str) or not asset_fingerprint:
             return False
         with _NO_REDIRECT_OPENER.open(url, timeout=HEALTH_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read(4096).decode("utf-8"))
@@ -372,6 +454,7 @@ def check_health(port: object, fingerprint: str, session_nonce: object) -> bool:
             and payload.get("service") == "mission-center-hud"
             and payload.get("workspaceFingerprint") == fingerprint
             and payload.get("sessionNonce") == session_nonce
+            and payload.get("hudAssetFingerprint") == asset_fingerprint
         )
     except (OSError, ValueError, TypeError, json.JSONDecodeError, urllib.error.URLError):
         return False
@@ -426,10 +509,10 @@ def open_browser(url: str) -> bool:
         return False
 
 
-def _launch_or_reuse_locked(workspace: Path, *, now: float, open_ui: bool = True) -> dict[str, Any]:
+def _launch_or_reuse_locked(workspace: Path, *, now: float, open_ui: bool = False) -> dict[str, Any]:
     """Launch/reuse core; caller must hold the workspace's MetadataLock."""
-    tasks, visual = workspace_paths(workspace)
-    if not tasks.is_file() or not visual.is_file():
+    asset_fingerprint = sync_packaged_hud_assets(workspace)
+    if asset_fingerprint is None:
         return {"status": "unavailable", "reason": "workspace-assets-missing"}
     fingerprint = workspace_fingerprint(workspace)
     previous = read_metadata(workspace)
@@ -440,7 +523,8 @@ def _launch_or_reuse_locked(workspace: Path, *, now: float, open_ui: bool = True
         and previous.get("workspaceFingerprint") == fingerprint
         and previous_port is not None
         and isinstance(previous_nonce, str)
-        and check_health(previous_port, fingerprint, previous_nonce)
+        and previous.get("hudAssetFingerprint") == asset_fingerprint
+        and check_health(previous_port, fingerprint, previous_nonce, asset_fingerprint)
     ):
         try:
             last = float(previous.get("lastLaunchAt", 0) or 0)
@@ -448,22 +532,26 @@ def _launch_or_reuse_locked(workspace: Path, *, now: float, open_ui: bool = True
             last = 0
         url = f"http://127.0.0.1:{previous_port}/"
         if now - last < COOLDOWN_SECONDS:
-            return {"status": "cooldown", "url": url}
+            updated = dict(previous)
+            updated["hudAssetFingerprint"] = asset_fingerprint
+            atomic_metadata(workspace, updated)
+            return {"status": "cooldown", "url": url, "hudAssetFingerprint": asset_fingerprint}
         if open_ui:
             open_browser(url)
         updated = dict(previous)
         updated["port"] = previous_port
         updated["url"] = url
         updated["lastLaunchAt"] = now
+        updated["hudAssetFingerprint"] = asset_fingerprint
         atomic_metadata(workspace, updated)
-        return {"status": "reused", "url": url}
+        return {"status": "reused", "url": url, "hudAssetFingerprint": asset_fingerprint}
     port = choose_port()
     session_nonce = secrets.token_urlsafe(24)
     process = launch_server(workspace, port, session_nonce)
     deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and not check_health(port, fingerprint, session_nonce):
+    while time.monotonic() < deadline and not check_health(port, fingerprint, session_nonce, asset_fingerprint):
         time.sleep(0.05)
-    if not check_health(port, fingerprint, session_nonce):
+    if not check_health(port, fingerprint, session_nonce, asset_fingerprint):
         try:
             process.terminate()
         except (OSError, AttributeError):
@@ -481,18 +569,19 @@ def _launch_or_reuse_locked(workspace: Path, *, now: float, open_ui: bool = True
             "sessionNonce": session_nonce,
             "url": url,
             "lastLaunchAt": now,
+            "hudAssetFingerprint": asset_fingerprint,
         },
     )
     if open_ui:
         open_browser(url)
-    return {"status": "launched", "url": url}
+    return {"status": "launched", "url": url, "hudAssetFingerprint": asset_fingerprint}
 
 
-def launch_or_reuse(workspace: Path, *, now: float | None = None, open_ui: bool = True) -> dict[str, Any]:
+def launch_or_reuse(workspace: Path, *, now: float | None = None, open_ui: bool = False) -> dict[str, Any]:
     """Reuse a healthy matching server, or launch one; all failures are non-fatal."""
     workspace = workspace.resolve()
-    tasks, visual = workspace_paths(workspace)
-    if not tasks.is_file() or not visual.is_file():
+    tasks, _visual = workspace_paths(workspace)
+    if not tasks.is_file():
         return {"status": "unavailable", "reason": "workspace-assets-missing"}
     try:
         with MetadataLock(workspace):
@@ -505,26 +594,46 @@ def launch_or_reuse(workspace: Path, *, now: float | None = None, open_ui: bool 
         return {"status": "unavailable", "reason": "launcher-failure"}
 
 
-def handle_hook(payload: dict[str, Any], *, open_ui: bool = True) -> dict[str, Any]:
+def handle_hook(payload: dict[str, Any], *, open_ui: bool = False) -> dict[str, Any]:
+    if not isinstance(payload, dict) or payload.get("hook_event_name") != HOOK_EVENT_NAME:
+        return {"status": "ignored", "reason": "invalid-hook-event"}
     prompt = payload.get("prompt")
     turn_id = payload.get("turn_id")
+    session_id = payload.get("session_id")
+    permission_mode = payload.get("permission_mode")
+    cwd = payload.get("cwd")
+    if not isinstance(prompt, str):
+        return {"status": "ignored", "reason": "invalid-prompt"}
     if not isinstance(turn_id, str) or not turn_id.strip():
         return {"status": "ignored", "reason": "missing-turn-id"}
+    if not isinstance(session_id, str) or not session_id.strip():
+        return {"status": "ignored", "reason": "missing-session-id"}
+    if permission_mode not in PERMISSION_MODES:
+        return {"status": "ignored", "reason": "invalid-permission-mode"}
+    if not isinstance(cwd, str) or not cwd.strip():
+        return {"status": "ignored", "reason": "invalid-cwd"}
     if not invocation_matches(prompt):
         return {"status": "ignored", "reason": "no-explicit-invocation"}
-    workspace = Path(str(payload.get("cwd") or payload.get("workspace") or "."))
+    if permission_mode == "plan":
+        return {"status": "ignored", "reason": "plan-mode"}
+    workspace = Path(cwd)
     workspace = workspace.resolve()
-    tasks, visual = workspace_paths(workspace)
-    if not tasks.is_file() or not visual.is_file():
+    tasks, _visual = workspace_paths(workspace)
+    if not tasks.is_file():
         return {"status": "unavailable", "reason": "workspace-assets-missing"}
     try:
         with MetadataLock(workspace):
             existing = read_metadata(workspace)
-            if existing and existing.get("lastTurnId") == turn_id:
+            if (
+                existing
+                and existing.get("lastSessionId") == session_id
+                and existing.get("lastTurnId") == turn_id
+            ):
                 return {"status": "ignored", "reason": "same-turn"}
             result = _launch_or_reuse_locked(workspace, now=time.time(), open_ui=open_ui)
             if result.get("status") in {"launched", "reused", "cooldown"}:
                 metadata = read_metadata(workspace) or {}
+                metadata["lastSessionId"] = session_id
                 metadata["lastTurnId"] = turn_id
                 atomic_metadata(workspace, metadata)
             return result
@@ -532,21 +641,65 @@ def handle_hook(payload: dict[str, Any], *, open_ui: bool = True) -> dict[str, A
         return {"status": "unavailable", "reason": "launcher-failure"}
 
 
+def hook_specific_output(result: object) -> dict[str, Any] | None:
+    """Build a formal UserPromptSubmit context for a successful HUD result."""
+    if not isinstance(result, dict) or result.get("status") not in {"launched", "reused", "cooldown"}:
+        return None
+    raw_url = result.get("url")
+    if not isinstance(raw_url, str):
+        return None
+    try:
+        parsed = urlparse(raw_url)
+        port = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname != "127.0.0.1"
+        or parsed.path != "/"
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or _validated_port(port) is None
+    ):
+        return None
+    url = f"http://127.0.0.1:{port}/"
+    context = (
+        f"Mission Center HUD ready at {url}. In Codex Desktop, present this loopback URL "
+        "in the built-in sidebar or preview surface when supported; otherwise keep this "
+        "clickable URL available. This asynchronous UserPromptSubmit hook cannot guarantee "
+        "that a sidebar opens during the current turn. Do not rely on Chrome or another "
+        "external browser."
+    )
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": HOOK_EVENT_NAME,
+            "additionalContext": context,
+        },
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     hook = commands.add_parser("hook")
-    hook.add_argument("--no-browser", action="store_true")
+    hook_browser = hook.add_mutually_exclusive_group()
+    hook_browser.add_argument("--open-browser", action="store_true")
+    hook_browser.add_argument("--no-browser", action="store_true", help=argparse.SUPPRESS)
     show = commands.add_parser("show")
     show.add_argument("--workspace", default=".", type=Path)
+    show.add_argument("--open-browser", action="store_true")
     args = parser.parse_args(argv)
     if args.command == "hook":
         payload = bounded_hook_input()
         if payload:
-            handle_hook(payload, open_ui=not args.no_browser)
+            result = handle_hook(payload, open_ui=args.open_browser)
+            output = hook_specific_output(result)
+            if output:
+                print(json.dumps(output, ensure_ascii=False, separators=(",", ":")))
         return 0
     else:
-        result = launch_or_reuse(args.workspace, open_ui=True)
+        result = launch_or_reuse(args.workspace, open_ui=args.open_browser)
     print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
     return 0
 

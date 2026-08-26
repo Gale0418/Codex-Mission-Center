@@ -1,4 +1,6 @@
 import json
+import os
+import stat
 import subprocess
 import sys
 import unittest
@@ -13,9 +15,12 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from publish_local import (
     FileTransaction,
+    get_codex_executable,
+    is_usable_codex_executable,
     main,
     normalized_version,
     register_marketplace_and_plugin,
+    reject_symlink_components,
     validate_target,
 )
 
@@ -48,6 +53,56 @@ def make_fake_repo(root: Path) -> Path:
 
 
 class PublishLocalTests(unittest.TestCase):
+    def test_rejects_user_controlled_symlink_component(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            root = Path(temporary)
+            real = root / "real"
+            real.mkdir()
+            link = root / "link"
+            try:
+                link.symlink_to(real, target_is_directory=True)
+            except (NotImplementedError, OSError) as exc:
+                if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                    self.skipTest("symlink creation requires SeCreateSymbolicLinkPrivilege")
+                raise
+            with self.assertRaisesRegex(ValueError, "must not contain symlinks"):
+                reject_symlink_components(link / "child", "target")
+
+    def test_codex_discovery_prefers_sandbox_and_rejects_windowsapps_path_alias(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            root = Path(temporary)
+            sandbox = root / ".sandbox-bin" / "codex.exe"
+            sandbox.parent.mkdir(parents=True)
+            sandbox.write_text("sandbox\n", encoding="utf-8")
+            sandbox.chmod(sandbox.stat().st_mode | stat.S_IXUSR)
+            alias = root / "WindowsApps" / "codex.exe"
+            alias.parent.mkdir(parents=True)
+            alias.write_text("alias\n", encoding="utf-8")
+            alias.chmod(alias.stat().st_mode | stat.S_IXUSR)
+
+            with patch.dict(
+                os.environ,
+                {
+                    "CODEX_HOME": str(root),
+                    "HOME": str(root),
+                    "USERPROFILE": str(root),
+                },
+                clear=True,
+            ):
+                with patch("publish_local.shutil.which", return_value=str(alias)):
+                    self.assertEqual(get_codex_executable(), sandbox.resolve())
+
+                sandbox.unlink()
+                with patch("publish_local.shutil.which", return_value=str(alias)):
+                    with patch("publish_local.os.name", "nt"):
+                        self.assertIsNone(get_codex_executable())
+
+    def test_codex_candidate_must_be_a_file(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            directory = Path(temporary) / "codex.exe"
+            directory.mkdir()
+            self.assertFalse(is_usable_codex_executable(directory))
+
     def test_semver_normalization_discards_arbitrary_build_metadata(self):
         self.assertEqual(normalized_version("1.2.3-beta.2+vendor.build"), "1.2.3-beta.2")
         with self.assertRaises(ValueError):
@@ -142,6 +197,7 @@ class PublishLocalTests(unittest.TestCase):
             marketplace = root / "marketplace" / "plugins" / "mission-center"
             fake_codex = root / "fake-codex"
             fake_codex.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_codex.chmod(fake_codex.stat().st_mode | stat.S_IXUSR)
 
             with patch("publish_local.subprocess.run") as run_mock:
                 run_mock.return_value.returncode = 0
@@ -338,6 +394,7 @@ class PublishLocalTests(unittest.TestCase):
             write(marketplace / "old.txt", "marketplace-old\n")
             fake_codex = root / "fake-codex"
             fake_codex.write_text("fake\n", encoding="utf-8")
+            fake_codex.chmod(fake_codex.stat().st_mode | stat.S_IXUSR)
             failure = subprocess.CalledProcessError(7, [str(fake_codex), "plugin", "marketplace", "add"])
             outcomes = [
                 subprocess.CompletedProcess([], 0),

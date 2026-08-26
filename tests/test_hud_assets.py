@@ -171,6 +171,24 @@ class HudAssetTests(unittest.TestCase):
         self.assertIn("clearInterval(runtimePollTimer)", html)
         self.assertNotIn("setInterval(loadRuntimeState, 2000)", html)
 
+    def test_hud_validates_runtime_items_before_committing_last_valid_state(self):
+        html = (ROOT / "assets" / "visual-hub" / "visual-summary.html").read_text(encoding="utf-8")
+        self.assertIn("state.agents.some((agent) => !agent || typeof agent !== \"object\"", html)
+        self.assertIn("state.attention.some((item) => !item || typeof item !== \"object\"", html)
+        self.assertIn("lastValidRuntimeState = state; renderRuntimeState(state)", html)
+
+    def test_hud_discloses_task_visible_total_and_hidden_counts(self):
+        html = (ROOT / "assets" / "visual-hub" / "visual-summary.html").read_text(encoding="utf-8")
+        self.assertIn('id="taskVisibility"', html)
+        self.assertIn('taskCounts: { visible: agents.length, total, hidden }', html)
+        self.assertIn("HIDDEN ${counts.hidden}", html)
+        self.assertIn("state.taskCounts.hidden", html)
+
+    def test_hud_stops_decorative_rotation_while_hidden_or_reduced_motion(self):
+        html = (ROOT / "assets" / "visual-hub" / "visual-summary.html").read_text(encoding="utf-8")
+        self.assertIn("if (document.hidden || reducedMotionQuery?.matches) return", html)
+        self.assertIn("reducedMotionQuery?.addEventListener?.(\"change\", resume)", html)
+
     def test_hud_maps_only_explicit_runtime_activity_kinds(self):
         html = (ROOT / "assets" / "visual-hub" / "visual-summary.html").read_text(encoding="utf-8")
         self.assertIn("runtimeZoneByActivityKind", html)

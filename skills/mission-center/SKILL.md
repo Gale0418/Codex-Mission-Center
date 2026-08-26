@@ -1,15 +1,18 @@
 ---
 name: mission-center
-description: Use when a user needs to clarify a vague or high-impact goal, research options, publish an approved local MissionCenter workspace, or resume its work.
+description: Use when a high-impact or multi-step goal needs clarification, research, planning, approval, or MissionCenter recovery. Skip single-step, generic plan/continue, and explanation/quotation only.
 ---
 
 # Mission Center｜意圖／風險路由
 
-Mission Center 僅處理目前 repo 的 `./MissionCenter/`，不掃描、註冊、監控或合併其他 repo；依使用者語言生成（繁中用 zh-TW）。`tasks.md` 是任務順序與生命週期的唯一真實來源。
+Mission Center 僅處理 `./MissionCenter/`，不掃描、註冊、監控或合併其他 repo；依語言生成（繁中 zh-TW）。`tasks.md` 是任務順序與生命週期的唯一來源。
+
+`<python>`：Unix=python3；Win=`py -3`。
 
 ## 先判斷意圖
 
-- **恢復**：執行 `python skills/mission-center/scripts/mission_maintenance.py . resume --json`，只用 bounded `packet.content`；`workingSet`、`activeCriticalLessons`、`snapshot` 分別對應 `working-set.md`、`critical-lessons.md` Active Lessons、有效 active `snapshot.md`。若 `fallbackReason` 為 `derived view stale`，先執行 `python skills/mission-center/scripts/mission_maintenance.py . sync`，再執行 `python skills/mission-center/scripts/mission_maintenance.py . resume --json`；否則僅依 `packet.readNext`／`fallbackReason` 讀指定檔，不掃描 `MissionCenter/`。變更狀態、順序、優先級、依賴或下一步前須讀 `tasks.md`；詳見 [記憶維護](references/memory-maintenance.md)。
+
+- **恢復**：執行 `<python> skills/mission-center/scripts/mission_maintenance.py . resume --json`，只用 bounded `packet.content`；`workingSet`、`activeCriticalLessons`、`snapshot` 分別對應 `working-set.md`、`critical-lessons.md` Active Lessons、有效 active `snapshot.md`。若 `fallbackReason` 為 `derived view stale`，先執行 `<python> skills/mission-center/scripts/mission_maintenance.py . sync`，再執行 `<python> skills/mission-center/scripts/mission_maintenance.py . resume --json`；否則僅依 `packet.readNext`／`fallbackReason` 讀指定檔，不掃描 `MissionCenter/`。變更狀態、順序、優先級、依賴或下一步前須讀 `tasks.md`；詳見 [記憶維護](references/memory-maintenance.md)。
 - **目標未清**：依 [訪談](references/intake-protocol.md) 重述理解、指出最大缺口並提出**至多一個**阻塞問題；可用安全可逆假設繼續。完整前不建立工作區／任務。
 - **規劃／發布**：依 [任務工作區](references/task-workspace.md)、[Linear 規劃](references/linear-parity.md) 與 [執行閘門](references/execution-gates.md) 先提出選項與取捨；使用者核准完整 Epic 地圖與首個可驗證里程碑草案前，不寫入 `tasks.md`。
 - **執行／變更**：維持最小可驗證切片，依 [任務種子](references/task-seeding.md)、[規格化](references/normalization-rules.md)、[活動紀錄](references/activity-log-format.md) 記錄事實。
@@ -24,7 +27,9 @@ Mission Center 僅處理目前 repo 的 `./MissionCenter/`，不掃描、註冊�
 
 HUD helper 一對一 task，來源永遠是 `tasks.md`，依 [視覺 HUD](references/visual-hub.md) 同步；Runtime 僅可選遙測，依 [Runtime 協定](references/runtime-agent-protocol.md) 顯示在獨立 Live Agents 面板，不改任務狀態、排序或唯一真實來源。
 
-選用後先啟動 HUD：checkout 用 `python skills/mission-center/scripts/hud_autolaunch.py show --workspace .`；安裝版以本 `SKILL.md` 的父目錄解析 `scripts/hud_autolaunch.py` 絕對路徑並執行。失敗不阻塞，bootstrap/sync 後再試。
+開 HUD：`<python> skills/mission-center/scripts/hud_autolaunch.py show --workspace .`；預設不開瀏覽器；指紋供驗證；失敗不擋。
+
+Project Map：`<python> skills/mission-center/scripts/project_map.py .`（與 RuntimeState 分離）
 
 ## 驗證、Done 與收尾
 

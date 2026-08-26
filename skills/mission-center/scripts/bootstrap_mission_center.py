@@ -241,15 +241,24 @@ def choose_language(value: str) -> str:
 
 def copy_visual_assets(workspace_root: Path, force: bool) -> None:
     source = Path(__file__).resolve().parents[1] / "assets" / "visual-hub"
-    if not source.exists():
-        return
+    if not source.is_dir() or source.is_symlink():
+        raise FileNotFoundError(f"Packaged HUD asset directory is unavailable: {source}")
 
     target = workspace_root / "output" / "mission-center-assets"
+    output = target.parent
+    if any(path.is_symlink() for path in (output, target)):
+        raise OSError("HUD asset destination must not contain symlinks")
     target.mkdir(parents=True, exist_ok=True)
-    for item in source.iterdir():
-        if item.name not in MANAGED_VISUAL_ASSETS or not item.is_file() or item.is_symlink():
-            continue
+    packaged = {}
+    for name in sorted(MANAGED_VISUAL_ASSETS):
+        item = source / name
+        if item.is_symlink() or not item.is_file():
+            raise FileNotFoundError(f"Packaged HUD asset is unavailable: {item}")
+        packaged[name] = item
+    for name, item in packaged.items():
         destination = target / item.name
+        if destination.is_symlink():
+            raise OSError(f"HUD asset destination must not be a symlink: {destination}")
         # Files shipped by the skill are the managed HUD surface.  Keep any
         # workspace-owned extras intact, but always synchronize these names so
         # canonical and served HTML/assets cannot drift after an upgrade.

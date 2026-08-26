@@ -263,9 +263,17 @@ def _check_evidence_envelopes(root: Path, tasks: list[dict[str, str]]) -> dict[s
             errors.append(f"{path.name}: envelope must be an object")
             statuses.append("corrupt")
             continue
+        # A superseded envelope remains an immutable historical record.  Its
+        # scope may legitimately be stale after the replacement is recorded;
+        # only the current envelope is freshness-gated.
         status = envelope_status(payload, workspace)
-        statuses.append(status)
-        envelope_errors = validate_envelope(payload, workspace)
+        if not (payload.get("status") == "superseded" and status == "stale"):
+            statuses.append(status)
+        envelope_errors = validate_envelope(
+            payload,
+            workspace,
+            verify_digest=payload.get("status") != "superseded",
+        )
         if envelope_errors:
             errors.append(f"{path.name}: {'; '.join(envelope_errors)}")
         envelope_id = payload.get("envelopeId")
@@ -276,7 +284,15 @@ def _check_evidence_envelopes(root: Path, tasks: list[dict[str, str]]) -> dict[s
             seen_ids.add(envelope_id)
         records.append((path, payload))
 
-    valid_records = [(path, payload) for path, payload in records if not validate_envelope(payload, workspace)]
+    valid_records = [
+        (path, payload)
+        for path, payload in records
+        if not validate_envelope(
+            payload,
+            workspace,
+            verify_digest=payload.get("status") != "superseded",
+        )
+    ]
     by_id = {payload.get("envelopeId"): payload for _, payload in valid_records}
     current_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
     covered_task_ids: set[str] = set()

@@ -13,6 +13,7 @@ class VisualStateTests(unittest.TestCase):
     def test_empty_tasks_create_no_placeholder_helper(self):
         state = build_visual_state([], goal="空專案", progress=0)
         self.assertEqual(state["agents"], [])
+        self.assertEqual(state["taskCounts"], {"visible": 0, "total": 0, "hidden": 0})
 
     def test_one_helper_per_task_ignores_duplicate_owner(self):
         tasks = normalize_tasks(
@@ -53,6 +54,7 @@ class VisualStateTests(unittest.TestCase):
             normalize_tasks(rows), goal="大型任務", progress=20
         )
         self.assertEqual(len(state["agents"]), 15)
+        self.assertEqual(state["taskCounts"], {"visible": 15, "total": 19, "hidden": 4})
         self.assertEqual(
             [agent["id"] for agent in state["agents"][:10]],
             [f"T{i}" for i in range(10)],

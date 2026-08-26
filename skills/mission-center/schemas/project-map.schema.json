@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mission-center/project-map.schema.json",
+  "title": "Mission Center Project Map",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "sourceFingerprint",
+    "sources",
+    "generatedAt",
+    "generation",
+    "language",
+    "project",
+    "counts",
+    "nodes",
+    "edges"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "sourceFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "sources": {
+      "const": ["MissionCenter/project.md", "MissionCenter/tasks.md"]
+    },
+    "generatedAt": { "type": "string", "minLength": 1 },
+    "generation": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "language": { "enum": ["en", "zh-TW"] },
+    "project": {
+      "type": "object",
+      "required": ["name", "goal"],
+      "properties": {
+        "name": { "type": "string" },
+        "goal": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "counts": {
+      "type": "object",
+      "required": ["total", "byStatus"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "byStatus": {
+          "type": "object",
+          "propertyNames": { "enum": ["Backlog", "Ready", "In Progress", "Blocked", "Review", "Done"] },
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "type", "parentId", "priority", "status", "owner", "dependsOn"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string" },
+          "type": { "type": "string" },
+          "parentId": { "type": ["string", "null"] },
+          "priority": { "type": "string" },
+          "status": { "enum": ["Backlog", "Ready", "In Progress", "Blocked", "Review", "Done"] },
+          "owner": { "type": "string" },
+          "dependsOn": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "kind"],
+        "properties": {
+          "from": { "type": "string", "minLength": 1 },
+          "to": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["parent", "dependsOn"] }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -98,7 +98,7 @@ class InstallGitHookTests(unittest.TestCase):
             checker.parent.mkdir()
             checker.write_text("# test placeholder\n", encoding="utf-8")
 
-            def run_with(*names):
+            def run_with(*names, failed=()):
                 for child in fake_bin.iterdir():
                     child.unlink()
                 log = root / "invocation.log"
@@ -108,8 +108,10 @@ class InstallGitHookTests(unittest.TestCase):
                     executable = fake_bin / name
                     with executable.open("w", encoding="utf-8", newline="\n") as handle:
                         handle.write(
-                            '#!/bin/sh\nprintf "%s\\n" "$0 $*" > '
-                            f'"{log.as_posix()}"\n'
+                            '#!/bin/sh\n'
+                            + ("if [ \"$1\" = \"-c\" ]; then exit 127; fi\n" if name in failed else "")
+                            + 'printf "%s\\n" "$0 $*" > '
+                            + f'"{log.as_posix()}"\n'
                         )
                     executable.chmod(0o755)
                 env = {"PATH": str(fake_bin)}
@@ -140,6 +142,12 @@ class InstallGitHookTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn("commit blocked", result.stderr)
             self.assertFalse(log.exists())
+
+            result, log = run_with("python3", "python", failed=("python3",))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            invocation = log.read_text(encoding="utf-8")
+            self.assertIn("/python ", invocation.replace("\\", "/"))
+            self.assertNotIn("/python3 ", invocation.replace("\\", "/"))
         finally:
             shutil.rmtree(root)
 
