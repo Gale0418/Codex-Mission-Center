@@ -414,6 +414,11 @@ def verify_targets(
     return valid
 
 
+def _is_windows_platform() -> bool:
+    """Return the host platform without making callers patch pathlib globals."""
+    return os.name == "nt"
+
+
 def is_usable_codex_executable(candidate: Path, *, from_path: bool = False) -> bool:
     """Return whether a candidate is a usable CLI file.
 
@@ -425,7 +430,7 @@ def is_usable_codex_executable(candidate: Path, *, from_path: bool = False) -> b
     try:
         if not candidate.is_file() or not os.access(candidate, os.X_OK):
             return False
-        if from_path and os.name == "nt":
+        if from_path and _is_windows_platform():
             return not any(part.casefold() == "windowsapps" for part in candidate.parts)
     except OSError:
         return False
@@ -441,7 +446,11 @@ def get_codex_executable(explicit: Path | None = None) -> Path | None:
     if env_override:
         candidates.append(Path(env_override).expanduser())
 
-    codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser()
+    codex_home_value = os.environ.get("CODEX_HOME")
+    if not codex_home_value:
+        user_home = os.environ.get("USERPROFILE") or os.environ.get("HOME") or os.path.expanduser("~")
+        codex_home_value = os.path.join(user_home, ".codex")
+    codex_home = Path(codex_home_value).expanduser()
     candidates.extend(
         [
             codex_home / ".sandbox-bin" / "codex",

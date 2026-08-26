@@ -94,7 +94,7 @@ class PublishLocalTests(unittest.TestCase):
 
                 sandbox.unlink()
                 with patch("publish_local.shutil.which", return_value=str(alias)):
-                    with patch("publish_local.os.name", "nt"):
+                    with patch("publish_local._is_windows_platform", return_value=True):
                         self.assertIsNone(get_codex_executable())
 
     def test_codex_candidate_must_be_a_file(self):
