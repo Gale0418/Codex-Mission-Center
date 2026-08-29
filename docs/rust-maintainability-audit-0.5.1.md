@@ -99,3 +99,13 @@ policy schema 小功能仍需先依上方自然邊界定位，這是 0.5.2 的�
   focused tests。
 - 真實 workspace 以 Rust CLI 重跑後得到 `sourceFresh=true`、`stale=false`、
   `route=complete`、`actionableHandoff=false`；這個 probe 同時找出並消除了重複選擇邏輯。
+
+第五個 clean-checkout probe：候選 revision 的四個 Python matrix 同時失敗。
+
+- GitHub job log 將唯一 failure 定位到 repository snapshot 缺少既有 `Resume／恢復` 欄位；
+  不是平台差異，也不是需要 rerun 的 flake。
+- Production 修改點唯一落在 `MissionWorkspace::write_snapshot_with_options`：active snapshot
+  寫入 canonical task resume locator，inactive snapshot 寫入重新選取 canonical task 的明確
+  指引；沒有修改 Python oracle 或放寬 release test。
+- 新增 active／all-Done inactive Rust regression，並以與 CI 相同的 435-test Python discovery
+  重驗。這顯示 clean-checkout gate 能抓到本機 focused suite 未覆蓋的 tracked artifact contract。

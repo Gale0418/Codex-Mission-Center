@@ -2218,6 +2218,8 @@ impl MissionWorkspace {
                     "指紋",
                     "依賴",
                     "驗證",
+                    "恢復",
+                    "目前沒有進行中任務；請從 canonical 任務清單重新選取。",
                 )
             } else {
                 (
@@ -2229,6 +2231,8 @@ impl MissionWorkspace {
                     "Fingerprint",
                     "Dependencies",
                     "Verification",
+                    "Resume",
+                    "No active task; resume from canonical task selection.",
                 )
             };
             let prior = self
@@ -2294,8 +2298,20 @@ impl MissionWorkspace {
                 serde_json::to_string(&diagnosis)
                     .map_err(|error| WorkspaceError::ClaimRejected(error.to_string()))?,
             );
+            let resume = if snapshot_facts.state == "active" {
+                if chinese {
+                    format!("讀取 {} 的 canonical 任務與下一步", snapshot_facts.active)
+                } else {
+                    format!(
+                        "Read canonical task and next action for {}",
+                        snapshot_facts.active
+                    )
+                }
+            } else {
+                labels.9.to_owned()
+            };
             let body = format!(
-                "# {}\n\n- State: {}\n- {}: {timestamp}\n- {}: {}\n- {}: {}\n- {}: {}\n- {}: {}\n- {}: {}\n- {}: {}\n{metadata}\n- {}:\n{}{}\n",
+                "# {}\n\n- State: {}\n- {}: {timestamp}\n- {}: {}\n- {}: {}\n- {}: {}\n- {}: {}\n- {}: {}\n- {}: {}\n- {}: {}\n{metadata}\n- {}:\n{}{}\n",
                 labels.0,
                 snapshot_facts.state,
                 labels.1,
@@ -2311,6 +2327,8 @@ impl MissionWorkspace {
                 snapshot_facts.dependencies,
                 labels.7,
                 snapshot_facts.verification,
+                labels.8,
+                resume,
                 if chinese {
                     "近期嘗試"
                 } else {
@@ -4745,6 +4763,13 @@ mod tests {
         assert!(!focus.contains("| MC-1 |"));
         assert!(focus.contains("- Unfinished P0: 0"));
         assert_eq!(fs::read(fixture.workspace.tasks_path()).unwrap(), before);
+        fixture
+            .workspace
+            .write_snapshot("snapshot-all-done", "2", None)
+            .unwrap();
+        let snapshot = fs::read_to_string(fixture.workspace.snapshot_path()).unwrap();
+        assert!(snapshot.contains("- Resume:"));
+        assert!(snapshot.contains("No active task; resume from canonical task selection."));
     }
 
     #[test]
@@ -4962,6 +4987,9 @@ mod tests {
         workspace
             .write_snapshot("snapshot-1", "2", Some("safe note"))
             .unwrap();
+        let snapshot = fs::read_to_string(workspace.snapshot_path()).unwrap();
+        assert!(snapshot.contains("- Resume:"));
+        assert!(snapshot.contains("Read canonical task and next action for MC-1"));
         workspace
             .append_pulse_full(
                 "pulse-1",
