@@ -12,7 +12,10 @@ fn temp_root(label: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let root = std::env::temp_dir().join(format!(
+    let temp = std::env::temp_dir();
+    #[cfg(target_os = "macos")]
+    let temp = temp.canonicalize().expect("canonical temporary directory");
+    let root = temp.join(format!(
         "mission-center-{label}-{}-{nonce}",
         std::process::id()
     ));

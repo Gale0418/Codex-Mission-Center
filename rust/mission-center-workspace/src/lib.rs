@@ -4272,6 +4272,13 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
 mod tests {
     use super::*;
 
+    fn test_temp_root(label: &str) -> PathBuf {
+        let temp = std::env::temp_dir();
+        #[cfg(target_os = "macos")]
+        let temp = temp.canonicalize().expect("canonical temporary directory");
+        temp.join(format!("mission-center-{label}-{}", unique_nonce()))
+    }
+
     struct Fixture {
         workspace: MissionWorkspace,
         root: PathBuf,
@@ -4284,8 +4291,7 @@ mod tests {
     }
 
     fn fixture() -> Fixture {
-        let root =
-            std::env::temp_dir().join(format!("mission-center-workspace-{}", unique_nonce()));
+        let root = test_temp_root("workspace");
         fs::create_dir_all(root.join(MISSION_DIRECTORY)).expect("fixture directory");
         fs::write(
             root.join(MISSION_DIRECTORY).join(TASKS_FILE),
@@ -4309,7 +4315,7 @@ mod tests {
 
     #[test]
     fn init_creates_contract_and_replays_without_rewriting() {
-        let root = std::env::temp_dir().join(format!("mission-center-init-{}", unique_nonce()));
+        let root = test_temp_root("init");
         let workspace = MissionWorkspace::new(&root);
         let first = workspace
             .init("init-test", "2026-08-29T00:00:00Z", "en", false)
@@ -4582,8 +4588,7 @@ mod tests {
 
     #[test]
     fn sync_missing_or_malformed_tasks_fails_closed() {
-        let root =
-            std::env::temp_dir().join(format!("mission-center-sync-error-{}", unique_nonce()));
+        let root = test_temp_root("sync-error");
         fs::create_dir_all(root.join(MISSION_DIRECTORY)).unwrap();
         let workspace = MissionWorkspace::new(&root);
         assert!(matches!(

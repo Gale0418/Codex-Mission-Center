@@ -8,7 +8,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 fn temp_workspace(name: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
+    let temp = std::env::temp_dir();
+    #[cfg(target_os = "macos")]
+    let temp = temp.canonicalize().expect("canonical temporary directory");
+    let path = temp.join(format!(
         "mission-center-runtime-{name}-{}",
         std::process::id()
     ));
