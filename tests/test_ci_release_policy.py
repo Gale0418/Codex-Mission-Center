@@ -84,6 +84,9 @@ class CiReleasePolicyTests(unittest.TestCase):
     def test_release_checks_magic_checksum_manifest_and_retention(self):
         for phrase in (
             "Check release binary architecture magic",
+            'pe_offset="$(od -An -tu4 -j60 -N4 "$binary"',
+            'machine_offset="$((pe_offset + 4))"',
+            '"50450000"',
             'magic=\"$(od -An -tx1 -N4 \"$binary\" | tr -d \' \\n\')\"',
             "hash_file()",
             "sha256sum \"$1\"",

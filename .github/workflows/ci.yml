@@ -281,8 +281,12 @@ jobs:
           magic="$(od -An -tx1 -N4 "$binary" | tr -d ' \n')"
           case "$RELEASE_VARIANT" in
             windows-x86_64)
-              test "$magic" = "4d5a"
-              test "$(od -An -tx2 -j68 -N2 "$binary" | tr -d ' \n')" = "8664"
+              test "$(od -An -tx1 -N2 "$binary" | tr -d ' \n')" = "4d5a"
+              pe_offset="$(od -An -tu4 -j60 -N4 "$binary" | tr -d ' \n')"
+              test "$pe_offset" -ge 64
+              test "$(od -An -tx1 -j"$pe_offset" -N4 "$binary" | tr -d ' \n')" = "50450000"
+              machine_offset="$((pe_offset + 4))"
+              test "$(od -An -tx2 -j"$machine_offset" -N2 "$binary" | tr -d ' \n')" = "8664"
               ;;
             linux-x86_64)
               test "$magic" = "7f454c46"

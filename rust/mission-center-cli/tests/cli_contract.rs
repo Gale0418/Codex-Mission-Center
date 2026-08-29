@@ -2,8 +2,11 @@ use std::{
     fs,
     io::Write,
     process::{Command, Stdio},
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+static WORKSPACE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn workspace(tasks: &str) -> std::path::PathBuf {
     let suffix = SystemTime::now()
@@ -11,7 +14,17 @@ fn workspace(tasks: &str) -> std::path::PathBuf {
         .expect("clock")
         .as_nanos()
         .to_string();
-    let root = std::env::temp_dir().join(format!("mission-center-rust-{suffix}"));
+    // macOS exposes the temporary directory through /var, which is a symlink to
+    // /private/var. Resolve that platform alias before exercising the production
+    // symlink guard so the fixture itself does not look like an unsafe workspace.
+    let temp = std::env::temp_dir();
+    #[cfg(target_os = "macos")]
+    let temp = temp.canonicalize().expect("canonical temporary directory");
+    let sequence = WORKSPACE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let root = temp.join(format!(
+        "mission-center-rust-{}-{suffix}-{sequence}",
+        std::process::id()
+    ));
     fs::create_dir_all(root.join("MissionCenter")).expect("create fixture");
     fs::write(root.join("MissionCenter/tasks.md"), tasks).expect("write fixture");
     root
