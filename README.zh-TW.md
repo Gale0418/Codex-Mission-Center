@@ -2,17 +2,17 @@
 
 [![CI](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml/badge.svg)](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml)
 [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![版本](https://img.shields.io/badge/version-0.5.1--rust.1-F59E0B.svg)](.codex-plugin/plugin.json)
-[![Python](https://img.shields.io/badge/python-3.11-3776AB.svg)](https://www.python.org/downloads/release/python-3110/)
+[![版本](https://img.shields.io/badge/version-0.5.1-F59E0B.svg)](.codex-plugin/plugin.json)
+[![Rust](https://img.shields.io/badge/rust-1.98.0-DEA584.svg)](rust/rust-toolchain.toml)
 
 **把模糊目標變成 Codex 可持續接手、可審查、以證據收尾的本地任務工作區。**
 
 Mission Center 是一次只服務一個專案的離線、檔案型 Codex 外掛與 Skill。它協助釐清意圖、讓你核准滾動式計畫、保存因果式交接，並把驗證證據留在任務資料旁邊。它不是託管式專案管理服務，也不是 `pip` 或 `npm` 套件。
 
 <p align="center">
-  <img src="docs/assets/mission-center-fleet-command-deck.png" alt="0.5.1 Rust migration 期間的本機 Mission Center file-snapshot HUD" width="100%">
+  <img src="docs/assets/mission-center-fleet-command-deck.png" alt="Mission Center 0.5.1 本機 file-snapshot HUD" width="100%">
 </p>
-<p align="center"><em>這是 0.5.1 Rust migration 期間的本機 file-snapshot HUD；不代表 stable 已完成，也不是全域 live sensor。</em></p>
+<p align="center"><em>這是 Mission Center 0.5.1 的本機 file-snapshot HUD；呈現的是受限 repository 證據，不是全域 live sensor。</em></p>
 
 <p align="center">
   <img src="skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.webp" alt="Mission Center fleet crossing a bridge" width="100%">
@@ -50,7 +50,7 @@ flowchart LR
 
 Mission Center 故意保持狹窄：
 
-> **Rust-only preview（0.5.1-rust.1）：**正式 Plugin 入口是有版本契約的
+> **Rust-only stable（0.5.1）：**正式 Plugin 入口是有版本契約的
 > `mission-center` Rust CLI 與四平台 frozen package。下方保留的 Python
 > scripts 只供 differential test／migration diagnostics 使用，不會放入
 > stable Plugin，也不會作為 runtime fallback。
@@ -130,7 +130,7 @@ bash ./scripts/install-unix.sh --with-personal-skill
 `MISSION_CENTER_PYTHON_COMPAT=1` 時才會註冊 Plugin；正式安裝請使用已驗證
 的 Rust package。
 
-Rust preview 也能在不呼叫 Codex CLI、不中開外部瀏覽器的情況下，註冊已驗證的 marketplace tree：`mission-center install register apply --plugin-root <絕對 marketplace>/plugins/mission-center --marketplace-root <絕對 marketplace> --operation-id <id> --version 0.5.1-rust.1`。產生的 receipt 支援相同內容 replay、`register rollback` 與 `register reconcile`。
+Rust stable 也能在不呼叫 Codex CLI、不開外部瀏覽器的情況下，註冊已驗證的 marketplace tree：`mission-center install register apply --plugin-root <絕對 marketplace>/plugins/mission-center --marketplace-root <絕對 marketplace> --operation-id <id> --version 0.5.1`。產生的 receipt 支援相同內容 replay、`register rollback` 與 `register reconcile`。
 
 只預覽或驗證衍生目標、不寫檔：
 

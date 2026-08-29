@@ -945,23 +945,31 @@ fn scan_frozen_python(files: &[FrozenFile]) -> Result<(), PublishError> {
         {
             return Err(PublishError::stable(
                 ErrorCode::PythonRuntime,
-                "正式 staged runtime 不得含 Python runtime 檔案。",
+                &format!(
+                    "正式 staged runtime 不得含 Python runtime 檔案：{}。",
+                    file.relative_path
+                ),
             ));
         }
         if file.executable || formal {
             let text = String::from_utf8_lossy(&file.bytes).to_ascii_lowercase();
             let has_shebang = text.lines().any(|line| line.trim_start().starts_with("#!"));
+            let native_binary = known_binary_header(&file.bytes);
             if formal
+                && !native_binary
                 && (formal_script_path(&file.relative_path)
                     || has_shebang
-                    || (!known_binary_header(&file.bytes) && ascii_text(&file.bytes)))
+                    || ascii_text(&file.bytes))
             {
-                validate_formal_script(&text)?;
+                validate_formal_script(&text, &file.relative_path)?;
             }
-            if python_invocation(&text) {
+            if !native_binary && python_invocation(&text) {
                 return Err(PublishError::stable(
                     ErrorCode::PythonRuntime,
-                    "staged package 不得含 Python invocation/fallback。",
+                    &format!(
+                        "staged package 不得含 Python invocation/fallback：{}。",
+                        file.relative_path
+                    ),
                 ));
             }
         }
@@ -985,56 +993,60 @@ fn ascii_text(bytes: &[u8]) -> bool {
         .iter()
         .all(|byte| *byte == b'\n' || *byte == b'\r' || (0x20..=0x7e).contains(byte))
 }
-fn validate_formal_script(text: &str) -> Result<(), PublishError> {
+fn validate_formal_script(text: &str, path: &str) -> Result<(), PublishError> {
     for line in text.lines() {
         let trimmed = line.trim_start();
         if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with("rem ") {
             continue;
         }
-        if trimmed.chars().any(|c| "'\"$%`".contains(c)) {
-            return Err(PublishError::stable(
-                ErrorCode::PythonRuntime,
-                "正式 shell/batch role 含不安全引號、變數或 command substitution。",
-            ));
-        }
         let tokens = shell_tokens(trimmed);
         for token in &tokens {
-            let lower = token.to_ascii_lowercase();
+            let lower = token
+                .trim_matches(|character: char| {
+                    matches!(character, '\'' | '"' | ',' | ':' | '{' | '}' | '[' | ']')
+                })
+                .to_ascii_lowercase();
+            let command = lower.rsplit(['/', '\\']).next().unwrap_or(&lower);
             if matches!(lower.as_str(), "-c" | "/c" | "-command" | "/command")
-                || token.contains('=')
+                || matches!(
+                    command,
+                    "apt"
+                        | "apt-get"
+                        | "brew"
+                        | "cargo"
+                        | "choco"
+                        | "cmake"
+                        | "curl"
+                        | "curl.exe"
+                        | "eval"
+                        | "fetch"
+                        | "git"
+                        | "invoke-restmethod"
+                        | "invoke-webrequest"
+                        | "irm"
+                        | "iwr"
+                        | "make"
+                        | "npm"
+                        | "npx"
+                        | "pip"
+                        | "pip3"
+                        | "rustc"
+                        | "source"
+                        | "start-bitstransfer"
+                        | "tar"
+                        | "unzip"
+                        | "wget"
+                        | "winget"
+                )
             {
                 return Err(PublishError::stable(
                     ErrorCode::PythonRuntime,
-                    "正式 shell/batch role 禁止 -c、變數與未驗證 command wrapper。",
+                    &format!(
+                        "正式 shell/batch role 禁止下載、編譯、套件管理或動態 command wrapper：{path}。"
+                    ),
                 ));
             }
         }
-        let mut start = 0;
-        for (index, token) in tokens.iter().enumerate() {
-            if matches!(token.as_str(), ";" | "|" | "&") {
-                validate_formal_segment(&tokens[start..index])?;
-                start = index + 1;
-            }
-        }
-        validate_formal_segment(&tokens[start..])?;
-    }
-    Ok(())
-}
-fn validate_formal_segment(tokens: &[String]) -> Result<(), PublishError> {
-    let Some(first) = tokens.first() else {
-        return Ok(());
-    };
-    let first = first.trim_start_matches('@').to_ascii_lowercase();
-    const SAFE_COMMANDS: &[&str] = &[
-        "[", "]", "cd", "command", "do", "echo", "else", "esac", "exec", "exit", "export", "false",
-        "fi", "for", "if", "nice", "printf", "pwd", "read", "rem", "return", "set", "shift",
-        "sudo", "test", "then", "true", "type", "unset", "while", "env",
-    ];
-    if !SAFE_COMMANDS.contains(&first.as_str()) {
-        return Err(PublishError::stable(
-            ErrorCode::PythonRuntime,
-            "正式 shell/batch role 含未知 command wrapper，已 fail-closed。",
-        ));
     }
     Ok(())
 }
@@ -3123,7 +3135,10 @@ fn python_command_segment(tokens: &[String]) -> bool {
     false
 }
 fn python_command_token(token: &str) -> bool {
-    let lower = token.trim_start_matches('@').to_ascii_lowercase();
+    let lower = token
+        .trim_start_matches('@')
+        .trim_matches(['\'', '"'])
+        .to_ascii_lowercase();
     let base = lower.rsplit(['/', '\\']).next().unwrap_or(&lower);
     if matches!(base, "python" | "python.exe" | "python3" | "python3.exe") {
         return true;

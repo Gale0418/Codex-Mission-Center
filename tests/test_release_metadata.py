@@ -1,4 +1,5 @@
 import json
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -7,25 +8,27 @@ ROOT = Path(__file__).parents[1]
 
 
 class ReleaseMetadataTests(unittest.TestCase):
-    def test_rust_preview_manifest_is_explicit_and_not_installable(self):
+    def test_rust_stable_manifest_is_explicit_and_installable(self):
         manifest = json.loads(
-            (ROOT / ".codex-plugin" / "release-preview.json").read_text(
+            (ROOT / ".codex-plugin" / "release.json").read_text(
                 encoding="utf-8"
             )
         )
         self.assertEqual(manifest["schemaVersion"], "1.0")
-        self.assertEqual(manifest["kind"], "mission-center-release-preview")
+        self.assertEqual(manifest["kind"], "mission-center-release")
         self.assertEqual(manifest["pluginName"], "mission-center")
-        self.assertEqual(manifest["version"], "0.5.1-rust.1")
-        self.assertEqual(manifest["baseVersion"], "0.5.1")
-        self.assertEqual(manifest["releaseStage"], "preview")
+        self.assertEqual(manifest["version"], "0.5.1")
+        self.assertEqual(manifest["releaseStage"], "stable")
         self.assertEqual(manifest["runtime"], "rust")
         self.assertTrue(manifest["rustOnly"])
-        self.assertFalse(manifest["installable"])
+        self.assertTrue(manifest["installable"])
+        self.assertTrue(manifest["rollback"]["supported"])
+        self.assertTrue(manifest["rollback"]["receiptBound"])
+        self.assertTrue(manifest["rollback"]["reconcileDeliveryUnknown"])
 
-    def test_rust_preview_selector_is_four_platform_and_fail_closed(self):
+    def test_rust_stable_selector_is_four_platform_and_fail_closed(self):
         manifest = json.loads(
-            (ROOT / ".codex-plugin" / "release-preview.json").read_text(
+            (ROOT / ".codex-plugin" / "release.json").read_text(
                 encoding="utf-8"
             )
         )
@@ -55,12 +58,30 @@ class ReleaseMetadataTests(unittest.TestCase):
 
     def test_plugin_version_is_v05_release(self):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "0.5.1-rust.1")
+        self.assertEqual(manifest["version"], "0.5.1")
 
-    def test_preview_release_identity_matches_root_plugin(self):
+    def test_stable_release_identity_matches_root_plugin(self):
         plugin = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        preview = json.loads((ROOT / ".codex-plugin" / "release-preview.json").read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], preview["version"])
+        release = json.loads((ROOT / ".codex-plugin" / "release.json").read_text(encoding="utf-8"))
+        self.assertEqual(plugin["version"], release["version"])
+        self.assertFalse((ROOT / ".codex-plugin" / "release-preview.json").exists())
+
+    def test_stable_release_has_sbom_notes_and_rollback_guidance(self):
+        sbom = json.loads((ROOT / "docs" / "SBOM.spdx.json").read_text(encoding="utf-8"))
+        self.assertEqual(sbom["spdxVersion"], "SPDX-2.3")
+        self.assertEqual(sbom["name"], "mission-center-0.5.1")
+        packages = {(item["name"], item["versionInfo"]) for item in sbom["packages"]}
+        lock = tomllib.loads((ROOT / "rust" / "Cargo.lock").read_text(encoding="utf-8"))
+        external = {
+            (item["name"], item["version"])
+            for item in lock["package"]
+            if not item["name"].startswith("mission-center-")
+        }
+        self.assertEqual(external, packages - {("mission-center", "0.5.1")})
+        release_notes = (ROOT / "docs" / "releases" / "0.5.1.md").read_text(encoding="utf-8")
+        self.assertIn("DELIVERY", release_notes.upper())
+        self.assertIn("rollback", release_notes.casefold())
+        self.assertTrue((ROOT / "docs" / "rust-maintainability-audit-0.5.1.md").is_file())
 
     def test_python_oracle_boundary_is_explicit_and_non_runtime(self):
         boundary = json.loads(

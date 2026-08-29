@@ -2,17 +2,17 @@
 
 [![CI](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml/badge.svg)](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml)
 [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.5.1--rust.1-F59E0B.svg)](.codex-plugin/plugin.json)
-[![Python](https://img.shields.io/badge/python-3.11-3776AB.svg)](https://www.python.org/downloads/release/python-3110/)
+[![Version](https://img.shields.io/badge/version-0.5.1-F59E0B.svg)](.codex-plugin/plugin.json)
+[![Rust](https://img.shields.io/badge/rust-1.98.0-DEA584.svg)](rust/rust-toolchain.toml)
 
 **Turn an unclear goal into a local, reviewable, evidence-backed task workspace for Codex.**
 
 Mission Center is an offline, file-based Codex plugin and skill for one project at a time. It clarifies intent, drafts a rolling plan for approval, preserves causal handoffs, and keeps verification close to the task data. It is not a hosted project-management service and is not a `pip` or `npm` package.
 
 <p align="center">
-  <img src="docs/assets/mission-center-fleet-command-deck.png" alt="Local Mission Center file-snapshot HUD during the 0.5.1 Rust migration" width="100%">
+  <img src="docs/assets/mission-center-fleet-command-deck.png" alt="Local Mission Center 0.5.1 file-snapshot HUD" width="100%">
 </p>
-<p align="center"><em>Local file-snapshot HUD captured during the 0.5.1 Rust migration; this does not claim stable completion or global live-sensor coverage.</em></p>
+<p align="center"><em>Local file-snapshot HUD from Mission Center 0.5.1; it shows bounded repository evidence, not global live-sensor coverage.</em></p>
 
 <p align="center">
   <img src="skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.webp" alt="Mission Center fleet crossing a bridge" width="100%">
@@ -50,7 +50,7 @@ flowchart LR
 
 Mission Center is deliberately narrow:
 
-> **Rust-only preview (0.5.1-rust.1):** the formal Plugin front door is the
+> **Rust-only stable (0.5.1):** the formal Plugin front door is the
 > versioned `mission-center` Rust CLI and its four-platform frozen package.
 > The Python scripts shown below are compatibility/oracle tooling for
 > differential tests and migration diagnostics; they are not included in the
@@ -135,10 +135,10 @@ The explicit compatibility entry points `scripts/install.py` and
 `MISSION_CENTER_PYTHON_COMPAT=1` is set. Without that opt-in they fail closed;
 use a verified Rust package for formal installation.
 
-The Rust preview can register an already verified marketplace tree without a
+The Rust stable release can register an already verified marketplace tree without a
 Codex CLI or external browser: `mission-center install register apply
 --plugin-root <absolute-marketplace>/plugins/mission-center
---marketplace-root <absolute-marketplace> --operation-id <id> --version 0.5.1-rust.1`.
+--marketplace-root <absolute-marketplace> --operation-id <id> --version 0.5.1`.
 The resulting receipt supports exact replay, `register rollback`, and
 `register reconcile`.
 
@@ -192,8 +192,8 @@ MissionCenter/
 
 > **Path note:** The commands in this section use a source checkout. A plugin-only install should invoke Mission Center through Codex; opt into the standalone personal Skill only when you need the stable `$CODEX_HOME/skills/mission-center/` manual script path. Pass `--workspace <target-repo>` for the repository you want to observe or analyze. `requirements-runtime.txt` lives at the source-checkout root; install it from that checkout (or an equivalent absolute path) before enabling WebSocket Runtime.
 
-The Python commands below are compatibility/oracle tooling during the 0.5.1
-preview; the formal hook and plugin write path use the Rust CLI.
+The Python commands below are source-checkout compatibility/oracle tooling;
+the formal hook and plugin write path use the Rust CLI.
 
 ### HUD and Runtime
 

@@ -176,6 +176,12 @@ class CiReleasePolicyTests(unittest.TestCase):
             'select(.status == "committed")',
             'jq -e --arg version "$RELEASE_VERSION" \'type == "object" and .name == "mission-center" and .version == $version\'',
             'stable package blocked: root plugin manifest must be version $RELEASE_VERSION',
+            'stable package blocked: stable release contract is missing or inconsistent',
+            'stable package blocked: preview release metadata remains in stable source',
+            'stable package blocked: SPDX SBOM is missing or inconsistent',
+            'docs/SBOM.spdx.json',
+            'docs/releases/0.5.1.md',
+            'docs/rust-maintainability-audit-0.5.1.md',
             'mission-center-python-oracle-boundary',
             'stable package blocked: Python oracle boundary manifest is missing or permits formal runtime',
             'sha256sum "$binary_path"',
@@ -188,6 +194,16 @@ class CiReleasePolicyTests(unittest.TestCase):
             'add_file bin/mission-center bin/mission-center true',
             'add_file bin/mission-center.ps1 bin/mission-center.ps1 false',
             'any(.files[]; .path == "bin/mission-center.ps1" and .executable == false)',
+            'any(.files[]; .path == ".codex-plugin/release.json" and .executable == false)',
+            'local staged="$package_root/$target"',
+            'stable package blocked: unsafe package path $target',
+            'cp "$source" "$staged"',
+            'chmod +x "$staged"',
+            'Upload verified frozen stable package',
+            'name: mission-center-stable-${{ env.RELEASE_VERSION }}',
+            'path: ${{ runner.temp }}/mission-center-frozen-package',
+            'include-hidden-files: true',
+            'if-no-files-found: error',
         ):
             self.assertIn(phrase, self.stable)
         self.assertNotRegex(self.stable, r"\b(curl|wget|pip)\b")
@@ -200,6 +216,7 @@ class CiReleasePolicyTests(unittest.TestCase):
         self.assertIn('requirements-runtime.txt', self.stable)
         self.assertIn('.codex-plugin/release-preview.json', self.stable)
         self.assertIn('.codex-plugin/release-preview.json) continue', self.stable)
+        self.assertIn('skills/mission-center/assets/visual-hub/update-visual-state.ps1) continue', self.stable)
         self.assertIn('for item in README.md LICENSE NOTICE.md PRIVACY.md; do', self.stable)
         self.assertNotRegex(self.stable, r"\n\s*run:\s*python(?:3)?\b")
 

@@ -542,6 +542,21 @@ jobs:
             echo "stable package blocked: root plugin manifest must be version $RELEASE_VERSION" >&2
             exit 1
           fi
+          if ! jq -e --arg version "$RELEASE_VERSION" 'type == "object" and .schemaVersion == "1.0" and .kind == "mission-center-release" and .pluginName == "mission-center" and .version == $version and .releaseStage == "stable" and .runtime == "rust" and .rustOnly == true and .installable == true and .selector.manifest == "platform-manifest.json" and (.selector.platforms | sort == ["linux-x86_64","macos-aarch64","macos-x86_64","windows-x86_64"]) and .verification.packageFormat == "frozen-package-v1" and .verification.checksum == "sha256" and .verification.network == "offline" and .verification.fallback == "none" and .rollback.supported == true and .rollback.receiptBound == true and .rollback.reconcileDeliveryUnknown == true' .codex-plugin/release.json > /dev/null; then
+            echo "stable package blocked: stable release contract is missing or inconsistent" >&2
+            exit 1
+          fi
+          test ! -e .codex-plugin/release-preview.json || {
+            echo "stable package blocked: preview release metadata remains in stable source" >&2
+            exit 1
+          }
+          if ! jq -e --arg version "$RELEASE_VERSION" '.spdxVersion == "SPDX-2.3" and .dataLicense == "CC0-1.0" and .name == ("mission-center-" + $version) and (.packages | type == "array" and length > 1) and (any(.packages[]; .name == "mission-center" and .versionInfo == $version and .licenseDeclared == "MIT"))' docs/SBOM.spdx.json > /dev/null; then
+            echo "stable package blocked: SPDX SBOM is missing or inconsistent" >&2
+            exit 1
+          fi
+          test -s docs/releases/0.5.1.md
+          test -s docs/rust-maintainability-audit-0.5.1.md
+          test -s rust/NOTICE.md
           if ! jq -e 'type == "object" and .kind == "mission-center-python-oracle-boundary" and .runtime == "python" and .formalPluginIncluded == false and (.sourceRoots | type == "array" and length > 0) and (.exclusions | index("formal-plugin-runtime") != null) and (.exclusions | index("stable-package") != null)' compat/python-oracle/manifest.json > /dev/null; then
             echo "stable package blocked: Python oracle boundary manifest is missing or permits formal runtime" >&2
             exit 1
@@ -555,10 +570,23 @@ jobs:
             local source="$1"
             local target="$2"
             local executable="$3"
+            local staged="$package_root/$target"
             local encoded="$RUNNER_TEMP/mission-center-file.b64"
             local item="$RUNNER_TEMP/mission-center-file.json"
             local next="$RUNNER_TEMP/mission-center-files.next.json"
             test -f "$source"
+            case "$target" in
+              ""|/*|../*|*/../*|*/..) echo "stable package blocked: unsafe package path $target" >&2; return 1 ;;
+            esac
+            mkdir -p "$(dirname "$staged")"
+            if [ "$source" != "$staged" ]; then
+              cp "$source" "$staged"
+            fi
+            if [ "$executable" = true ]; then
+              chmod +x "$staged"
+            else
+              chmod a-x "$staged"
+            fi
             base64 -w0 "$source" > "$encoded"
             jq -n --arg path "$target" --rawfile content "$encoded" --argjson executable "$executable" '{path:$path,contentBase64:$content,executable:$executable}' > "$item"
             jq --slurpfile item "$item" '. + $item' "$files_json" > "$next"
@@ -577,6 +605,7 @@ jobs:
                 case "$relative" in
                   */__pycache__/*|*.py|*.pyc|*.pyo) continue ;;
                   .codex-plugin/release-preview.json) continue ;;
+                  skills/mission-center/assets/visual-hub/update-visual-state.ps1) continue ;;
                 esac
                 add_file "$source" "$relative" false
               done < <(find "$item" -type f -print0 | sort -z)
@@ -595,14 +624,18 @@ jobs:
           add_file "$package_root/bin/macos-x86_64/mission-center" bin/macos-x86_64/mission-center true
           add_file "$package_root/bin/macos-aarch64/mission-center" bin/macos-aarch64/mission-center true
           jq -n --arg format "frozen-package-v1" --arg schemaVersion "1.0" --slurpfile files "$files_json" '{format:$format,schemaVersion:$schemaVersion,files:$files[0]}' > "$package_json"
-          jq -e 'all(.files[]; ((.path | endswith(".py")) | not) and ((.path | endswith(".pyc")) | not) and ((.path | startswith("scripts/")) | not) and ((.path | startswith("compat/")) | not) and .path != "requirements-runtime.txt" and .path != ".codex-plugin/release-preview.json")' "$package_json" > /dev/null
+          jq -e 'all(.files[]; ((.path | endswith(".py")) | not) and ((.path | endswith(".pyc")) | not) and ((.path | startswith("scripts/")) | not) and ((.path | startswith("compat/")) | not) and .path != "requirements-runtime.txt" and .path != ".codex-plugin/release-preview.json" and .path != "skills/mission-center/assets/visual-hub/update-visual-state.ps1")' "$package_json" > /dev/null
+          jq -e 'any(.files[]; .path == ".codex-plugin/release.json" and .executable == false)' "$package_json" > /dev/null
           jq -e 'any(.files[]; .path == "bin/mission-center.ps1" and .executable == false)' "$package_json" > /dev/null
 
           verifier="$input/mission-center-linux-x86_64/mission-center"
           test -s "$verifier"
           chmod +x "$verifier"
           verify_output="$RUNNER_TEMP/mission-center-stable-verify.json"
-          "$verifier" publish verify --platform linux-x86_64 --version "$RELEASE_VERSION" --input - < "$package_json" > "$verify_output"
+          if ! "$verifier" publish verify --platform linux-x86_64 --version "$RELEASE_VERSION" --input - < "$package_json" > "$verify_output"; then
+            cat "$verify_output" >&2
+            exit 1
+          fi
           jq -e --arg version "$RELEASE_VERSION" '.status == "pass" and .data.verified == true and .data.manifest.version == $version and (.data.manifest.artifacts | length == 4) and ([.data.manifest.artifacts[].platform] | sort == ["linux-x86_64","macos-aarch64","macos-x86_64","windows-x86_64"])' "$verify_output" > /dev/null
           echo "Rust publish verify accepted the actual four-platform frozen package." >> "$GITHUB_STEP_SUMMARY"
           registration_root="$RUNNER_TEMP/mission-center-native-registration-smoke"
@@ -636,3 +669,12 @@ jobs:
           "$verifier" install reconcile --root "$RUNNER_TEMP" > "$reconcile_output"
           jq -e '.status == "ok" and .command == "install" and .data.reconciled == true and .data.mutationSupported == true and ([.data.receipts[] | select(.status == "committed")] | length >= 2)' "$reconcile_output" > /dev/null
           echo "Rust native reconcile reported committed install/publish receipts without unsafe replay." >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload verified frozen stable package
+        if: success() && steps.promotion.outputs.required == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mission-center-stable-${{ env.RELEASE_VERSION }}
+          path: ${{ runner.temp }}/mission-center-frozen-package
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14

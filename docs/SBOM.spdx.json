@@ -1,0 +1,28 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "mission-center-0.5.1",
+  "documentNamespace": "https://github.com/Gale0418/Codex-Mission-Center/sbom/0.5.1",
+  "creationInfo": {
+    "created": "2026-08-29T00:00:00Z",
+    "creators": ["Tool: cargo-metadata-locked-offline", "Organization: Gale0418"]
+  },
+  "packages": [
+    {"name":"mission-center","SPDXID":"SPDXRef-Package-MissionCenter","versionInfo":"0.5.1","downloadLocation":"https://github.com/Gale0418/Codex-Mission-Center","filesAnalyzed":false,"licenseConcluded":"MIT","licenseDeclared":"MIT","copyrightText":"NOASSERTION"},
+    {"name":"itoa","SPDXID":"SPDXRef-Package-itoa","versionInfo":"1.0.18","downloadLocation":"https://crates.io/crates/itoa/1.0.18","filesAnalyzed":false,"licenseConcluded":"MIT OR Apache-2.0","licenseDeclared":"MIT OR Apache-2.0","copyrightText":"NOASSERTION"},
+    {"name":"memchr","SPDXID":"SPDXRef-Package-memchr","versionInfo":"2.8.3","downloadLocation":"https://crates.io/crates/memchr/2.8.3","filesAnalyzed":false,"licenseConcluded":"Unlicense OR MIT","licenseDeclared":"Unlicense OR MIT","copyrightText":"NOASSERTION"},
+    {"name":"proc-macro2","SPDXID":"SPDXRef-Package-proc-macro2","versionInfo":"1.0.107","downloadLocation":"https://crates.io/crates/proc-macro2/1.0.107","filesAnalyzed":false,"licenseConcluded":"MIT OR Apache-2.0","licenseDeclared":"MIT OR Apache-2.0","copyrightText":"NOASSERTION"},
+    {"name":"quote","SPDXID":"SPDXRef-Package-quote","versionInfo":"1.0.47","downloadLocation":"https://crates.io/crates/quote/1.0.47","filesAnalyzed":false,"licenseConcluded":"MIT OR Apache-2.0","licenseDeclared":"MIT OR Apache-2.0","copyrightText":"NOASSERTION"},
+    {"name":"serde","SPDXID":"SPDXRef-Package-serde","versionInfo":"1.0.229","downloadLocation":"https://crates.io/crates/serde/1.0.229","filesAnalyzed":false,"licenseConcluded":"MIT OR Apache-2.0","licenseDeclared":"MIT OR Apache-2.0","copyrightText":"NOASSERTION"},
+    {"name":"serde_core","SPDXID":"SPDXRef-Package-serde-core","versionInfo":"1.0.229","downloadLocation":"https://crates.io/crates/serde_core/1.0.229","filesAnalyzed":false,"licenseConcluded":"MIT OR Apache-2.0","licenseDeclared":"MIT OR Apache-2.0","copyrightText":"NOASSERTION"},
+    {"name":"serde_derive","SPDXID":"SPDXRef-Package-serde-derive","versionInfo":"1.0.229","downloadLocation":"https://crates.io/crates/serde_derive/1.0.229","filesAnalyzed":false,"licenseConcluded":"MIT OR Apache-2.0","licenseDeclared":"MIT OR Apache-2.0","copyrightText":"NOASSERTION"},
+    {"name":"serde_json","SPDXID":"SPDXRef-Package-serde-json","versionInfo":"1.0.151","downloadLocation":"https://crates.io/crates/serde_json/1.0.151","filesAnalyzed":false,"licenseConcluded":"MIT OR Apache-2.0","licenseDeclared":"MIT OR Apache-2.0","copyrightText":"NOASSERTION"},
+    {"name":"syn","SPDXID":"SPDXRef-Package-syn","versionInfo":"3.0.4","downloadLocation":"https://crates.io/crates/syn/3.0.4","filesAnalyzed":false,"licenseConcluded":"MIT OR Apache-2.0","licenseDeclared":"MIT OR Apache-2.0","copyrightText":"NOASSERTION"},
+    {"name":"unicode-ident","SPDXID":"SPDXRef-Package-unicode-ident","versionInfo":"1.0.24","downloadLocation":"https://crates.io/crates/unicode-ident/1.0.24","filesAnalyzed":false,"licenseConcluded":"MIT OR Apache-2.0","licenseDeclared":"MIT OR Apache-2.0","copyrightText":"NOASSERTION"},
+    {"name":"zmij","SPDXID":"SPDXRef-Package-zmij","versionInfo":"1.0.23","downloadLocation":"https://crates.io/crates/zmij/1.0.23","filesAnalyzed":false,"licenseConcluded":"MIT","licenseDeclared":"MIT","copyrightText":"NOASSERTION"}
+  ],
+  "relationships": [
+    {"spdxElementId":"SPDXRef-DOCUMENT","relationshipType":"DESCRIBES","relatedSpdxElement":"SPDXRef-Package-MissionCenter"}
+  ]
+}

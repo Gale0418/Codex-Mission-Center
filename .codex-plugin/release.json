@@ -1,13 +1,12 @@
 {
   "schemaVersion": "1.0",
-  "kind": "mission-center-release-preview",
+  "kind": "mission-center-release",
   "pluginName": "mission-center",
-  "version": "0.5.1-rust.1",
-  "baseVersion": "0.5.1",
-  "releaseStage": "preview",
+  "version": "0.5.1",
+  "releaseStage": "stable",
   "runtime": "rust",
   "rustOnly": true,
-  "installable": false,
+  "installable": true,
   "selector": {
     "manifest": "platform-manifest.json",
     "platforms": [
@@ -21,6 +20,12 @@
     "packageFormat": "frozen-package-v1",
     "checksum": "sha256",
     "network": "offline",
-    "fallback": "none"
+    "fallback": "none",
+    "historicalEvidence": "MissionCenter/evidence/historical-validation-2026-08-29.json"
+  },
+  "rollback": {
+    "supported": true,
+    "receiptBound": true,
+    "reconcileDeliveryUnknown": true
   }
 }

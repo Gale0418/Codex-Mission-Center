@@ -4,8 +4,11 @@ use mission_center_publish::{
 use std::{
     fs,
     path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn temp_root() -> PathBuf {
     let nonce = SystemTime::now()
@@ -15,7 +18,11 @@ fn temp_root() -> PathBuf {
     let temp = std::env::temp_dir();
     #[cfg(target_os = "macos")]
     let temp = temp.canonicalize().expect("canonical temporary directory");
-    let root = temp.join(format!("mission-center-registration-{nonce}"));
+    let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let root = temp.join(format!(
+        "mission-center-registration-{}-{nonce}-{sequence}",
+        std::process::id()
+    ));
     fs::create_dir_all(&root).unwrap();
     root
 }

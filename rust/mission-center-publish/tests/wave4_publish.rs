@@ -3,7 +3,7 @@ use mission_center_publish::*;
 use serde_json::json;
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -528,6 +528,21 @@ fn frozen_package_enforces_paths_bounds_and_python_roles() {
         b"python is mentioned as prose only.\n".to_vec(),
         false,
     ));
+    files.push(FrozenFile::new(
+        "bin/mission-center",
+        include_bytes!("../../../bin/mission-center").to_vec(),
+        true,
+    ));
+    files.push(FrozenFile::new(
+        "bin/mission-center.ps1",
+        include_bytes!("../../../bin/mission-center.ps1").to_vec(),
+        false,
+    ));
+    files.push(FrozenFile::new(
+        "hooks/hooks.json",
+        include_bytes!("../../../hooks/hooks.json").to_vec(),
+        false,
+    ));
     let package = FrozenPackage::new(files).unwrap();
     assert!(package.verify(Platform::WindowsX86_64, "0.5.1").is_ok());
     for (index, command) in [
@@ -550,6 +565,26 @@ fn frozen_package_enforces_paths_bounds_and_python_roles() {
         let mut wrapper_files = package.files().to_vec();
         wrapper_files.push(FrozenFile::new(
             format!("scripts/wrapper-{index}.sh"),
+            command.as_bytes().to_vec(),
+            false,
+        ));
+        let wrapper_package = FrozenPackage::new(wrapper_files).unwrap();
+        match wrapper_package.verify(Platform::WindowsX86_64, "0.5.1") {
+            Ok(_) => panic!("accepted prohibited command: {command}"),
+            Err(error) => assert_eq!(error.code(), ErrorCode::PythonRuntime),
+        }
+    }
+    for (index, command) in [
+        "curl https://example.invalid/binary\n",
+        "cargo build --release\n",
+        "powershell.exe -Command echo dynamic\n",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut wrapper_files = package.files().to_vec();
+        wrapper_files.push(FrozenFile::new(
+            format!("scripts/prohibited-capability-{index}.sh"),
             command.as_bytes().to_vec(),
             false,
         ));
@@ -578,6 +613,20 @@ fn frozen_package_enforces_paths_bounds_and_python_roles() {
     );
     let mut binary = package.files().to_vec();
     binary.push(FrozenFile::new("bin/run", vec![0, 1, 2, 3], true));
+    let mut native_binary_with_scanner_vocabulary = pe_x64(0x8664);
+    native_binary_with_scanner_vocabulary.extend_from_slice(b"\npython -m fallback\n");
+    binary.push(FrozenFile::new(
+        "bin/helper.exe",
+        native_binary_with_scanner_vocabulary,
+        true,
+    ));
+    let mut native_macho_with_script_vocabulary = macho(0x0100_0007);
+    native_macho_with_script_vocabulary.extend_from_slice(b"\n#! /bin/sh\ncargo build\n");
+    binary.push(FrozenFile::new(
+        "bin/macos-x86_64/helper",
+        native_macho_with_script_vocabulary,
+        true,
+    ));
     assert!(
         FrozenPackage::new(binary)
             .unwrap()
@@ -598,6 +647,69 @@ fn frozen_package_enforces_paths_bounds_and_python_roles() {
             .code(),
         ErrorCode::PythonRuntime
     );
+}
+
+#[test]
+fn formal_source_tree_is_scanner_compatible() {
+    fn collect_source_files(repository: &Path, current: &Path, files: &mut Vec<FrozenFile>) {
+        let mut entries = fs::read_dir(current)
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_source_files(repository, &path, files);
+                continue;
+            }
+            let relative = path
+                .strip_prefix(repository)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            if relative.contains("/__pycache__/")
+                || relative.ends_with(".py")
+                || relative.ends_with(".pyc")
+                || relative.ends_with(".pyo")
+                || relative == ".codex-plugin/release-preview.json"
+                || relative == "skills/mission-center/assets/visual-hub/update-visual-state.ps1"
+                || files.iter().any(|file| file.relative_path == relative)
+            {
+                continue;
+            }
+            files.push(FrozenFile::new(relative, fs::read(path).unwrap(), false));
+        }
+    }
+
+    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let repository = repository.canonicalize().unwrap();
+    let (package, _) = frozen_fixture();
+    let mut files = package.files().to_vec();
+    for root in [".codex-plugin", "assets", "hooks", "skills"] {
+        collect_source_files(&repository, &repository.join(root), &mut files);
+    }
+    for file in ["README.md", "LICENSE", "NOTICE.md", "PRIVACY.md"] {
+        if !files.iter().any(|item| item.relative_path == file) {
+            files.push(FrozenFile::new(
+                file,
+                fs::read(repository.join(file)).unwrap(),
+                false,
+            ));
+        }
+    }
+    files.push(FrozenFile::new(
+        "bin/mission-center",
+        fs::read(repository.join("bin/mission-center")).unwrap(),
+        true,
+    ));
+    files.push(FrozenFile::new(
+        "bin/mission-center.ps1",
+        fs::read(repository.join("bin/mission-center.ps1")).unwrap(),
+        false,
+    ));
+    let package = FrozenPackage::new(files).unwrap();
+    package.verify(Platform::WindowsX86_64, "0.5.1").unwrap();
 }
 
 const MAX_DEPTH_TEST: usize = 33;

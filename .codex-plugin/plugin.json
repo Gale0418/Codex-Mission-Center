@@ -1,7 +1,7 @@
 {
   "name": "mission-center",
-  "version": "0.5.1-rust.1",
-  "description": "Offline OWO+ v0.4 MissionCenter planning with causal continuity, bounded Steelman and research gates, privacy-safe self-evaluation, adaptive optimization, and an optional runtime HUD.",
+  "version": "0.5.1",
+  "description": "Rust-only Mission Center planning with causal continuity, bounded research and review gates, privacy-safe evaluation, and an optional local HUD.",
   "author": {
     "name": "Gale0418",
     "email": "Gale0418@users.noreply.github.com",
@@ -23,7 +23,7 @@
   "interface": {
     "displayName": "Mission Center",
     "shortDescription": "Offline causal task center for Codex",
-    "longDescription": "Mission Center OWO+ v0.4 clarifies goals, preserves causal pulse-to-handoff continuity, routes medium/high-risk decisions through bounded Steelman and research portfolio gates, evaluates privacy-safe Shift-Loss metrics, and keeps optional runtime agents separate from the canonical task lifecycle. It does not perform automatic web research or make unapproved task changes.",
+    "longDescription": "Mission Center 0.5.1 clarifies goals, preserves causal pulse-to-handoff continuity, routes medium/high-risk decisions through bounded Steelman and research portfolio gates, evaluates privacy-safe Shift-Loss metrics, and keeps optional runtime agents separate from the canonical task lifecycle. Its formal plugin runtime is an offline, checksum-verified Rust CLI with no alternate runtime fallback.",
     "developerName": "Gale0418",
     "category": "Productivity",
     "capabilities": [
