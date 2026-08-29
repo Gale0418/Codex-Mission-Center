@@ -2,6 +2,9 @@
 param([switch]$WithPersonalSkill)
 
 $ErrorActionPreference = "Stop"
+if ($env:MISSION_CENTER_PYTHON_COMPAT -ne "1") {
+  throw "Python compatibility installer is disabled by default. Use a verified Rust package/binary for formal installation; set MISSION_CENTER_PYTHON_COMPAT=1 only for source-checkout compatibility publishing. This wrapper never builds or downloads a Rust package."
+}
 
 $root = Split-Path -Parent $PSScriptRoot
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }

@@ -30,6 +30,9 @@ def run_wrapper(
             "MISSION_CENTER_MARKETPLACE_PLUGIN": str(
                 codex_home / "local-marketplaces" / "mission-center" / "plugins" / "mission-center"
             ),
+            # These tests exercise the explicitly opted-in source-checkout
+            # compatibility publisher, never the formal Rust installation.
+            "MISSION_CENTER_PYTHON_COMPAT": "1",
             "MISSION_CENTER_PUBLISH_MODE": mode,
             "PYTHONUTF8": "1",
         }
@@ -102,6 +105,21 @@ class InstallWrapperTests(unittest.TestCase):
                 ).is_file()
             )
 
+    def test_python_wrapper_fails_closed_without_compatibility_opt_in(self):
+        with workspace_tempdir("install-wrapper-gated-") as temporary:
+            root = Path(temporary)
+            result = run_wrapper(
+                [sys.executable, str(ROOT / "scripts" / "install.py")],
+                root,
+                mode="--write",
+                register="0",
+                extra_env={"MISSION_CENTER_PYTHON_COMPAT": "0"},
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("compatibility installer is disabled", result.stderr.casefold())
+            self.assertIn("verified Rust package/binary", result.stderr)
+            self.assertFalse((root / "codex-home").exists())
+
     def test_python_wrapper_personal_skill_is_explicit_opt_in(self):
         with workspace_tempdir("install-wrapper-") as temporary:
             root = Path(temporary)
@@ -136,6 +154,7 @@ class InstallWrapperTests(unittest.TestCase):
                     self.assertIn("py -3", normalized)
                 else:
                     self.assertIn('[ "$mode" = "--write" ]', normalized)
+                self.assertIn("mission_center_python_compat", normalized)
 
     def test_formal_wrappers_default_to_plugin_only_with_explicit_personal_opt_in(self):
         wrappers = (

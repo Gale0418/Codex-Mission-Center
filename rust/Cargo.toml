@@ -1,0 +1,19 @@
+[workspace]
+resolver = "3"
+members = [
+    "mission-center-core",
+    "mission-center-workspace",
+    "mission-center-policy",
+    "mission-center-runtime",
+    "mission-center-publish",
+    "mission-center-cli",
+]
+
+[workspace.package]
+version = "0.5.1"
+edition = "2024"
+license = "MIT"
+rust-version = "1.98"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

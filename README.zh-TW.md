@@ -2,12 +2,17 @@
 
 [![CI](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml/badge.svg)](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml)
 [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![版本](https://img.shields.io/badge/version-0.5.0-F59E0B.svg)](.codex-plugin/plugin.json)
+[![版本](https://img.shields.io/badge/version-0.5.1--rust.1-F59E0B.svg)](.codex-plugin/plugin.json)
 [![Python](https://img.shields.io/badge/python-3.11-3776AB.svg)](https://www.python.org/downloads/release/python-3110/)
 
 **把模糊目標變成 Codex 可持續接手、可審查、以證據收尾的本地任務工作區。**
 
 Mission Center 是一次只服務一個專案的離線、檔案型 Codex 外掛與 Skill。它協助釐清意圖、讓你核准滾動式計畫、保存因果式交接，並把驗證證據留在任務資料旁邊。它不是託管式專案管理服務，也不是 `pip` 或 `npm` 套件。
+
+<p align="center">
+  <img src="docs/assets/mission-center-fleet-command-deck.png" alt="0.5.1 Rust migration 期間的本機 Mission Center file-snapshot HUD" width="100%">
+</p>
+<p align="center"><em>這是 0.5.1 Rust migration 期間的本機 file-snapshot HUD；不代表 stable 已完成，也不是全域 live sensor。</em></p>
 
 <p align="center">
   <img src="skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.webp" alt="Mission Center fleet crossing a bridge" width="100%">
@@ -45,11 +50,18 @@ flowchart LR
 
 Mission Center 故意保持狹窄：
 
+> **Rust-only preview（0.5.1-rust.1）：**正式 Plugin 入口是有版本契約的
+> `mission-center` Rust CLI 與四平台 frozen package。下方保留的 Python
+> scripts 只供 differential test／migration diagnostics 使用，不會放入
+> stable Plugin，也不會作為 runtime fallback。
+
 - **只限單一專案：** `MissionCenter/tasks.md` 是唯一的任務生命週期真實來源。`brief.md` 與 `working-set.md` 是可重建視圖；若存在，`focus.md` 是已棄用的相容視圖。
 - **Runtime 與任務分離：** 可選的 Runtime／HUD 只觀察明確啟動或連接的 endpoint，絕不修改 `tasks.md`、任務順序、狀態或生命週期真實來源。
 - **沒有全域服務：** Mission Center is per-project only. Use it inside the current repo/workspace. It creates or reads `./MissionCenter/`. It does not monitor all repositories. It does not merge tasks across projects.
 - **核准是真正的閘門：** 外部研究、真實 Agent 派遣、LLM 分類與額外預算都是 opt-in。本地 fixture 與合成評估不是生產效能測量。
-- **預設離線：** 核心使用 Python 標準函式庫。只有可選 WebSocket Runtime 需要 `requirements-runtime.txt`；CI／release 安裝使用有 hash 的 `requirements-runtime.lock`。
+- **預設離線：**正式核心使用鎖定且離線的 Rust toolchain。可選
+  WebSocket Runtime 與 Python oracle 保留明確的相容依賴，但都不是正式
+  Plugin fallback。
 
 ## 快速開始
 
@@ -59,7 +71,16 @@ Mission Center 故意保持狹窄：
 使用 $mission-center 釐清這個目標，先進行訪談，等我核准計畫後再建立 MissionCenter 工作區。
 ```
 
-以下命令是此 source checkout 自己的 dogfood／維護流程，不是安裝前可以直接複製到任意 repository 的通用命令：
+正式 Rust front door：
+
+```bash
+mission-center status --root .
+mission-center resume --root .
+mission-center doctor --root .
+```
+
+以下 Python 命令只供此 source checkout 的 oracle／migration diagnostics，
+不是安裝前可直接複製到任意 repository 的通用命令：
 
 ```bash
 # 在此 repository 執行（source checkout／dogfood 維護）
@@ -74,18 +95,23 @@ python skills/mission-center/scripts/doctor_mission_center.py .
 
 ## 正式安裝與本機發布
 
-本 repository 是唯一的 authoring source。支援的安裝 wrapper 預設只發布並註冊本機 marketplace plugin；它們不會從 PyPI 或 npm 安裝套件。修改這個 checkout 的檔案不會即時更新 Codex 的已安裝快取，source 變更後必須重新執行 wrapper。
+本 repository 是唯一的 authoring source。正式安裝必須使用已驗證的 Rust
+`frozen-package-v1`，不會自動編譯、下載或 fallback 到 Python。下方
+source-checkout wrapper 只屬於相容發布工具，必須明確設定
+`MISSION_CENTER_PYTHON_COMPAT=1`；沒有 opt-in 會 fail-closed。修改這個
+checkout 的檔案不會即時更新 Codex 快取。
 
 Windows（PowerShell）：
 
 ```powershell
+$env:MISSION_CENTER_PYTHON_COMPAT = "1"  # 僅相容發布
 pwsh -ExecutionPolicy Bypass -File ./scripts/install-windows.ps1
 ```
 
 macOS／Linux：
 
 ```bash
-bash ./scripts/install-unix.sh
+MISSION_CENTER_PYTHON_COMPAT=1 bash ./scripts/install-unix.sh
 ```
 
 Plugin 已內含 Mission Center Skill。若仍需要舊式的獨立個人 Skill 相容副本，必須明確選用：
@@ -100,7 +126,11 @@ bash ./scripts/install-unix.sh --with-personal-skill
 
 預設 wrapper 也會清除既有的獨立個人 Skill，但只有內容與受管理副本完全一致時才會移除；若曾修改或屬於使用者自有內容，安裝會保留它並以可操作的錯誤停止。
 
-相容入口 `scripts/install.py` 與 `scripts/install.ps1` 也會預設註冊 Plugin。只有在刻意進行純檔案／離線發布時，才設定 `MISSION_CENTER_PUBLISH_REGISTER=0`。
+相容入口 `scripts/install.py` 與 `scripts/install.ps1` 在設定
+`MISSION_CENTER_PYTHON_COMPAT=1` 時才會註冊 Plugin；正式安裝請使用已驗證
+的 Rust package。
+
+Rust preview 也能在不呼叫 Codex CLI、不中開外部瀏覽器的情況下，註冊已驗證的 marketplace tree：`mission-center install register apply --plugin-root <絕對 marketplace>/plugins/mission-center --marketplace-root <絕對 marketplace> --operation-id <id> --version 0.5.1-rust.1`。產生的 receipt 支援相同內容 replay、`register rollback` 與 `register reconcile`。
 
 只預覽或驗證衍生目標、不寫檔：
 
@@ -152,13 +182,33 @@ MissionCenter/
 
 > **路徑提醒：** 本節命令均以 source checkout 為例。plugin-only 安裝請直接由 Codex 使用 Mission Center；只有需要穩定的 `$CODEX_HOME/skills/mission-center/` 手動腳本路徑時，才選用獨立個人 Skill。請以 `--workspace <target-repo>` 指定要觀察或分析的 repository。`requirements-runtime.txt` 位於 source checkout 根目錄；啟用 WebSocket Runtime 前，請從該 checkout（或等價的絕對路徑）安裝它。
 
+以下 Python 命令在 0.5.1 preview 階段僅作相容／oracle 工具；正式 Hook 與 Plugin 寫入路徑使用 Rust CLI。
+
 ### HUD 與 Runtime
 
-靜態 HUD 由任務狀態產生。要看 live Runtime 資料，建議先啟動 loopback companion，再開啟它印出的 loopback URL：
+靜態 HUD 由任務狀態產生。要看 live Runtime 資料，可由 Rust CLI 啟動有界的 loopback companion：
 
 ```bash
-python skills/mission-center/scripts/mission_runtime.py --workspace . serve --port 8765
+mission-center hud launch --foreground --root . --port 8765
 ```
+
+由 Codex Hook 召喚時，Rust `hook hud` adapter 會針對目前 workspace 啟動或重用
+一個健康的 loopback companion，並在 hook `additionalContext` 輸出由宿主管理的
+`mission-center/hud-side-panel` intent。Intent 只含有界 loopback URL 與穩定的
+workspace `reuseKey`，同時寫入
+`output/mission-center-runtime/hud-side-panel.json`。目前 Codex 本機
+app-server schema 沒有公開的 sidebar／open-URL 方法，因此 Hook 不能保證在同一
+回合自動開啟或聚焦側欄；若宿主支援，可把 URL 放到內建側欄／preview，否則使用
+可點擊 URL。Rust Hook 不會開啟 Chrome 或其他外部瀏覽器。Python
+`hud_autolaunch.py` 僅保留在相容／oracle 工具，不屬於正式 Rust plugin 執行路徑：
+
+```bash
+python skills/mission-center/scripts/hud_autolaunch.py show --workspace . --open-browser
+```
+
+`--open-browser` 是唯一的外部瀏覽器 opt-in。同一 workspace 由 singleton key
+與 health check 防止啟動第二個 HUD server；側欄分頁是否重用仍由宿主管理，因為
+目前沒有公開的 sidebar bridge。
 
 直接用 `file://` 開啟 HTML 只適合作為靜態 fallback；瀏覽器的 `fetch`／CORS 規則可能讓 live 資料變成 unavailable。
 

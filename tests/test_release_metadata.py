@@ -7,6 +7,46 @@ ROOT = Path(__file__).parents[1]
 
 
 class ReleaseMetadataTests(unittest.TestCase):
+    def test_rust_preview_manifest_is_explicit_and_not_installable(self):
+        manifest = json.loads(
+            (ROOT / ".codex-plugin" / "release-preview.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(manifest["schemaVersion"], "1.0")
+        self.assertEqual(manifest["kind"], "mission-center-release-preview")
+        self.assertEqual(manifest["pluginName"], "mission-center")
+        self.assertEqual(manifest["version"], "0.5.1-rust.1")
+        self.assertEqual(manifest["baseVersion"], "0.5.1")
+        self.assertEqual(manifest["releaseStage"], "preview")
+        self.assertEqual(manifest["runtime"], "rust")
+        self.assertTrue(manifest["rustOnly"])
+        self.assertFalse(manifest["installable"])
+
+    def test_rust_preview_selector_is_four_platform_and_fail_closed(self):
+        manifest = json.loads(
+            (ROOT / ".codex-plugin" / "release-preview.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        selector = manifest["selector"]
+        self.assertEqual(selector["manifest"], "platform-manifest.json")
+        self.assertEqual(len(selector["platforms"]), 4)
+        self.assertEqual(
+            set(selector["platforms"]),
+            {
+                "windows-x86_64",
+                "linux-x86_64",
+                "macos-x86_64",
+                "macos-aarch64",
+            },
+        )
+        verification = manifest["verification"]
+        self.assertEqual(verification["packageFormat"], "frozen-package-v1")
+        self.assertEqual(verification["checksum"], "sha256")
+        self.assertEqual(verification["network"], "offline")
+        self.assertEqual(verification["fallback"], "none")
+
     def test_plugin_privacy_policy_uses_privacy_document(self):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
         url = manifest["interface"]["privacyPolicyURL"]
@@ -15,7 +55,41 @@ class ReleaseMetadataTests(unittest.TestCase):
 
     def test_plugin_version_is_v05_release(self):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"].split("+", 1)[0], "0.5.0")
+        self.assertEqual(manifest["version"], "0.5.1-rust.1")
+
+    def test_preview_release_identity_matches_root_plugin(self):
+        plugin = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        preview = json.loads((ROOT / ".codex-plugin" / "release-preview.json").read_text(encoding="utf-8"))
+        self.assertEqual(plugin["version"], preview["version"])
+
+    def test_python_oracle_boundary_is_explicit_and_non_runtime(self):
+        boundary = json.loads(
+            (ROOT / "compat" / "python-oracle" / "manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(boundary["kind"], "mission-center-python-oracle-boundary")
+        self.assertFalse(boundary["formalPluginIncluded"])
+        self.assertEqual(
+            boundary["compatibilityOptIn"],
+            {
+                "environmentVariable": "MISSION_CENTER_PYTHON_COMPAT",
+                "requiredValue": "1",
+                "failureMode": "fail-closed",
+                "remediation": "Use an already-built and locally verified Rust package/binary for formal installation.",
+            },
+        )
+        self.assertEqual(len(boundary["wrapperEntrypoints"]), 6)
+        for entrypoint in boundary["wrapperEntrypoints"]:
+            source = (ROOT / entrypoint).read_text(encoding="utf-8").casefold()
+            self.assertIn("mission_center_python_compat", source)
+            self.assertIn("verified rust package", source)
+        self.assertEqual(
+            set(boundary["sourceRoots"]),
+            {"skills/mission-center/scripts", "scripts"},
+        )
+        self.assertIn("formal-plugin-runtime", boundary["exclusions"])
+        self.assertIn("stable-package", boundary["exclusions"])
 
     def test_plugin_default_prompt_has_at_most_three_entries(self):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))

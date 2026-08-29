@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1.0",
+  "kind": "mission-center-python-oracle-boundary",
+  "runtime": "python",
+  "formalPluginIncluded": false,
+  "compatibilityOptIn": {
+    "environmentVariable": "MISSION_CENTER_PYTHON_COMPAT",
+    "requiredValue": "1",
+    "failureMode": "fail-closed",
+    "remediation": "Use an already-built and locally verified Rust package/binary for formal installation."
+  },
+  "wrapperEntrypoints": [
+    "scripts/install.py",
+    "scripts/install.ps1",
+    "scripts/install-windows.ps1",
+    "scripts/install-unix.sh",
+    "scripts/install-plugin-windows.ps1",
+    "scripts/install-plugin-unix.sh"
+  ],
+  "sourceRoots": [
+    "skills/mission-center/scripts",
+    "scripts"
+  ],
+  "allowedUses": [
+    "differential-tests",
+    "historical-revalidation",
+    "migration-diagnostics"
+  ],
+  "exclusions": [
+    "formal-plugin-runtime",
+    "hooks",
+    "stable-package",
+    "automatic-fallback"
+  ]
+}

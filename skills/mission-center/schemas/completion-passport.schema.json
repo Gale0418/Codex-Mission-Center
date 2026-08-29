@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Mission Center Completion Passport",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "artifactType",
+    "taskId",
+    "taskDigest",
+    "status",
+    "verification",
+    "findings"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "artifactType": { "const": "completion-passport" },
+    "taskId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "taskDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "status": { "const": "current" },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result", "evidenceRefs"],
+      "properties": {
+        "result": { "const": "pass" },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "severity", "disposition"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "severity": { "enum": ["Critical", "High", "Medium", "Low"] },
+          "disposition": {
+            "enum": ["fixed", "rejected-with-counterevidence", "deferred", "accepted"]
+          },
+          "humanAcceptance": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "approverIdentity",
+              "approvalTime",
+              "scope",
+              "reason",
+              "expiry",
+              "reopenTrigger"
+            ],
+            "properties": {
+              "approverIdentity": { "type": "string", "minLength": 1 },
+              "approvalTime": { "type": "string", "minLength": 1 },
+              "scope": { "type": "string", "minLength": 1 },
+              "reason": { "type": "string", "minLength": 1 },
+              "expiry": { "type": "string", "minLength": 1 },
+              "reopenTrigger": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

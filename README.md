@@ -2,12 +2,17 @@
 
 [![CI](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml/badge.svg)](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml)
 [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.5.0-F59E0B.svg)](.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-0.5.1--rust.1-F59E0B.svg)](.codex-plugin/plugin.json)
 [![Python](https://img.shields.io/badge/python-3.11-3776AB.svg)](https://www.python.org/downloads/release/python-3110/)
 
 **Turn an unclear goal into a local, reviewable, evidence-backed task workspace for Codex.**
 
 Mission Center is an offline, file-based Codex plugin and skill for one project at a time. It clarifies intent, drafts a rolling plan for approval, preserves causal handoffs, and keeps verification close to the task data. It is not a hosted project-management service and is not a `pip` or `npm` package.
+
+<p align="center">
+  <img src="docs/assets/mission-center-fleet-command-deck.png" alt="Local Mission Center file-snapshot HUD during the 0.5.1 Rust migration" width="100%">
+</p>
+<p align="center"><em>Local file-snapshot HUD captured during the 0.5.1 Rust migration; this does not claim stable completion or global live-sensor coverage.</em></p>
 
 <p align="center">
   <img src="skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.webp" alt="Mission Center fleet crossing a bridge" width="100%">
@@ -45,11 +50,19 @@ flowchart LR
 
 Mission Center is deliberately narrow:
 
+> **Rust-only preview (0.5.1-rust.1):** the formal Plugin front door is the
+> versioned `mission-center` Rust CLI and its four-platform frozen package.
+> The Python scripts shown below are compatibility/oracle tooling for
+> differential tests and migration diagnostics; they are not included in the
+> stable Plugin package and are never a runtime fallback.
+
 - **Per-project and local:** `MissionCenter/tasks.md` is the only task lifecycle truth. `brief.md` and `working-set.md` are rebuildable views; `focus.md`, when present, is a deprecated compatibility view.
 - **Runtime is separate:** the optional Runtime/HUD observes an explicitly launched or connected endpoint. It never edits `tasks.md`, task order, status, or the lifecycle source.
 - **No global service:** Mission Center is per-project only. Use it inside the current repo/workspace. It creates or reads `./MissionCenter/`. It does not monitor all repositories. It does not merge tasks across projects.
 - **Approval is real:** external research, real agent dispatch, LLM classification, and additional budgets are opt-in. Local fixtures and synthetic evaluations are not measurements of production performance.
-- **Offline by default:** the core is Python standard-library code. Only the optional WebSocket Runtime needs the dependencies in `requirements-runtime.txt`; CI and release installation use the hashed `requirements-runtime.lock`.
+- **Offline by default:** the formal core is Rust and uses the pinned offline
+  toolchain. The optional WebSocket Runtime and Python oracle retain their
+  explicit compatibility dependencies; neither is a formal Plugin fallback.
 
 ## Quick start
 
@@ -59,7 +72,19 @@ First install Mission Center from this source checkout using the supported wrapp
 Use $mission-center to clarify this goal, ask intake questions first, and create a MissionCenter workspace after I approve the plan.
 ```
 
-The commands below are for this source checkout's own dogfood workspace and maintenance. They are not generic commands to copy into an arbitrary repository before installation:
+The formal Rust commands below are the supported source-checkout path. The
+Python commands are retained only for oracle comparison and migration
+diagnostics; they are not generic commands to copy into an arbitrary
+repository before installation:
+
+```bash
+# Rust formal front door (requires an already-built/selected binary)
+mission-center status --root .
+mission-center resume --root .
+mission-center doctor --root .
+```
+
+Compatibility/oracle maintenance:
 
 ```bash
 # From this repository (source checkout / dogfood maintenance)
@@ -74,18 +99,23 @@ For a Traditional Chinese workspace, use `--language zh-TW`. Sync is migration-s
 
 ## Install and publish locally
 
-This repository is the authoring source. The supported installation wrappers publish and register the local marketplace plugin; they do not install a package from PyPI or npm. Updating files in this checkout does not hot-update Codex's installed cache, so rerun the wrapper after source changes.
+This repository is the authoring source. Formal installation consumes a
+verified Rust `frozen-package-v1`; it never builds, downloads, or falls back to
+Python. The source-checkout wrappers below are compatibility publishers only
+and require an explicit `MISSION_CENTER_PYTHON_COMPAT=1` opt-in. Updating files
+in this checkout does not hot-update Codex's installed cache.
 
 Windows (PowerShell):
 
 ```powershell
+$env:MISSION_CENTER_PYTHON_COMPAT = "1"  # compatibility publisher only
 pwsh -ExecutionPolicy Bypass -File ./scripts/install-windows.ps1
 ```
 
 macOS / Linux:
 
 ```bash
-bash ./scripts/install-unix.sh
+MISSION_CENTER_PYTHON_COMPAT=1 bash ./scripts/install-unix.sh
 ```
 
 The plugin already packages the Mission Center skill. To also create the legacy standalone personal Skill compatibility copy, opt in explicitly:
@@ -100,7 +130,17 @@ bash ./scripts/install-unix.sh --with-personal-skill
 
 By default, the wrappers also remove an existing standalone personal Skill only when it exactly matches the managed copy. A modified or user-owned copy is preserved and stops the upgrade with an actionable error.
 
-The compatibility entry points `scripts/install.py` and `scripts/install.ps1` also register the plugin by default. Set `MISSION_CENTER_PUBLISH_REGISTER=0` only for a deliberate files-only/offline publish.
+The explicit compatibility entry points `scripts/install.py` and
+`scripts/install.ps1` also register the plugin by default when
+`MISSION_CENTER_PYTHON_COMPAT=1` is set. Without that opt-in they fail closed;
+use a verified Rust package for formal installation.
+
+The Rust preview can register an already verified marketplace tree without a
+Codex CLI or external browser: `mission-center install register apply
+--plugin-root <absolute-marketplace>/plugins/mission-center
+--marketplace-root <absolute-marketplace> --operation-id <id> --version 0.5.1-rust.1`.
+The resulting receipt supports exact replay, `register rollback`, and
+`register reconcile`.
 
 Preview or verify the derived targets without writing them:
 
@@ -152,13 +192,35 @@ MissionCenter/
 
 > **Path note:** The commands in this section use a source checkout. A plugin-only install should invoke Mission Center through Codex; opt into the standalone personal Skill only when you need the stable `$CODEX_HOME/skills/mission-center/` manual script path. Pass `--workspace <target-repo>` for the repository you want to observe or analyze. `requirements-runtime.txt` lives at the source-checkout root; install it from that checkout (or an equivalent absolute path) before enabling WebSocket Runtime.
 
+The Python commands below are compatibility/oracle tooling during the 0.5.1
+preview; the formal hook and plugin write path use the Rust CLI.
+
 ### HUD and Runtime
 
-The static HUD is generated from task state. For live Runtime data, the recommended path is to start the loopback companion and open the printed loopback URL:
+The static HUD is generated from task state. For live Runtime data, the Rust CLI can start the bounded loopback companion:
 
 ```bash
-python skills/mission-center/scripts/mission_runtime.py --workspace . serve --port 8765
+mission-center hud launch --foreground --root . --port 8765
 ```
+
+When invoked from a Codex hook, the Rust `hook hud` adapter starts or reuses one healthy
+loopback companion for the current workspace and emits a host-managed
+`mission-center/hud-side-panel` intent in hook `additionalContext`. The intent
+contains a bounded loopback URL and a stable workspace `reuseKey`; it is also
+written to `output/mission-center-runtime/hud-side-panel.json`. Codex's local
+app-server schema currently exposes no public sidebar/open-URL method, so the
+hook cannot promise to open or focus a sidebar during the same turn. A Codex
+host may present the URL in its built-in sidebar/preview surface; otherwise use
+the clickable URL. The Rust hook never opens Chrome or another external browser;
+the Python `hud_autolaunch.py` command is compatibility/oracle tooling only:
+
+```bash
+python skills/mission-center/scripts/hud_autolaunch.py show --workspace . --open-browser
+```
+
+`--open-browser` is the only external-browser opt-in. The singleton key and
+health check prevent a second HUD server for the same workspace; sidebar tab
+reuse remains host-managed because no public sidebar bridge is available.
 
 Opening the HTML directly with `file://` is a static fallback only. Browser `fetch`/CORS rules can make live data unavailable in that mode.
 

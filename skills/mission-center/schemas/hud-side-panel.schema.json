@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mission-center/hud-side-panel.schema.json",
+  "title": "Mission Center HUD side-panel intent",
+  "description": "Host-advisory intent for a Codex sidebar or preview surface. It does not claim that Codex opened a panel.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "version",
+    "surface",
+    "mode",
+    "reuseKey",
+    "url",
+    "workspaceFingerprint",
+    "hudAssetFingerprint",
+    "externalBrowser"
+  ],
+  "properties": {
+    "type": { "const": "mission-center/hud-side-panel" },
+    "version": { "const": "1.0" },
+    "surface": { "const": "codex-sidebar-or-preview" },
+    "mode": { "const": "reuse" },
+    "reuseKey": { "type": "string", "pattern": "^mission-center-hud:[0-9a-f]{64}$" },
+    "url": { "type": "string", "pattern": "^http://127\\.0\\.0\\.1:[1-9][0-9]{0,4}/$" },
+    "workspaceFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "hudAssetFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "externalBrowser": { "const": false }
+  }
+}

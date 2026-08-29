@@ -316,6 +316,7 @@ class HudAutolaunchTests(unittest.TestCase):
             self.assertEqual(result["status"], "reused")
             self.assertEqual(result["url"], "http://127.0.0.1:43107/")
             self.assertEqual(result["hudAssetFingerprint"], hud.read_metadata(root)["hudAssetFingerprint"])
+            self.assertEqual(result["presentation"]["status"], "not_supported")
             browser.assert_called_once_with("http://127.0.0.1:43107/")
 
     def test_metadata_reuse_drops_unknown_legacy_fields(self):
@@ -645,6 +646,75 @@ class HudAutolaunchTests(unittest.TestCase):
         self.assertIsNone(hud.hook_specific_output({"status": "unavailable"}))
         self.assertIsNone(hud.hook_specific_output({"status": "launched", "url": "https://attacker.invalid/"}))
 
+    def test_side_panel_intent_is_bounded_and_workspace_singleton_keyed(self):
+        fingerprint = "a" * 64
+        assets = "b" * 64
+        intent = hud.build_side_panel_intent("http://127.0.0.1:43111/", fingerprint, assets)
+        self.assertEqual(intent["type"], "mission-center/hud-side-panel")
+        self.assertEqual(intent["surface"], "codex-sidebar-or-preview")
+        self.assertEqual(intent["mode"], "reuse")
+        self.assertEqual(intent["reuseKey"], f"mission-center-hud:{fingerprint}")
+        self.assertFalse(intent["externalBrowser"])
+        self.assertIsNone(hud.build_side_panel_intent("https://attacker.invalid/", fingerprint, assets))
+
+    def test_successful_launch_writes_side_panel_manifest_without_browser(self):
+        with workspace_tempdir("hud-side-panel-") as temporary:
+            root = workspace(Path(temporary))
+            with patch.object(hud, "launch_server", return_value=FakeProcess()), patch.object(
+                hud, "check_health", return_value=True
+            ), patch.object(hud, "choose_port", return_value=43114), patch.object(
+                hud, "open_browser"
+            ) as browser:
+                result = hud.launch_or_reuse(root)
+            browser.assert_not_called()
+            self.assertEqual(result["presentation"]["status"], "not_requested")
+            self.assertEqual(result["sidePanelIntent"], hud.read_side_panel_manifest(root))
+            self.assertEqual(
+                hud.read_metadata(root)["instanceKey"],
+                result["sidePanelIntent"]["reuseKey"],
+            )
+
+    def test_side_panel_manifest_rejects_external_or_tampered_intent(self):
+        with workspace_tempdir("hud-side-panel-invalid-") as temporary:
+            root = workspace(Path(temporary))
+            path = hud.side_panel_manifest_path(root)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(
+                    {
+                        "type": "mission-center/hud-side-panel",
+                        "version": "1.0",
+                        "surface": "codex-sidebar-or-preview",
+                        "mode": "reuse",
+                        "reuseKey": "mission-center-hud:" + "a" * 64,
+                        "url": "https://attacker.invalid/",
+                        "workspaceFingerprint": "a" * 64,
+                        "hudAssetFingerprint": "b" * 64,
+                        "externalBrowser": True,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertIsNone(hud.read_side_panel_manifest(root))
+
+    def test_healthy_reuse_is_singleton_and_does_not_reopen_or_rewrite_manifest(self):
+        with workspace_tempdir("hud-side-panel-reuse-") as temporary:
+            root = workspace(Path(temporary))
+            with patch.object(hud, "launch_server", return_value=FakeProcess()) as launch, patch.object(
+                hud, "check_health", return_value=True
+            ), patch.object(hud, "choose_port", return_value=43115), patch.object(
+                hud, "open_browser"
+            ) as browser, patch.object(hud, "atomic_side_panel_manifest", wraps=hud.atomic_side_panel_manifest) as write_manifest:
+                first = hud.launch_or_reuse(root, now=100.0)
+                reused = hud.launch_or_reuse(root, now=104.0)
+            self.assertEqual(first["status"], "launched")
+            self.assertEqual(reused["status"], "reused")
+            launch.assert_called_once()
+            browser.assert_not_called()
+            write_manifest.assert_called_once()
+            self.assertEqual(first["sidePanelIntent"], reused["sidePanelIntent"])
+            self.assertEqual(reused["presentation"]["status"], "not_requested")
+
     def test_contracts(self):
         hook_config = json.loads((ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
         groups = hook_config["hooks"]["UserPromptSubmit"]
@@ -653,10 +723,12 @@ class HudAutolaunchTests(unittest.TestCase):
         self.assertEqual(len(handlers), 2)
         self.assertEqual(handlers[0]["type"], "command")
         self.assertFalse(handlers[0]["async"])
-        self.assertIn("prompt_router.py", handlers[0]["command"])
+        self.assertIn("bin/mission-center\" hook route", handlers[0]["command"])
+        self.assertNotIn("python", handlers[0]["command"].lower())
         self.assertEqual(handlers[1]["type"], "command")
         self.assertTrue(handlers[1]["async"])
-        self.assertIn("hud_autolaunch.py", handlers[1]["command"])
+        self.assertIn("bin/mission-center\" hook hud", handlers[1]["command"])
+        self.assertNotIn("python", handlers[1]["command"].lower())
         self.assertIn("commandWindows", handlers[0])
         self.assertIn("commandWindows", handlers[1])
         self.assertLessEqual((ROOT / "skills" / "mission-center" / "SKILL.md").stat().st_size, 6144)

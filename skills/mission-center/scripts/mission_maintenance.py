@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import itertools
 import json
 import os
 import re
+import secrets
 import tempfile
 import threading
 from contextlib import contextmanager
@@ -59,6 +61,18 @@ GUARDRAIL_VALUE_ALIASES = {
 }
 
 
+_ATOMIC_WRITE_COUNTER = itertools.count(1)
+_ATOMIC_WRITE_COUNTER_LOCK = threading.Lock()
+_ATOMIC_WRITE_LOCKS: dict[str, threading.Lock] = {}
+_ATOMIC_WRITE_LOCKS_GUARD = threading.Lock()
+
+
+def _atomic_write_lock(path: Path) -> threading.Lock:
+    identity = os.path.normcase(str(Path(path).resolve()))
+    with _ATOMIC_WRITE_LOCKS_GUARD:
+        return _ATOMIC_WRITE_LOCKS.setdefault(identity, threading.Lock())
+
+
 def mission_root(workspace: Path) -> Path:
     candidate = Path(workspace).expanduser().resolve()
     return candidate if candidate.name.casefold() == "missioncenter" else candidate / "MissionCenter"
@@ -81,26 +95,46 @@ def atomic_write_if_changed(
 ) -> bool:
     """Atomically write UTF-8 text, optionally replacing equal content too."""
     path = Path(path)
-    try:
-        if not force and path.read_text(encoding="utf-8") == content:
-            return False
-    except FileNotFoundError:
-        pass
-    except (OSError, UnicodeDecodeError):
-        if not replace_unreadable:
-            raise
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-    return True
+    with _atomic_write_lock(path):
+        try:
+            if not force and path.read_text(encoding="utf-8") == content:
+                return False
+        except FileNotFoundError:
+            pass
+        except (OSError, UnicodeDecodeError):
+            if not replace_unreadable:
+                raise
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Keep the staging file beside its destination so os.replace remains
+        # one filesystem operation.  The identity includes process/thread/
+        # counter context plus cryptographic randomness; O_EXCL makes creation
+        # atomic and deliberately avoids retry loops that hide naming failure.
+        with _ATOMIC_WRITE_COUNTER_LOCK:
+            counter = next(_ATOMIC_WRITE_COUNTER)
+        temporary = path.with_name(
+            f".{path.name}.{os.getpid()}.{threading.get_ident()}.{counter}.{secrets.token_hex(8)}.tmp"
+        )
+        descriptor = os.open(
+            temporary,
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+            0o600,
+        )
+        try:
+            stream = os.fdopen(descriptor, "w", encoding="utf-8", newline="\n")
+            descriptor = None
+            with stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+        return True
 
 
 # Backward-compatible name used by the first implementation slice.

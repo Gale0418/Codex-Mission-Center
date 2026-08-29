@@ -1,6 +1,9 @@
 <#
 .SYNOPSIS
-    Compatibility installer that delegates to publish_local.py.
+    Explicit source-checkout compatibility publisher.
+
+    Formal installation requires an already verified Rust package/binary.
+    This wrapper never builds, downloads, or falls back to Python implicitly.
 #>
 
 [CmdletBinding()]
@@ -11,6 +14,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ($env:MISSION_CENTER_PYTHON_COMPAT -ne '1') {
+    throw 'Python compatibility installer is disabled by default. Use a verified Rust package/binary for formal installation; set MISSION_CENTER_PYTHON_COMPAT=1 only for source-checkout compatibility publishing. This wrapper never builds or downloads a Rust package.'
+}
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $RepoRoot = Split-Path -Parent $ScriptDir
 

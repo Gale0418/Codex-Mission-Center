@@ -89,7 +89,7 @@ components:
 
 這是一個以 Rainbow Singularity Overdrive 為視覺世界、採 EVE-like 高資訊密度但不複製 EVE trade dress 或 icons 的深空旗艦橋 HUD：鮮艷 cosmic spectrum 圍繞鏡面深色 tactical console，任務仍不是裝飾性卡片，而是落在五個 lifecycle territory（Intake、In Progress、Blocked、Review、Done）的可讀戰術星座。視覺衝擊可以主導畫面，但語意 HTML 仍是任務資料、證據與新鮮度的唯一真相；Runtime 是獨立且預設收合的遙測層。
 
-現行佈局採使用者核准的 **Fleet Command Deck A**：fleet backdrop 保持可見，主 mission panel 使用 `.50/.58` 的真透明階層；canvas 不使用不透明實色底，只保留定位網格與低 alpha 結構層；territory 使用 `.36`，一般 card 保留 `.66`、active card surface 提升至 `.72`。五個 territory 以軍事 phase label `BRIEFING / EXECUTION / HOLD / VERIFICATION / ARCHIVE` 為主標，並保留原 lifecycle 副標 `INTAKE / IN PROGRESS / BLOCKED · NEEDS INTERVENTION / REVIEW / DONE`。
+現行佈局採使用者核准的 **Fleet Command Deck A**：fleet backdrop 保持可見，主 mission panel 使用 `.50/.58` 的真透明階層；canvas 不使用不透明實色底，只保留定位網格與低 alpha 結構層；territory 使用 `.36`，一般 card 保留 `.66`、active card surface 提升至 `.72`。五個 territory 以兩行粗體戰隊色欄頭 `OPERATION / PLANNING`、`FLEET / DEPLOYED`、`TACTICAL / HOLD`、`COMMAND / VALIDATION`、`MISSION / COMPLETE` 呈現，canonical lifecycle 則保留在每個 `h3` 的 accessible name（Intake、In Progress、Blocked · Needs Intervention、Review、Done），避免視覺副標造成重複朗讀。
 
 所有可見時間、task/runtime 訊號與 polling 讀值都必須 truthful：horizon 同時顯示 LOCAL/UTC，Task/Runtime rail 只取 snapshot、計數與 polling 常數。畫面 doctrine 只宣告 `FILE SNAPSHOT`、`READ ONLY`、`NO SENSOR FEED`；fleet backdrop、broadcast 與幾何層不得被解讀成感測器資料。EVA-inspired 僅借用高張力的 command rhythm，不使用受保護名稱、logo 或 trade dress。
 
@@ -106,6 +106,11 @@ components:
 - 三層 parallax、geometry structure、depth rails 與 corner brackets 只提供空間對齊感，不暗示依賴關係。
 - EVE-like 只代表高密度 telemetry 的掃描節奏與資料層次；品牌、trade dress、icons 與產品畫面維持自有語彙。
 
+### Localization
+
+- System chrome is bounded to `zh-TW` or English. Resolve `?lang=zh-TW|en` first, then the viewer's first `navigator.languages` entry (`zh`, `zh-TW`, and `zh-Hant` map to `zh-TW`); unknown values fall back to English, and `document.documentElement.lang` follows the resolved locale.
+- Keep one UI dictionary and a parameterized `t(key, params)` helper. Render translated system labels and dynamic notices with DOM `textContent`/attributes so task, project goal, and evidence text remain user-authored and unmodified.
+
 ## Colors
 
 配色是不可純黑的深墨藍鏡面底，疊加鮮艷 cosmic spectrum；冷青、粉紅與紫色負責奇點能量與邊緣流光，琥珀仍是唯一的人工作業焦點。
@@ -119,7 +124,7 @@ components:
 
 ### Secondary
 
-- **Intervention Amber** (`{colors.amber}`)：attention、stale 警示與 Runtime `requiresAttention` 的次要 pulse/glow。只有 Blocked task 的主色是 HOLD red；其他 attention task 保留自己的 lifecycle family，不得被琥珀覆蓋。
+- **Intervention Amber** (`{colors.amber}`)：attention、stale 警示與 Runtime `requiresAttention` 的次要 pulse/glow。只有 Blocked task 的主色是 TACTICAL red；其他 attention task 保留自己的 lifecycle family，不得被琥珀覆蓋。
 
 ### Neutral
 
@@ -135,7 +140,7 @@ components:
 
 **The Amber Coordinate Rule.** 琥珀只回答「哪裡需要人介入」；不得拿來當一般品牌色、裝飾或完成狀態。其他彩譜顏色是視覺能量，不是資料狀態。
 
-**The Task Status Family Rule.** Task card 主色依 lifecycle 固定落在 bounded family：`BRIEFING / Intake` 黃、`EXECUTION / In Progress` 綠、`HOLD / Blocked` 紅、`VERIFICATION / Review` 藍、`ARCHIVE / Done` 低彩度銀灰。每張卡以 task ID 做 deterministic 的細微 hue/saturation/lightness 變體，但不得跨出 family；卡片內可疊加約 8% alpha、由一角漸淡的同色 tint，保留深色底與文字對比；attention 只增加 amber pulse/glow，不改寫 lifecycle family；卡片永遠同時顯示 task ID 與文字狀態。
+**The Task Status Family Rule.** Task card 主色依 lifecycle 固定落在 bounded family：`OPERATION / Intake` 黃、`FLEET / In Progress` 綠、`TACTICAL / Blocked` 紅、`COMMAND / Review` 藍、`MISSION / Done` 低彩度銀灰。每張卡以 task ID 做 deterministic 的細微 hue/saturation/lightness 變體，但不得跨出 family；卡片內可疊加約 8% alpha、由一角漸淡的同色 tint，保留深色底與文字對比；attention 只增加 amber pulse/glow，不改寫 lifecycle family；卡片永遠同時顯示 task ID 與文字狀態。
 
 ## Typography
 
@@ -207,7 +212,7 @@ Runtime 展開時是右側 fixed dock（桌面寬度 `min(420px, 30vw)`、距右
 ### Mission plot and territories
 
 - **Shape:** 5px plot panel；內部 canvas 16px padding，territory 12px padding、4–5px 圓角。
-- **Structure:** 依序呈現 `BRIEFING`（Intake）、`EXECUTION`（In Progress）、`HOLD`（Blocked）、`VERIFICATION`（Review）、`ARCHIVE`（Done）；主標下保留原 lifecycle 副標與每區數量。
+- **Structure:** 依序呈現兩行粗體欄頭 `OPERATION / PLANNING`、`FLEET / DEPLOYED`、`TACTICAL / HOLD`、`COMMAND / VALIDATION`、`MISSION / COMPLETE`；每區以 lifecycle canonical accessible name（Intake、In Progress、Blocked · Needs Intervention、Review、Done）作語意標籤，並顯示區域數量。
 - **Doctrine:** phase header 的輔助文案只說明 task order、file snapshot、read-only、command link 或 human intervention；它不是 sensor feed，也不補造座標、事件或任務真相。
 - **Task helper:** semantic `li`，顯示 ID、title、textual state；最多 15 個，map placement 只是展示。主色使用依 lifecycle bounded 的 status family，只有 Blocked 維持 red，amber 只作 attention pulse/glow。
 - **Task title / nameplate:** title 預設最多兩行 clamp；task helper 取得 keyboard focus 時顯示同一 task 的 nameplate（hover 也顯示），作為被截斷標題的補充資訊。
@@ -239,7 +244,7 @@ Runtime 展開時是右側 fixed dock（桌面寬度 `min(420px, 30vw)`、距右
 - **Layout:** `.telemetry-rail` 位於 plot heading 下方，桌面以約 `1.2fr / .8fr` 分成 Task Signal 與 Runtime Signal，最小高度約 42px、上下 7px、左右 18px；strip 使用 1px cyan border、3px radius、corner brackets 與 repeating linear grid。
 - **Broadcast orientation:** 頂部 broadcast 為 LTR（約 34s）；footer telemetry ticker 為 RTL（約 24s，`<=620px` 約 36s）；左右 vertical waterfalls 各自維持相反方向（約 30s）。它們是 `aria-hidden` 的節奏層，`<=760px` 隱藏 secondary flows。
 - **Task Signal:** `ACTIVE` IDs 只取 `state.agents` 中 `agent.active === true`（最多 15）；lifecycle count 只依五個 zone 計算；freshness/progress 直接取 task snapshot。
-- **Runtime Signal:** source、visible/total IDs、working、blocked、attention 只依 runtime snapshot；visible agent 上限 15，總數與隱藏數保持 truthful。Runtime polling 為可見且有 active agent 約 30 秒、一般靜置約 60 秒、hidden 約 120 秒；Task polling 為可見約 60 秒、hidden 約 120 秒。
+- **Runtime Signal:** source、visible/total IDs、working、blocked 只依 runtime snapshot；`observedAgentCount` 永遠是完整 `state.agents.length`，`attentionCount` 是 allowlist 後唯一 `attention.agentId` 數量。Capsule/summary 使用 `{observed} observed · {attention} attention`（zh-TW 保留 command-style English terms，避免全中文）；visible agent 上限 15，總數與隱藏數保持 truthful。Runtime polling 為可見且有 active agent 約 30 秒、一般靜置約 60 秒、hidden 約 120 秒；Task polling 為可見約 60 秒、hidden 約 120 秒。
 - **No phantom telemetry:** rail 不顯示 Runtime map 座標、猜測的依賴、mock 值或第二套狀態；視覺上的 bracket/grid 只是 decoration。
 
 ### Evidence rail
@@ -250,17 +255,17 @@ Runtime 展開時是右側 fixed dock（桌面寬度 `min(420px, 30vw)`、距右
 
 ### Runtime constellation
 
-- **Style:** 可選的 fixed drawer（桌面寬度 `min(420px, 30vw)`、最大不超過 520px，18px padding，5px radius）與獨立 generation list；最多顯示 15 agents，超量必須揭露 visible/total/hidden。
+- **Style:** 可選的 fixed drawer（桌面寬度 `min(420px, 30vw)`、最大不超過 520px，18px padding，5px radius）與獨立 generation list；drawer 必須標示 `Configured endpoint only · not a Codex-wide agent census`，最多顯示 15 agents，但計數使用完整集合並揭露 visible/total/hidden。
 - **Map layer:** Runtime 節點是獨立 SVG/DOM overlay，依 lifecycle anchor 綁定到五個 territory：Intake `10`、In Progress `30`、Blocked `50`、Review `70`、Done `90`；同區節點以索引在 anchor 周圍分散。Unknown 沒有 anchor 時不繪製節點。cyan 表示一般節點，amber 僅表示 `requiresAttention`，不改寫 task layer。
 - **Attention separation:** task plot 的 `taskAttentionSummary` 與 Runtime drawer 的 `runtimeAttentionSummary` 是兩個獨立訊號；Runtime attention 不得冒充 Task blocked，反之亦然。
-- **Sources / fallback:** connected、replay、file、fallback、static 等來源要如實標示；disconnected、idle、stale 不得暗示完成。
+- **Sources / fallback:** connected、replay、file、fallback、static 等來源要如實標示；所有來源共用 60 秒 TTL，`updatedAt` 或任一 `lastSeenAt` 超時即 `STALE`，不得再稱 `LIVE`。無 feed、首次失敗或 disconnected 且沒有 last-valid snapshot 時只顯示 `UNAVAILABLE`，不得渲染 `0 agents`；有 last-valid 時可顯示 STALE 快照。disconnected、idle、stale 不得暗示完成。
 
 ### State and motion
 
-- **Truthful state:** task 載入失敗時保留最後有效 snapshot 並標示 STALE；從未成功載入時顯示 UNAVAILABLE fallback。Runtime 失敗時維持 Task HUD 可用。
+- **Truthful state:** task 載入失敗時保留最後有效 snapshot 並標示 STALE；從未成功載入時顯示 UNAVAILABLE fallback。Runtime 初次無 feed/失敗時顯示 UNAVAILABLE；last-valid 的 `updatedAt` 或 agent `lastSeenAt` 超過 60 秒時顯示 STALE，且標題不得稱 LIVE。Runtime 失敗時維持 Task HUD 可用。
 - **Motion:** agent hover/focus 約 180ms；Runtime map 節點位置約 280ms；背景 pointer parallax 約 700ms；far/mid/near 三層分別使用 bounded transform（Rainbow `-3px`、starfield `-6px`、mid `+12/+8px`、near `-7/-5px`），singularity effects 僅使用 reverse orbit、orbital trail、border edge flow 與 energy pulse。桌面 broadcast LTR 約 34s、footer ticker RTL 約 24s、vertical waterfalls 約 30s。active card 才使用 operation scan/edge/aura 三組獨立節奏；實際溢出的 task title 自動 bounded ping-pong marquee，無需互動觸發。
 - **Reduced motion:** `prefers-reduced-motion: reduce` 時 transition/animation 壓至約 0.001ms，HUD shell 與 mission plot/evidence rail 的 edge flow 固定靜止，singularity-effects opacity 降到 `.38`；ticker 停止在靜態訊息、active card 僅保留靜態 aura/edge、operation scan 與 overflow title 停止，scroll behavior 回到 auto。
-- **Responsive simplification:** `760px` 以下改為單欄、隱藏 desktop 雙層 telemetry rail 與次要高密度資訊，保留 plot、task state、evidence 與可操作 Runtime；`620px` 以下再隱藏拓撲/Runtime map 並執行既有 singularity load-shed。不要把隱藏的 rail 內容改成虛構的 mobile summary。
+- **Responsive simplification:** `760px` 以下改為單欄、隱藏 desktop 雙層 telemetry rail 與次要高密度資訊，保留 plot、task state、evidence 與可操作 Runtime；`621–760px` 與 200% zoom 會降低兩行欄頭的字級、tracking 與 line-height（約 `1.15`），避免 110px territory 溢出；`620px` 以下再隱藏拓撲/Runtime map 並執行既有 singularity load-shed。不要把隱藏的 rail 內容改成虛構的 mobile summary。
 - **Mobile load-shed:** `620px` 以下 effects opacity 降到 `.44`，只保留 primary ring；secondary/tertiary ring、orbital trail 隱藏，geometry structure 降到 opacity `.28`，mid/near parallax 幅度縮至約 `+5/+3` 與 `-3/-2px`，Runtime map/topology 隱藏；ticker 改為滿寬、loop 36s，保留 task DOM 與 Runtime drawer。
 - **Hidden load-shed:** 頁面 hidden 時由 JS 設定 `is-paused`，暫停所有 CSS animation、停止 pointer parallax 更新，並把 task/Runtime polling 降至約 120 秒；重新可見後立即 refresh 並恢復可見 cadence。
 - **Polling:** 可見且有 active Runtime 約 30 秒，無 active Runtime 約 60 秒；Task 約 60 秒；hidden 時兩者約 120 秒。WebSocket event 仍即時，LOCAL/UTC clock 僅在頁面可見時更新。這是資料新鮮度與效能行為，不是裝飾語意。
@@ -294,7 +299,7 @@ Runtime 展開時是右側 fixed dock（桌面寬度 `min(420px, 30vw)`、距右
 - **Do** 讓 telemetry ticker 只播送真實 status/progress/tasks/blocked/freshness，並保留一份可讀 live announcement。
 - **Do** 讓桌面 Task/Runtime telemetry rails 只讀真實 snapshot、zone count、visible/total 與 polling constants；以資訊密度服務操作掃描，而非製造第二套真相。
 - **Do** 維持 Fleet Command Deck A 的透明階層：主 panel `.50/.58`、canvas 無不透明實色底、territory `.36`、一般 card `.66`、active card `.72`，讓 fleet backdrop 可見。
-- **Do** 以 `BRIEFING / EXECUTION / HOLD / VERIFICATION / ARCHIVE` 作軍事 phase label，並保留 Intake / In Progress / Blocked / Review / Done 的 lifecycle 副標。
+- **Do** 以 `OPERATION / PLANNING`、`FLEET / DEPLOYED`、`TACTICAL / HOLD`、`COMMAND / VALIDATION`、`MISSION / COMPLETE` 作兩行粗體戰隊色欄頭；canonical lifecycle 由 `h3` accessible name 保留一次，並讓 Blocked · Needs Intervention 在輔助技術中可讀。
 - **Do** 顯示 truthful LOCAL/UTC、Task/Runtime snapshot 與 polling；broadcast/doctrine 只標示 `FILE SNAPSHOT`、`READ ONLY`、`NO SENSOR FEED`。
 - **Do** 在桌面保留 top LTR broadcast、bottom RTL telemetry 與雙側 vertical waterfalls；`<=760px` 隱藏 secondary flows。
 - **Do** 只在標題真的溢出時啟動自動 bounded ping-pong marquee；reduced-motion 時保持靜止。

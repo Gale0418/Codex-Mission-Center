@@ -1,0 +1,22 @@
+[package]
+name = "mission-center-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mission-center-core = { path = "../mission-center-core" }
+mission-center-policy = { path = "../mission-center-policy" }
+mission-center-workspace = { path = "../mission-center-workspace" }
+mission-center-runtime = { path = "../mission-center-runtime" }
+mission-center-publish = { path = "../mission-center-publish" }
+serde = "=1.0.229"
+serde_json = "=1.0.151"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "mission-center"
+path = "src/main.rs"

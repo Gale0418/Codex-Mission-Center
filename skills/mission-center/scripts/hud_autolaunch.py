@@ -47,12 +47,17 @@ VISUAL_SUMMARY = Path("output/mission-center-assets/visual-summary.html")
 TASKS = Path("MissionCenter/tasks.md")
 RUNTIME_DIR = Path("output/mission-center-runtime")
 METADATA_NAME = "hud-autolaunch.json"
+SIDEPANEL_MANIFEST_NAME = "hud-side-panel.json"
 LOCK_NAME = "hud-autolaunch.lock"
 HOOK_EVENT_NAME = "UserPromptSubmit"
+SIDEPANEL_INTENT_TYPE = "mission-center/hud-side-panel"
+SIDEPANEL_INTENT_VERSION = "1.0"
+SIDEPANEL_SURFACE = "codex-sidebar-or-preview"
 PERMISSION_MODES = frozenset({"default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"})
 METADATA_FIELDS = frozenset(
     {
         "workspaceFingerprint",
+        "instanceKey",
         "port",
         "sessionNonce",
         "url",
@@ -139,6 +144,10 @@ def metadata_path(workspace: Path) -> Path:
     return workspace / RUNTIME_DIR / METADATA_NAME
 
 
+def side_panel_manifest_path(workspace: Path) -> Path:
+    return workspace / RUNTIME_DIR / SIDEPANEL_MANIFEST_NAME
+
+
 def lock_path(workspace: Path) -> Path:
     return workspace / RUNTIME_DIR / LOCK_NAME
 
@@ -152,6 +161,25 @@ def read_metadata(workspace: Path) -> dict[str, Any] | None:
     except (OSError, ValueError, json.JSONDecodeError):
         return None
     return _sanitize_metadata(value)
+
+
+def read_side_panel_manifest(workspace: Path) -> dict[str, Any] | None:
+    """Read and validate the bounded host-advisory side-panel manifest."""
+    path = side_panel_manifest_path(workspace)
+    try:
+        if path.stat().st_size > MAX_METADATA_BYTES:
+            return None
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(value, dict) or value.get("type") != SIDEPANEL_INTENT_TYPE:
+        return None
+    intent = build_side_panel_intent(
+        value.get("url"), value.get("workspaceFingerprint"), value.get("hudAssetFingerprint")
+    )
+    if intent is None or value != intent:
+        return None
+    return intent
 
 
 def _sanitize_metadata(value: object) -> dict[str, Any] | None:
@@ -173,6 +201,49 @@ def atomic_metadata(workspace: Path, value: dict[str, Any]) -> None:
     if len(encoded) > MAX_METADATA_BYTES:
         raise ValueError("HUD metadata exceeds byte limit")
     fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        try:
+            directory_fd = os.open(str(path.parent), os.O_RDONLY)
+        except OSError:
+            directory_fd = None
+        if directory_fd is not None:
+            try:
+                os.fsync(directory_fd)
+            except OSError:
+                pass
+            finally:
+                os.close(directory_fd)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def atomic_side_panel_manifest(workspace: Path, value: dict[str, Any]) -> None:
+    """Persist a bounded, host-advisory side-panel intent atomically.
+
+    Codex currently has no public app-server method for opening or focusing a
+    sidebar.  This file is therefore a discoverable manifest for a host that
+    chooses to support the intent; it is never treated as proof that a panel
+    was opened.
+    """
+    path = side_panel_manifest_path(workspace)
+    if not isinstance(value, dict) or value.get("type") != SIDEPANEL_INTENT_TYPE:
+        raise TypeError("invalid HUD side-panel intent")
+    encoded = (json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
+    if len(encoded) > MAX_METADATA_BYTES:
+        raise ValueError("HUD side-panel intent exceeds byte limit")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
+    )
     temporary = Path(temporary_name)
     try:
         with os.fdopen(fd, "wb") as stream:
@@ -432,6 +503,91 @@ def health_url(port: object) -> str:
     return f"http://127.0.0.1:{validated}/_mission-center/health"
 
 
+def _loopback_root_url(raw_url: object) -> str | None:
+    """Normalize only the launcher-owned loopback root URL."""
+    if not isinstance(raw_url, str):
+        return None
+    try:
+        parsed = urlparse(raw_url)
+        port = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname != "127.0.0.1"
+        or parsed.path != "/"
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or _validated_port(port) is None
+    ):
+        return None
+    return f"http://127.0.0.1:{port}/"
+
+
+def build_side_panel_intent(
+    url: object, workspace_fingerprint: object, hud_asset_fingerprint: object
+) -> dict[str, Any] | None:
+    """Build the host-advisory intent used by hook output and the manifest."""
+    normalized_url = _loopback_root_url(url)
+    if (
+        normalized_url is None
+        or not isinstance(workspace_fingerprint, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", workspace_fingerprint)
+        or not isinstance(hud_asset_fingerprint, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", hud_asset_fingerprint)
+    ):
+        return None
+    return {
+        "type": SIDEPANEL_INTENT_TYPE,
+        "version": SIDEPANEL_INTENT_VERSION,
+        "surface": SIDEPANEL_SURFACE,
+        "mode": "reuse",
+        "reuseKey": f"mission-center-hud:{workspace_fingerprint}",
+        "url": normalized_url,
+        "workspaceFingerprint": workspace_fingerprint,
+        "hudAssetFingerprint": hud_asset_fingerprint,
+        "externalBrowser": False,
+    }
+
+
+def _successful_result(
+    status: str,
+    url: str,
+    workspace_fingerprint: str,
+    hud_asset_fingerprint: str,
+    *,
+    external_browser_requested: bool = False,
+) -> dict[str, Any]:
+    intent = build_side_panel_intent(url, workspace_fingerprint, hud_asset_fingerprint)
+    result: dict[str, Any] = {
+        "status": status,
+        "url": url,
+        "hudAssetFingerprint": hud_asset_fingerprint,
+        "presentation": {
+            "status": "not_supported" if external_browser_requested else "not_requested",
+            "surface": SIDEPANEL_SURFACE,
+            "intent": intent,
+            "externalBrowserRequested": external_browser_requested,
+        },
+    }
+    if intent is not None:
+        result["sidePanelIntent"] = intent
+    return result
+
+
+def _write_side_panel_manifest(workspace: Path, intent: dict[str, Any] | None) -> None:
+    """Best-effort manifest write; serving the healthy HUD must remain primary."""
+    if intent is None:
+        return
+    try:
+        if read_side_panel_manifest(workspace) == intent:
+            return
+        atomic_side_panel_manifest(workspace, intent)
+    except (OSError, TypeError, ValueError):
+        pass
+
+
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *_args, **_kwargs):
         return None
@@ -534,8 +690,13 @@ def _launch_or_reuse_locked(workspace: Path, *, now: float, open_ui: bool = Fals
         if now - last < COOLDOWN_SECONDS:
             updated = dict(previous)
             updated["hudAssetFingerprint"] = asset_fingerprint
+            updated["instanceKey"] = f"mission-center-hud:{fingerprint}"
             atomic_metadata(workspace, updated)
-            return {"status": "cooldown", "url": url, "hudAssetFingerprint": asset_fingerprint}
+            result = _successful_result(
+                "cooldown", url, fingerprint, asset_fingerprint, external_browser_requested=open_ui
+            )
+            _write_side_panel_manifest(workspace, result.get("sidePanelIntent"))
+            return result
         if open_ui:
             open_browser(url)
         updated = dict(previous)
@@ -543,8 +704,13 @@ def _launch_or_reuse_locked(workspace: Path, *, now: float, open_ui: bool = Fals
         updated["url"] = url
         updated["lastLaunchAt"] = now
         updated["hudAssetFingerprint"] = asset_fingerprint
+        updated["instanceKey"] = f"mission-center-hud:{fingerprint}"
         atomic_metadata(workspace, updated)
-        return {"status": "reused", "url": url, "hudAssetFingerprint": asset_fingerprint}
+        result = _successful_result(
+            "reused", url, fingerprint, asset_fingerprint, external_browser_requested=open_ui
+        )
+        _write_side_panel_manifest(workspace, result.get("sidePanelIntent"))
+        return result
     port = choose_port()
     session_nonce = secrets.token_urlsafe(24)
     process = launch_server(workspace, port, session_nonce)
@@ -564,6 +730,7 @@ def _launch_or_reuse_locked(workspace: Path, *, now: float, open_ui: bool = Fals
             "schemaVersion": "1.0",
             "service": "mission-center-hud",
             "workspaceFingerprint": fingerprint,
+            "instanceKey": f"mission-center-hud:{fingerprint}",
             "port": port,
             "pid": getattr(process, "pid", None),
             "sessionNonce": session_nonce,
@@ -574,7 +741,11 @@ def _launch_or_reuse_locked(workspace: Path, *, now: float, open_ui: bool = Fals
     )
     if open_ui:
         open_browser(url)
-    return {"status": "launched", "url": url, "hudAssetFingerprint": asset_fingerprint}
+    result = _successful_result(
+        "launched", url, fingerprint, asset_fingerprint, external_browser_requested=open_ui
+    )
+    _write_side_panel_manifest(workspace, result.get("sidePanelIntent"))
+    return result
 
 
 def launch_or_reuse(workspace: Path, *, now: float | None = None, open_ui: bool = False) -> dict[str, Any]:
@@ -648,22 +819,21 @@ def hook_specific_output(result: object) -> dict[str, Any] | None:
     raw_url = result.get("url")
     if not isinstance(raw_url, str):
         return None
-    try:
-        parsed = urlparse(raw_url)
-        port = parsed.port
-    except ValueError:
+    url = _loopback_root_url(raw_url)
+    if url is None:
         return None
-    if (
-        parsed.scheme != "http"
-        or parsed.hostname != "127.0.0.1"
-        or parsed.path != "/"
-        or parsed.params
-        or parsed.query
-        or parsed.fragment
-        or _validated_port(port) is None
-    ):
-        return None
-    url = f"http://127.0.0.1:{port}/"
+    intent = result.get("sidePanelIntent")
+    if isinstance(intent, dict):
+        # Do not echo arbitrary result data into the model context.  Rebuild
+        # the bounded intent from launcher-owned fields and require its URL to
+        # match the normalized loopback URL.
+        intent = build_side_panel_intent(
+            url,
+            intent.get("workspaceFingerprint"),
+            intent.get("hudAssetFingerprint"),
+        )
+        if intent is not None and intent["url"] != url:
+            intent = None
     context = (
         f"Mission Center HUD ready at {url}. In Codex Desktop, present this loopback URL "
         "in the built-in sidebar or preview surface when supported; otherwise keep this "
@@ -671,6 +841,16 @@ def hook_specific_output(result: object) -> dict[str, Any] | None:
         "that a sidebar opens during the current turn. Do not rely on Chrome or another "
         "external browser."
     )
+    if intent is not None:
+        context += " Side-panel intent (host-managed, advisory): " + json.dumps(
+            intent, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        )
+    presentation = result.get("presentation")
+    presentation_status = presentation.get("status") if isinstance(presentation, dict) else None
+    if presentation_status in {"not_requested", "not_supported"}:
+        context += (
+            f" Presentation status: {presentation_status}; this is not evidence that a sidebar opened."
+        )
     return {
         "hookSpecificOutput": {
             "hookEventName": HOOK_EVENT_NAME,

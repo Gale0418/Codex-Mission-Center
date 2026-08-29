@@ -5,16 +5,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$PLUGIN_ROOT/skills/mission-center/scripts/prompt_router.py\"",
-            "commandWindows": "python \"%PLUGIN_ROOT%\\skills\\mission-center\\scripts\\prompt_router.py\"",
+            "command": "\"$PLUGIN_ROOT/bin/mission-center\" hook route",
+            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -File \"%PLUGIN_ROOT%\\bin\\mission-center.ps1\" hook route",
             "async": false,
             "timeout": 3,
             "additionalContextLimit": 400
           },
           {
             "type": "command",
-            "command": "python3 \"$PLUGIN_ROOT/skills/mission-center/scripts/hud_autolaunch.py\" hook",
-            "commandWindows": "python \"%PLUGIN_ROOT%\\skills\\mission-center\\scripts\\hud_autolaunch.py\" hook",
+            "command": "\"$PLUGIN_ROOT/bin/mission-center\" hook hud",
+            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -File \"%PLUGIN_ROOT%\\bin\\mission-center.ps1\" hook hud",
             "async": true,
             "timeout": 15
           }

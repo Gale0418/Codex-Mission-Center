@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0",
+  "kind": "mission-center-release-preview",
+  "pluginName": "mission-center",
+  "version": "0.5.1-rust.1",
+  "baseVersion": "0.5.1",
+  "releaseStage": "preview",
+  "runtime": "rust",
+  "rustOnly": true,
+  "installable": false,
+  "selector": {
+    "manifest": "platform-manifest.json",
+    "platforms": [
+      "windows-x86_64",
+      "linux-x86_64",
+      "macos-x86_64",
+      "macos-aarch64"
+    ]
+  },
+  "verification": {
+    "packageFormat": "frozen-package-v1",
+    "checksum": "sha256",
+    "network": "offline",
+    "fallback": "none"
+  }
+}

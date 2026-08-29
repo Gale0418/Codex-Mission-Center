@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mission-center-cli-envelope-v1.schema.json",
+  "title": "Mission Center CLI machine JSON envelope",
+  "description": "Versioned stdout ABI. Data is command-specific; the envelope and error object are closed-world.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "command", "status", "data"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "command": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "route": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Deprecated compatibility alias retained for the Python oracle."
+    },
+    "status": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "data": {},
+    "errorCode": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "remediation"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "remediation": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": { "status": { "const": "error" } },
+      "required": ["errorCode", "error"]
+    },
+    {
+      "properties": { "status": { "not": { "const": "error" } } },
+      "not": {
+        "anyOf": [
+          { "required": ["errorCode"] },
+          { "required": ["error"] }
+        ]
+      }
+    }
+  ]
+}

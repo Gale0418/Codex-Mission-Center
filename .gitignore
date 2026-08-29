@@ -9,3 +9,6 @@ MYKEY.txt
 .env.*
 output/
 .worktrees/
+/rust/target/
+/rust/target-check/
+/rust/target-release-check/

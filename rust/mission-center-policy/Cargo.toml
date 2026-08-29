@@ -1,0 +1,13 @@
+[package]
+name = "mission-center-policy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mission-center-core = { path = "../mission-center-core" }
+serde_json = "=1.0.151"
+
+[lints]
+workspace = true

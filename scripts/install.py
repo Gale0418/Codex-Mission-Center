@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Compatibility entry point delegating installation to publish_local.py."""
+"""Explicit source-checkout compatibility entry point.
+
+The formal plugin is installed from a verified Rust package. This wrapper is
+kept only for source-checkout compatibility publishing and never acts as a
+formal-runtime fallback.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +13,22 @@ import subprocess
 import sys
 import argparse
 from pathlib import Path
+
+
+COMPAT_OPT_IN = "MISSION_CENTER_PYTHON_COMPAT"
+
+
+def require_compatibility_opt_in() -> bool:
+    if os.environ.get(COMPAT_OPT_IN) != "1":
+        print(
+            "Python compatibility installer is disabled by default. "
+            "Use a verified Rust package/binary for formal installation; "
+            f"for source-checkout compatibility publishing, set {COMPAT_OPT_IN}=1. "
+            "This wrapper never builds or downloads a Rust package.",
+            file=sys.stderr,
+        )
+        return False
+    return True
 
 
 def build_publish_command(repo_root: Path, *, with_personal_skill: bool = False) -> list[str]:
@@ -32,6 +53,8 @@ def install(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Install the Mission Center local plugin.")
     parser.add_argument("--with-personal-skill", action="store_true")
     args = parser.parse_args(argv)
+    if not require_compatibility_opt_in():
+        return 1
     repo_root = Path(__file__).resolve().parent.parent
     completed = subprocess.run(
         build_publish_command(repo_root, with_personal_skill=args.with_personal_skill),

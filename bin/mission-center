@@ -1,0 +1,105 @@
+#!/bin/sh
+# Mission Center POSIX platform selector.
+#
+# This is deliberately a selector, not an installer: it only reads the
+# package manifest and replaces itself with an already-present, verified
+# platform binary. It never downloads, builds, invokes Python, or writes files.
+
+set -eu
+
+fail() {
+    printf '%s\n' "mission-center selector: $*" >&2
+    exit 1
+}
+
+command -v jq >/dev/null 2>&1 || fail "jq is required"
+
+case "$(uname -s 2>/dev/null || printf unknown)" in
+    Linux) selector_os=linux ;;
+    Darwin) selector_os=macos ;;
+    *) fail "unsupported host OS" ;;
+esac
+
+case "$(uname -m 2>/dev/null || printf unknown)" in
+    x86_64|amd64) selector_arch=x86_64 ;;
+    aarch64|arm64)
+        [ "$selector_os" = macos ] || fail "unsupported host architecture"
+        selector_arch=aarch64
+        ;;
+    *) fail "unsupported host architecture" ;;
+esac
+
+selector_platform="$selector_os-$selector_arch"
+selector_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+manifest="$selector_root/platform-manifest.json"
+plugin_manifest="$selector_root/.codex-plugin/plugin.json"
+[ -f "$manifest" ] || fail "platform manifest is missing"
+[ -f "$plugin_manifest" ] || fail "plugin manifest is missing"
+
+# Validate the complete four-platform manifest before selecting one entry.
+# The exact nested path is part of this selector's package contract, so a
+# manifest cannot redirect execution to an arbitrary relative path.
+manifest_version=$(jq -er '
+    . as $manifest |
+    if (type != "object" or .schemaVersion != "1.0" or
+        .pluginName != "mission-center" or
+        (.version | type) != "string" or
+        ((.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+([.-][0-9A-Za-z.-]+)?$")) | not) or
+        (.artifacts | type) != "array" or (.artifacts | length) != 4 or
+        ([.artifacts[].platform] | sort) !=
+          ["linux-x86_64", "macos-aarch64", "macos-x86_64", "windows-x86_64"] or
+        (all(.artifacts[];
+          type == "object" and
+          (.platform as $platform |
+            (.version == $manifest.version) and
+            (.os == ($platform | split("-")[0])) and
+            (.arch == ($platform | split("-")[1])) and
+            (.path == ("bin/" + $platform + "/mission-center" + (if $platform == "windows-x86_64" then ".exe" else ""))) and
+            (.executable == .path) and
+            ((.sha256 | type) == "string") and
+            ((.sha256 | test("^[0-9a-fA-F]{64}$")))
+          ))) | not)
+    then error("invalid manifest") else .version end
+' "$manifest" 2>/dev/null) || fail "invalid platform manifest"
+
+plugin_version=$(jq -er '
+    if (type != "object" or .name != "mission-center" or
+        (.version | type) != "string")
+    then error("invalid plugin manifest") else .version end
+' "$plugin_manifest" 2>/dev/null) || fail "invalid plugin manifest"
+[ "$plugin_version" = "$manifest_version" ] || fail "plugin/manifest version mismatch"
+
+expected_version=${MISSION_CENTER_VERSION:-$manifest_version}
+[ "$expected_version" = "$manifest_version" ] || fail "requested version mismatch"
+
+artifact_path=$(jq -er --arg platform "$selector_platform" --arg version "$manifest_version" '
+    .artifacts[] |
+    select(.platform == $platform) |
+    if (.version != $version or .os != ($platform | split("-")[0]) or
+        .arch != ($platform | split("-")[1]) or
+        .path != ("bin/" + $platform + "/mission-center" + (if $platform == "windows-x86_64" then ".exe" else "")) or
+        .executable != .path or
+        (.sha256 | type) != "string" or
+        ((.sha256 | test("^[0-9a-fA-F]{64}$")) | not))
+    then error("invalid selected artifact") else .path end
+' "$manifest" 2>/dev/null) || fail "selected platform artifact is missing or invalid"
+
+artifact_sha256=$(jq -er --arg platform "$selector_platform" '
+    .artifacts[] | select(.platform == $platform) | .sha256
+' "$manifest" 2>/dev/null) || fail "selected artifact checksum is missing"
+
+binary="$selector_root/$artifact_path"
+[ -f "$binary" ] || fail "selected binary is missing"
+[ -x "$binary" ] || fail "selected binary is not executable"
+
+if command -v sha256sum >/dev/null 2>&1; then
+    actual_sha256=$(sha256sum "$binary" | awk '{print $1}')
+elif command -v shasum >/dev/null 2>&1; then
+    actual_sha256=$(shasum -a 256 "$binary" | awk '{print $1}')
+else
+    fail "sha256sum or shasum is required"
+fi
+[ "$actual_sha256" = "$(printf '%s' "$artifact_sha256" | tr '[:upper:]' '[:lower:]')" ] ||
+    fail "selected binary checksum mismatch"
+
+exec "$binary" "$@"

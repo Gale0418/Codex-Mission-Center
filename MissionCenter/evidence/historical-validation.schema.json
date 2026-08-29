@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mission-center/historical-validation.schema.json",
+  "title": "Mission Center dual-layer retrospective validation record",
+  "type": "object",
+  "required": ["schemaVersion", "artifactType", "recordedAt", "baseRevision", "currentRevision", "workingTreeDirty", "workingTreeDiffDigest", "currentReplayBasis", "runs", "tasks", "summary", "findings"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "artifactType": { "const": "historical-validation" },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "baseRevision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "currentRevision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "workingTreeDirty": { "type": "boolean" },
+    "currentReplayBasis": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "workingTreeDiffDigest": {
+      "type": "object",
+      "required": ["algorithm", "value", "entryCount", "maxEntries", "scope", "includesFileContents", "includesSecrets"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "entryCount": { "type": "integer", "minimum": 0, "maximum": 512 },
+        "maxEntries": { "const": 512 },
+        "scope": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "includesFileContents": { "const": false },
+        "includesSecrets": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "sourcePolicy": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "runs": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 32,
+      "propertyNames": { "pattern": "^R[0-9]{1,2}$" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["command", "status", "result", "limitations"],
+        "properties": {
+          "command": { "type": "string", "minLength": 1, "maxLength": 2048 },
+          "status": { "enum": ["pass", "fail", "unknown"] },
+          "result": { "type": "string", "minLength": 1, "maxLength": 4096 },
+          "limitations": { "type": "string", "minLength": 1, "maxLength": 4096 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 60,
+      "maxItems": 60,
+      "items": {
+        "type": "object",
+        "required": ["taskId", "verification", "currentReplay", "historicalReplay"],
+        "properties": {
+          "taskId": { "type": "string", "pattern": "^MC-(00[1-9]|0[1-5][0-9]|060)$" },
+          "verification": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "currentReplay": {
+            "type": "object",
+            "required": ["status", "classification", "run", "locator", "limitations"],
+            "properties": {
+              "status": { "enum": ["pass", "fail", "unknown"] },
+              "classification": { "enum": ["Observed Fact", "Sourced Fact", "Inference", "Proposal", "Unknown"] },
+              "run": { "type": "string", "pattern": "^R[0-9]+$" },
+              "locator": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$))[^\\r\\n]+$" },
+              "limitations": { "type": "string", "minLength": 1, "maxLength": 2048 }
+            },
+            "additionalProperties": false
+          },
+          "historicalReplay": {
+            "type": "object",
+            "required": ["status", "classification", "sourceClassification", "revision", "locator", "limitations"],
+            "properties": {
+              "status": { "enum": ["pass", "fail", "unknown", "not_applicable"] },
+              "classification": { "enum": ["Observed Fact", "Sourced Fact", "Inference", "Proposal", "Unknown"] },
+              "sourceClassification": { "enum": ["Observed Fact", "Sourced Fact", "Inference", "Proposal", "Unknown"] },
+              "revision": { "anyOf": [{"type": "null"}, {"type": "string", "pattern": "^[0-9a-f]{40}$"}] },
+              "locator": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$))[^\\r\\n]+$" },
+              "limitations": { "type": "string", "minLength": 1, "maxLength": 2048 }
+            },
+            "allOf": [
+              {
+                "if": { "properties": { "status": { "const": "unknown" } } },
+                "then": {
+                  "properties": {
+                    "classification": { "const": "Unknown" },
+                    "revision": { "type": "null" }
+                  }
+                }
+              },
+              {
+                "if": { "properties": { "status": { "enum": ["pass", "fail"] } } },
+                "then": {
+                  "properties": {
+                    "classification": { "not": { "const": "Unknown" } },
+                    "sourceClassification": { "not": { "const": "Unknown" } },
+                    "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+                  }
+                }
+              }
+            ],
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["currentReplay", "historicalReplay"],
+      "properties": {
+        "currentReplay": { "type": "object", "required": ["pass", "fail", "unknown"], "maxProperties": 3, "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "historicalReplay": { "type": "object", "required": ["pass", "fail", "unknown", "not_applicable"], "maxProperties": 4, "additionalProperties": { "type": "integer", "minimum": 0 } }
+      },
+      "additionalProperties": false
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "required": ["severity", "classification", "status", "locator", "description"],
+        "properties": {
+          "severity": { "enum": ["P0", "P1", "P2"] },
+          "classification": { "enum": ["Observed Fact", "Sourced Fact", "Inference", "Proposal", "Unknown"] },
+          "status": { "enum": ["open", "resolved", "unknown"] },
+          "locator": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$))[^\\r\\n]+$" },
+          "description": { "type": "string", "minLength": 1, "maxLength": 4096 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

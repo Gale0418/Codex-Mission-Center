@@ -1,5 +1,6 @@
 import json
 import sys
+import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -544,6 +545,26 @@ class MissionMaintenanceTests(unittest.TestCase):
             time.sleep(0.01)
             self.assertFalse(atomic_write_if_changed(path, "same\n"))
             self.assertEqual(mtime, path.stat().st_mtime_ns)
+
+    def test_atomic_write_uses_unique_staging_files_for_parallel_writers(self):
+        with workspace_tempdir("memory-atomic-parallel-") as temporary:
+            barrier = threading.Barrier(16)
+
+            def write(index):
+                barrier.wait()
+                target = Path(temporary) / f"value-{index}.txt"
+                return atomic_write_if_changed(target, f"value-{index}\n", force=True)
+
+            with ThreadPoolExecutor(max_workers=16) as executor:
+                results = list(executor.map(write, range(16)))
+
+            self.assertEqual(results, [True] * 16)
+            for index in range(16):
+                self.assertEqual(
+                    (Path(temporary) / f"value-{index}.txt").read_text(encoding="utf-8"),
+                    f"value-{index}\n",
+                )
+            self.assertEqual(list(Path(temporary).glob("*.tmp")), [])
 
     def test_guardrail_validation_rejects_invalid_values(self):
         errors = validate_guardrails([{

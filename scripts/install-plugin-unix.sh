@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ "${MISSION_CENTER_PYTHON_COMPAT:-0}" != "1" ]; then
+  echo "Python compatibility installer is disabled by default. Use a verified Rust package/binary for formal installation; set MISSION_CENTER_PYTHON_COMPAT=1 only for source-checkout compatibility publishing. This wrapper never builds or downloads a Rust package." >&2
+  exit 1
+fi
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CODEX_ROOT="${CODEX_HOME:-$HOME/.codex}"
 PERSONAL_SKILL="${MISSION_CENTER_PERSONAL_SKILL:-$CODEX_ROOT/skills/mission-center}"
