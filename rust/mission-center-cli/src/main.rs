@@ -179,9 +179,72 @@ fn public_command(command: &str) -> &str {
         | "install" | "hud" | "normalize" | "verify" | "snapshot" | "pulse" | "handoff"
         | "closeout" | "project-map" | "claim" | "release-claim" | "transition" | "research"
         | "optimize" | "steelman" | "critic" | "shift-loss" | "security" | "compatibility"
-        | "hook" => command,
+        | "hook" | "help" => command,
         _ => "unknown",
     }
+}
+
+const PUBLIC_COMMANDS: &[&str] = &[
+    "init",
+    "sync",
+    "status",
+    "resume",
+    "reconcile",
+    "doctor",
+    "runtime",
+    "publish",
+    "install",
+    "hud",
+    "normalize",
+    "verify",
+    "snapshot",
+    "pulse",
+    "handoff",
+    "closeout",
+    "project-map",
+    "claim",
+    "release-claim",
+    "transition",
+    "research",
+    "optimize",
+    "steelman",
+    "critic",
+    "shift-loss",
+    "security",
+    "compatibility",
+    "hook",
+];
+
+fn command_usage(command: &str) -> Option<String> {
+    if !PUBLIC_COMMANDS.contains(&command) {
+        return None;
+    }
+    Some(match command {
+        "sync" => "mission-center sync --root <path> --operation-id <id> --timestamp <RFC3339> [--project <name>] [--cycle <name>] [--goal <text>] [--labels <csv>] [--milestone <text>] [--rewrite-summaries]".to_owned(),
+        "status" | "resume" | "reconcile" => {
+            format!("mission-center {command} --root <path> [--date <YYYY-MM-DD>]")
+        }
+        _ => format!("mission-center {command} [options]"),
+    })
+}
+
+fn help_envelope(command: &str, target: Option<&str>) -> Result<String, String> {
+    let usage = match target {
+        Some(target) => {
+            command_usage(target).ok_or_else(|| format!("unknown command: {target}"))?
+        }
+        None => "mission-center <command> [options]".to_owned(),
+    };
+    Ok(value_envelope(
+        command,
+        "ok",
+        json!({
+            "usage": usage,
+            "target": target,
+            "commands": PUBLIC_COMMANDS,
+            "help": "mission-center help <command> or mission-center <command> --help"
+        }),
+    ))
 }
 
 fn envelope(command: &str, status: &str, body: &str) -> String {
@@ -3190,6 +3253,21 @@ fn hud_run(mode: &str, root: PathBuf, args: &[String]) -> Result<String, String>
 }
 
 fn run(command: &str, root: PathBuf, args: &[String]) -> Result<String, String> {
+    if command == "help" {
+        if args.len() > 1 {
+            return Err("help accepts at most one command".to_owned());
+        }
+        return help_envelope(command, args.first().map(String::as_str));
+    }
+    if args
+        .iter()
+        .any(|value| matches!(value.as_str(), "--help" | "-h"))
+    {
+        if args.len() != 1 {
+            return Err("--help cannot be combined with other arguments".to_owned());
+        }
+        return help_envelope(command, Some(command));
+    }
     if command == "hook" {
         let mode = args.first().map(String::as_str).unwrap_or("capability");
         let flags = if !args.is_empty() { &args[1..] } else { args };
@@ -4113,6 +4191,7 @@ fn machine_failed(command: &str, value: &Value) -> bool {
 fn main() -> ExitCode {
     let all: Vec<String> = env::args().skip(1).collect();
     let command = match all.first().map(String::as_str).unwrap_or("status") {
+        "--help" | "-h" => "help",
         "release_claim" => "release-claim",
         "project_map" => "project-map",
         "shift_loss" => "shift-loss",

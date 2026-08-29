@@ -30,6 +30,7 @@ class WindowsSelectorPolicyTests(unittest.TestCase):
             "& $binary @args",
         ):
             self.assertIn(token.lower(), self.code)
+        self.assertIn(r"\+", self.source)
 
     def test_selector_fails_closed_without_download_or_alternate_runtime(self):
         for forbidden in ("python", "curl", "wget", "cargo", "pip", "npm", "invoke-webrequest", "start-bitstransfer"):

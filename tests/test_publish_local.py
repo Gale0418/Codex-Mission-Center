@@ -129,6 +129,62 @@ class PublishLocalTests(unittest.TestCase):
             self.assertFalse(personal.exists())
             self.assertFalse(marketplace.exists())
 
+    def test_preflight_ignores_unpublished_repository_trees(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            root = Path(temporary)
+            repo = make_fake_repo(root)
+            external = root / "external"
+            external.mkdir()
+            unrelated = repo / "rust" / "target" / "unrelated-link"
+            unrelated.parent.mkdir(parents=True)
+            try:
+                unrelated.symlink_to(external, target_is_directory=True)
+            except (NotImplementedError, OSError) as exc:
+                if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                    self.skipTest("symlink creation requires SeCreateSymbolicLinkPrivilege")
+                raise
+
+            marketplace = root / "marketplace" / "plugins" / "mission-center"
+            self.assertEqual(
+                main(
+                    [
+                        "--repo",
+                        str(repo),
+                        "--marketplace-plugin",
+                        str(marketplace),
+                        "--dry-run",
+                    ]
+                ),
+                0,
+            )
+
+    def test_preflight_rejects_published_top_level_symlink(self):
+        with workspace_tempdir("publish-local-") as temporary:
+            root = Path(temporary)
+            repo = make_fake_repo(root)
+            external = root / "external-readme.md"
+            external.write_text("external\n", encoding="utf-8")
+            readme = repo / "README.md"
+            readme.unlink()
+            try:
+                readme.symlink_to(external)
+            except (NotImplementedError, OSError) as exc:
+                if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+                    self.skipTest("symlink creation requires SeCreateSymbolicLinkPrivilege")
+                raise
+
+            marketplace = root / "marketplace" / "plugins" / "mission-center"
+            with self.assertRaisesRegex(ValueError, "Published source must not be a symlink"):
+                main(
+                    [
+                        "--repo",
+                        str(repo),
+                        "--marketplace-plugin",
+                        str(marketplace),
+                        "--dry-run",
+                    ]
+                )
+
     def test_plugin_only_write_and_verify_do_not_create_personal_skill(self):
         with workspace_tempdir("publish-local-") as temporary:
             root = Path(temporary)

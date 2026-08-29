@@ -531,7 +531,38 @@ fn init_and_sync_are_versioned_idempotent_workspace_operations() {
     assert_eq!(sync_payload["status"], "committed");
     let progress = fs::read_to_string(root.join("MissionCenter/progress.md")).unwrap();
     assert!(progress.contains("進度條"));
+    let status = Command::new(env!("CARGO_BIN_EXE_mission-center"))
+        .args(["status", "--root"])
+        .arg(&root)
+        .args(["--date", "2026-08-29"])
+        .output()
+        .expect("run status after sync");
+    let status_payload = assert_machine_envelope(&status, "status", 0);
+    assert_eq!(status_payload["data"]["dateFresh"], true);
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn top_level_and_sync_help_are_discoverable_machine_envelopes() {
+    for args in [vec!["--help"], vec!["help", "sync"], vec!["sync", "--help"]] {
+        let output = Command::new(env!("CARGO_BIN_EXE_mission-center"))
+            .args(args)
+            .output()
+            .expect("run help");
+        assert!(output.status.success());
+        let payload: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("machine help JSON");
+        assert_eq!(payload["status"], "ok");
+        assert!(payload["data"]["usage"].as_str().is_some());
+    }
+    let sync = Command::new(env!("CARGO_BIN_EXE_mission-center"))
+        .args(["sync", "--help"])
+        .output()
+        .expect("run sync help");
+    let payload: serde_json::Value = serde_json::from_slice(&sync.stdout).expect("sync help JSON");
+    let usage = payload["data"]["usage"].as_str().unwrap();
+    assert!(usage.contains("--operation-id <id>"));
+    assert!(usage.contains("--timestamp <RFC3339>"));
 }
 
 #[test]

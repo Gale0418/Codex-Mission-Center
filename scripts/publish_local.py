@@ -562,7 +562,10 @@ def preflight(
     codex_cli: Path | None,
 ) -> tuple[Path | None, Path | None, Path | None, dict, Path | None]:
     reject_symlink_components(repo, "source repository")
-    ensure_source_tree(repo)
+    for name in PLUGIN_ITEMS:
+        source = repo / name
+        if source.is_symlink():
+            raise ValueError(f"Published source must not be a symlink: {source}")
     canonical = repo / "skills" / PLUGIN_NAME
     manifest_path = repo / ".codex-plugin" / "plugin.json"
     if not (canonical / "SKILL.md").is_file():
