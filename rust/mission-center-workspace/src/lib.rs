@@ -16,6 +16,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+mod derived_views;
+pub use derived_views::working_set_ids;
+use derived_views::{BRIEF_MAX_BYTES, WORKING_SET_MAX_BYTES};
+
 pub const MISSION_DIRECTORY: &str = "MissionCenter";
 pub const TASKS_FILE: &str = "tasks.md";
 pub const SNAPSHOT_FILE: &str = "snapshot.md";
@@ -865,7 +869,7 @@ impl MissionWorkspace {
 
     /// Synchronize managed summaries from canonical tasks.md.  This method is
     /// deliberately narrower than the Python maintenance script: it updates
-    /// only managed/missing project.md and progress.md, and never writes
+    /// only managed/missing summaries and derived views, and never writes
     /// tasks.md or claims HUD asset parity.
     pub fn sync(
         &self,
@@ -892,8 +896,14 @@ impl MissionWorkspace {
         let language = self.detect_language()?;
         let project_path = self.mission_dir().join("project.md");
         let progress_path = self.mission_dir().join("progress.md");
+        let brief_path = self.mission_dir().join("brief.md");
+        let working_set_path = self.mission_dir().join("working-set.md");
+        let focus_path = self.mission_dir().join("focus.md");
         let existing_project = read_optional(project_path.clone(), PROJECT_MAX_BYTES)?;
         let existing_progress = read_optional(progress_path.clone(), PROJECT_MAX_BYTES)?;
+        let existing_brief = read_optional(brief_path.clone(), BRIEF_MAX_BYTES)?;
+        let existing_working_set = read_optional(working_set_path.clone(), WORKING_SET_MAX_BYTES)?;
+        let existing_focus = read_optional(focus_path.clone(), WORKING_SET_MAX_BYTES)?;
         let project_text = existing_project
             .as_deref()
             .map(|bytes| String::from_utf8(bytes.to_vec()))
@@ -934,14 +944,123 @@ impl MissionWorkspace {
             } else {
                 None
             };
-        let mut planned = canonicalize_hash_bytes(tasks_text.as_bytes());
-        planned.push(0);
-        if let Some(bytes) = &project_bytes {
-            planned.extend_from_slice(bytes);
+        let final_project = project_bytes.as_deref().or(existing_project.as_deref());
+        let guardrails_bytes = read_optional(
+            self.mission_dir().join("guardrails.md"),
+            GUARDRAILS_MAX_BYTES,
+        )?;
+        let daily_log_bytes =
+            read_optional(self.mission_dir().join("daily-log.md"), DAILY_LOG_MAX_BYTES)?;
+        let workspace_fingerprint = mission_center_core::workspace_fingerprint(&[
+            ("project.md", final_project),
+            ("tasks.md", Some(tasks_text.as_bytes())),
+            ("guardrails.md", guardrails_bytes.as_deref()),
+            ("daily-log.md", daily_log_bytes.as_deref()),
+        ]);
+        let tasks_fingerprint = mission_center_core::workspace_fingerprint(&[(
+            "tasks.md",
+            Some(tasks_text.as_bytes()),
+        )]);
+        let daily_log_text = daily_log_bytes
+            .as_deref()
+            .map(|bytes| String::from_utf8(bytes.to_vec()))
+            .transpose()
+            .map_err(|_| WorkspaceError::InvalidUtf8 {
+                path: self.mission_dir().join("daily-log.md"),
+            })?;
+        let guardrails_text = guardrails_bytes
+            .as_deref()
+            .map(|bytes| String::from_utf8(bytes.to_vec()))
+            .transpose()
+            .map_err(|_| WorkspaceError::InvalidUtf8 {
+                path: self.mission_dir().join("guardrails.md"),
+            })?;
+        let views = derived_views::render_views(
+            &tasks,
+            &derived_views::RenderInput {
+                project: &project,
+                goal: &goal,
+                cycle: &cycle,
+                workspace_fingerprint: &workspace_fingerprint,
+                tasks_fingerprint: &tasks_fingerprint,
+                language,
+                timestamp,
+                daily_log: daily_log_text.as_deref(),
+                guardrails: guardrails_text.as_deref(),
+            },
+        )
+        .map_err(WorkspaceError::Core)?;
+        for (path, text, limit) in [
+            (&brief_path, &views.brief, BRIEF_MAX_BYTES),
+            (&working_set_path, &views.working_set, WORKING_SET_MAX_BYTES),
+            (&focus_path, &views.focus, WORKING_SET_MAX_BYTES),
+        ] {
+            if text.len() as u64 > limit {
+                return Err(WorkspaceError::TooLarge {
+                    path: path.clone(),
+                    limit,
+                });
+            }
         }
-        planned.push(0);
-        if let Some(bytes) = &progress_bytes {
-            planned.extend_from_slice(bytes);
+        let brief_text = existing_brief
+            .as_deref()
+            .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok())
+            .unwrap_or_default();
+        let working_set_text = existing_working_set
+            .as_deref()
+            .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok())
+            .unwrap_or_default();
+        let focus_text = existing_focus
+            .as_deref()
+            .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok())
+            .unwrap_or_default();
+        let brief_bytes = if existing_brief.is_none() || derived_views::is_managed_view(&brief_text)
+        {
+            Some(views.brief.into_bytes())
+        } else {
+            None
+        };
+        let working_set_bytes = if existing_working_set.is_none()
+            || derived_views::is_managed_view(&working_set_text)
+        {
+            Some(views.working_set.into_bytes())
+        } else {
+            None
+        };
+        let focus_bytes = if existing_focus.is_none() || derived_views::is_managed_view(&focus_text)
+        {
+            Some(views.focus.into_bytes())
+        } else {
+            None
+        };
+        let mut planned = canonicalize_hash_bytes(tasks_text.as_bytes());
+        for (name, existing, generated) in [
+            (
+                "project.md",
+                existing_project.as_ref(),
+                project_bytes.as_ref(),
+            ),
+            (
+                "progress.md",
+                existing_progress.as_ref(),
+                progress_bytes.as_ref(),
+            ),
+            ("brief.md", existing_brief.as_ref(), brief_bytes.as_ref()),
+            (
+                "working-set.md",
+                existing_working_set.as_ref(),
+                working_set_bytes.as_ref(),
+            ),
+            ("focus.md", existing_focus.as_ref(), focus_bytes.as_ref()),
+        ] {
+            planned.push(0);
+            planned.extend_from_slice(name.as_bytes());
+            planned.push(0);
+            if let Some(bytes) = generated.or(existing) {
+                planned.extend_from_slice(&canonicalize_hash_bytes(bytes));
+            } else {
+                planned.extend_from_slice(b"<missing>");
+            }
         }
         let digest = sha256_digest(&planned);
         let result = (|| {
@@ -951,55 +1070,56 @@ impl MissionWorkspace {
                 return Ok(WriteOutcome::Unchanged);
             }
             let mut changed = false;
-            let mut project_applied = false;
-            let mut progress_applied = false;
-            if let Some(bytes) = &project_bytes {
-                match self.atomic_write(&project_path, bytes) {
-                    Ok(outcome) => {
-                        changed |= outcome == WriteOutcome::Changed;
-                        project_applied = outcome == WriteOutcome::Changed;
-                    }
-                    Err(error) => {
-                        let _ = self.abort_operation_locked(operation_id, &digest, timestamp);
-                        return Err(error);
-                    }
-                }
-            }
-            if let Some(bytes) = &progress_bytes {
-                match self.atomic_write(&progress_path, bytes) {
-                    Ok(outcome) => {
-                        changed |= outcome == WriteOutcome::Changed;
-                        progress_applied = outcome == WriteOutcome::Changed;
-                    }
-                    Err(error) => {
-                        // Best-effort rollback keeps a failed sync from
-                        // presenting a partially updated derived view.
-                        if project_applied {
-                            if let Some(old) = existing_project.as_deref() {
-                                let _ = self.atomic_write(&project_path, old);
-                            } else {
-                                let _ = fs::remove_file(&project_path);
+            let writes = [
+                (
+                    &project_path,
+                    project_bytes.as_ref(),
+                    existing_project.as_ref(),
+                ),
+                (
+                    &progress_path,
+                    progress_bytes.as_ref(),
+                    existing_progress.as_ref(),
+                ),
+                (&brief_path, brief_bytes.as_ref(), existing_brief.as_ref()),
+                (
+                    &working_set_path,
+                    working_set_bytes.as_ref(),
+                    existing_working_set.as_ref(),
+                ),
+                (&focus_path, focus_bytes.as_ref(), existing_focus.as_ref()),
+            ];
+            let mut applied: Vec<(&Path, Option<&Vec<u8>>)> = Vec::new();
+            for (path, bytes, previous) in writes {
+                if let Some(bytes) = bytes {
+                    match self.atomic_write(path, bytes) {
+                        Ok(outcome) => {
+                            changed |= outcome == WriteOutcome::Changed;
+                            if outcome == WriteOutcome::Changed {
+                                applied.push((path, previous));
                             }
                         }
-                        let _ = self.abort_operation_locked(operation_id, &digest, timestamp);
-                        return Err(error);
+                        Err(error) => {
+                            for (applied_path, applied_previous) in applied.into_iter().rev() {
+                                let _ = match applied_previous {
+                                    Some(old) => self.atomic_write(applied_path, old).map(|_| ()),
+                                    None => {
+                                        fs::remove_file(applied_path).map_err(WorkspaceError::Io)
+                                    }
+                                };
+                            }
+                            let _ = self.abort_operation_locked(operation_id, &digest, timestamp);
+                            return Err(error);
+                        }
                     }
                 }
             }
             if let Err(error) = self.commit_operation_locked(operation_id, &digest, timestamp) {
-                if progress_applied {
-                    if let Some(old) = existing_progress.as_deref() {
-                        let _ = self.atomic_write(&progress_path, old);
-                    } else {
-                        let _ = fs::remove_file(&progress_path);
-                    }
-                }
-                if project_applied {
-                    if let Some(old) = existing_project.as_deref() {
-                        let _ = self.atomic_write(&project_path, old);
-                    } else {
-                        let _ = fs::remove_file(&project_path);
-                    }
+                for (applied_path, applied_previous) in applied.into_iter().rev() {
+                    let _ = match applied_previous {
+                        Some(old) => self.atomic_write(applied_path, old).map(|_| ()),
+                        None => fs::remove_file(applied_path).map_err(WorkspaceError::Io),
+                    };
                 }
                 let _ = self.abort_operation_locked(operation_id, &digest, timestamp);
                 return Err(error);
@@ -4580,6 +4700,17 @@ mod tests {
         let progress =
             fs::read_to_string(fixture.workspace.mission_dir().join("progress.md")).unwrap();
         assert!(progress.contains("0/1 tasks"));
+        let brief = fs::read_to_string(fixture.workspace.mission_dir().join("brief.md")).unwrap();
+        let working_set =
+            fs::read_to_string(fixture.workspace.mission_dir().join("working-set.md")).unwrap();
+        let focus = fs::read_to_string(fixture.workspace.mission_dir().join("focus.md")).unwrap();
+        let workspace_fingerprint = fixture.workspace.fingerprint().unwrap();
+        let task_fingerprint =
+            mission_center_core::workspace_fingerprint(&[("tasks.md", Some(before.as_slice()))]);
+        assert!(brief.contains(&format!("source-fingerprint={workspace_fingerprint}")));
+        assert!(working_set.contains(&format!("source-fingerprint={task_fingerprint}")));
+        assert!(focus.contains(&format!("source-fingerprint={task_fingerprint}")));
+        assert!(working_set.contains("| MC-1 | 測試 |  | Ready |"));
         assert_eq!(fs::read(fixture.workspace.tasks_path()).unwrap(), before);
         assert_eq!(
             fixture
@@ -4588,6 +4719,49 @@ mod tests {
                 .unwrap(),
             WriteOutcome::Unchanged
         );
+    }
+
+    #[test]
+    fn sync_all_done_refreshes_views_without_active_rows() {
+        let fixture = fixture();
+        fs::write(
+            fixture.workspace.tasks_path(),
+            "| ID | Title | Status | Priority |\n| --- | --- | --- | --- |\n| MC-1 | 測試 | Done | P0 |\n",
+        )
+        .unwrap();
+        let before = fs::read(fixture.workspace.tasks_path()).unwrap();
+        assert_eq!(
+            fixture
+                .workspace
+                .sync("sync-all-done", "2026-08-29T00:00:00Z")
+                .unwrap(),
+            WriteOutcome::Changed
+        );
+        let working_set =
+            fs::read_to_string(fixture.workspace.mission_dir().join("working-set.md")).unwrap();
+        let focus = fs::read_to_string(fixture.workspace.mission_dir().join("focus.md")).unwrap();
+        assert!(working_set.contains("all work complete"));
+        assert!(!working_set.contains("| MC-1 |"));
+        assert!(!focus.contains("| MC-1 |"));
+        assert!(focus.contains("- Unfinished P0: 0"));
+        assert_eq!(fs::read(fixture.workspace.tasks_path()).unwrap(), before);
+    }
+
+    #[test]
+    fn sync_preserves_custom_unmanaged_derived_view() {
+        let fixture = fixture();
+        let custom = b"# Hand-authored brief\n\nKeep this note.\n";
+        fs::write(fixture.workspace.mission_dir().join("brief.md"), custom).unwrap();
+        let before = fs::read(fixture.workspace.tasks_path()).unwrap();
+        fixture
+            .workspace
+            .sync("sync-custom-view", "2026-08-29T00:00:00Z")
+            .unwrap();
+        assert_eq!(
+            fs::read(fixture.workspace.mission_dir().join("brief.md")).unwrap(),
+            custom
+        );
+        assert_eq!(fs::read(fixture.workspace.tasks_path()).unwrap(), before);
     }
 
     #[test]

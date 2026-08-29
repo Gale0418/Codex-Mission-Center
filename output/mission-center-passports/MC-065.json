@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-065",
+  "taskDigest": "315680442512b51a05b2399a71a04f8f5ca001d2ce3f58eb9d97021feded30b4",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "rust/mission-center-runtime/tests/hud_lifecycle.rs",
+      "rust/mission-center-publish/tests/wave4_publish.rs",
+      "rust/mission-center-publish/tests/native_install.rs",
+      "docs/rust-only-release.md"
+    ]
+  },
+  "findings": []
+}

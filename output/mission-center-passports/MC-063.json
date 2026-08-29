@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-063",
+  "taskDigest": "d7b9d19f76cc634c53090c8ea502b4833982077c32ba3b277035c7d3ca71de13",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "rust/mission-center-workspace/src/lib.rs",
+      "tests/test_rust_differential.py",
+      "rust/mission-center-cli/tests/cli_contract.rs"
+    ]
+  },
+  "findings": []
+}

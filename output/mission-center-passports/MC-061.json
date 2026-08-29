@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-061",
+  "taskDigest": "74b9b1557ce2cc5100235640d2f0480666183e225936d2a7c22f961858c02268",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "rust/Cargo.lock",
+      "rust/rust-toolchain.toml",
+      ".github/workflows/ci.yml",
+      "docs/SBOM.spdx.json"
+    ]
+  },
+  "findings": []
+}

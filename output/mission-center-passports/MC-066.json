@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-066",
+  "taskDigest": "81cfd2914f2aaa0403b2925fa430e61ed0589be497f7b866301704bdfa93a6db",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "MissionCenter/evidence/historical-validation-2026-08-29.json",
+      "docs/releases/0.5.1.md",
+      "docs/rust-maintainability-audit-0.5.1.md",
+      ".codex-plugin/release.json"
+    ]
+  },
+  "findings": []
+}

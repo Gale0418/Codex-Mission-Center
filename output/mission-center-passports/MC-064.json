@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-064",
+  "taskDigest": "a2db2ead3eec9155812feb02498198deb93fe392e44ae2e41f9c7e4e6f90b466",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "rust/mission-center-policy/src/lib.rs",
+      "rust/mission-center-policy/tests/wave3_contracts.rs",
+      "rust/mission-center-cli/tests/wave3_policy_differential.rs"
+    ]
+  },
+  "findings": []
+}

@@ -1549,47 +1549,7 @@ fn ids_json(ids: &[String]) -> String {
     )
 }
 fn working_set(tasks: &[Task]) -> Vec<String> {
-    let unfinished: Vec<&Task> = tasks
-        .iter()
-        .filter(|task| task.status != TaskStatus::Done)
-        .collect();
-    let mut selected = Vec::new();
-    for status in [
-        TaskStatus::Blocked,
-        TaskStatus::InProgress,
-        TaskStatus::Review,
-    ] {
-        for task in unfinished.iter().filter(|task| task.status == status) {
-            if !selected.contains(&task.id) {
-                selected.push(task.id.clone());
-            }
-            if selected.len() == 6 {
-                return selected;
-            }
-        }
-    }
-    for task in unfinished.iter().filter(|task| {
-        task.priority.eq_ignore_ascii_case("P0") && task.status != TaskStatus::Backlog
-    }) {
-        if !selected.contains(&task.id) {
-            selected.push(task.id.clone());
-        }
-        if selected.len() == 6 {
-            return selected;
-        }
-    }
-    for task in unfinished
-        .iter()
-        .filter(|task| task.status == TaskStatus::Ready)
-    {
-        if !selected.contains(&task.id) {
-            selected.push(task.id.clone());
-        }
-        if selected.len() == 6 {
-            return selected;
-        }
-    }
-    selected
+    mission_center_workspace::working_set_ids(tasks)
 }
 fn task_ids(tasks: &[Task], status: Option<TaskStatus>, priority: Option<&str>) -> Vec<String> {
     tasks

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-062",
+  "taskDigest": "8d6a2cf3da39ff6987114d813229aaa0d6317728595a4edbff8938684a6a9656",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "rust/mission-center-core/src/lib.rs",
+      "rust/mission-center-core/tests/contracts.rs",
+      "rust/mission-center-cli/tests/cli_contract.rs"
+    ]
+  },
+  "findings": []
+}
