@@ -1,6 +1,10 @@
 import base64
 import json
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -26,6 +30,7 @@ class CiReleasePolicyTests(unittest.TestCase):
         self.workflow = WORKFLOW.read_text(encoding="utf-8")
         self.release = release_job(self.workflow)
         self.stable = stable_package_job(self.workflow)
+        self.classifier = ROOT / ".github" / "scripts" / "classify-stable-promotion.sh"
 
     def test_release_matrix_covers_real_runner_target_pairs(self):
         expected = {
@@ -197,6 +202,53 @@ class CiReleasePolicyTests(unittest.TestCase):
         self.assertIn('.codex-plugin/release-preview.json) continue', self.stable)
         self.assertIn('for item in README.md LICENSE NOTICE.md PRIVACY.md; do', self.stable)
         self.assertNotRegex(self.stable, r"\n\s*run:\s*python(?:3)?\b")
+
+    def test_preview_integration_does_not_impersonate_or_block_stable_promotion(self):
+        self.assertIn("Classify stable promotion eligibility", self.stable)
+        self.assertIn("id: promotion", self.stable)
+        self.assertIn("bash .github/scripts/classify-stable-promotion.sh", self.stable)
+        self.assertEqual(
+            self.stable.count("if: steps.promotion.outputs.required == 'true'"),
+            3,
+        )
+
+        bash = shutil.which("bash")
+        jq = shutil.which("jq")
+        if not bash or not jq:
+            self.skipTest("bash and jq are required to execute the CI classifier contract")
+        cases = (
+            ("refs/heads/preview", "0.5.1-rust.1", 0, "required=false"),
+            ("refs/heads/main", "0.5.1", 0, "required=true"),
+            ("refs/tags/v0.5.1", "0.5.1", 0, "required=true"),
+            ("refs/tags/v0.5.1", "0.5.1-rust.1", 1, ""),
+            ("refs/tags/v0.5.2", "0.5.1", 1, ""),
+        )
+        for git_ref, plugin_version, expected_code, expected_output in cases:
+            with self.subTest(git_ref=git_ref, plugin_version=plugin_version):
+                with tempfile.TemporaryDirectory(prefix="mission-center-ci-classifier-") as temporary:
+                    root = Path(temporary)
+                    manifest = root / "plugin.json"
+                    output = root / "output.txt"
+                    summary = root / "summary.txt"
+                    manifest.write_text(json.dumps({"version": plugin_version}), encoding="utf-8")
+                    completed = subprocess.run(
+                        [bash, self.classifier.as_posix(), manifest.as_posix()],
+                        cwd=ROOT,
+                        env={
+                            **os.environ,
+                            "PATH": str(Path(jq).parent) + os.pathsep + os.environ.get("PATH", ""),
+                            "GITHUB_REF": git_ref,
+                            "RELEASE_VERSION": "0.5.1",
+                            "GITHUB_OUTPUT": output.as_posix(),
+                            "GITHUB_STEP_SUMMARY": summary.as_posix(),
+                        },
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(completed.returncode, expected_code, completed.stderr)
+                    actual_output = output.read_text(encoding="utf-8").strip() if output.exists() else ""
+                    self.assertEqual(actual_output, expected_output)
 
     def test_publish_policy_has_missing_wrong_arch_corrupt_and_zero_write_gates(self):
         source = (ROOT / "rust" / "mission-center-publish" / "tests" / "wave4_publish.rs").read_text(

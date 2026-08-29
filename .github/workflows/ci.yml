@@ -396,7 +396,13 @@ jobs:
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           git diff --cached --quiet
           git diff --quiet
+      - name: Classify stable promotion eligibility
+        id: promotion
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: bash .github/scripts/classify-stable-promotion.sh
       - name: Require explicit historical replay evidence
+        if: steps.promotion.outputs.required == 'true'
         shell: bash
         working-directory: ${{ github.workspace }}
         run: |
@@ -427,6 +433,7 @@ jobs:
             git cat-file -e "$revision^{commit}"
           done < <(jq -r '.tasks[].historicalReplay.revision | select(type == "string")' "$record")
       - name: Collect release matrix artifacts
+        if: steps.promotion.outputs.required == 'true'
         continue-on-error: true
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -434,6 +441,7 @@ jobs:
           path: ${{ runner.temp }}/mission-center-release-input
           merge-multiple: false
       - name: Assemble and verify frozen stable package
+        if: steps.promotion.outputs.required == 'true'
         shell: bash
         run: |
           set -euo pipefail
