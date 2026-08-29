@@ -223,6 +223,7 @@ fn offline_staging_adapter_returns_verified_receipt_and_fails_closed_on_rollback
     );
 }
 
+#[cfg(windows)]
 fn request(root: &PathBuf, id: &str) -> PublishRequest {
     let staging = root.parent().unwrap().join(format!(
         "stage-{}",
@@ -237,6 +238,7 @@ fn request(root: &PathBuf, id: &str) -> PublishRequest {
     }
     PublishRequest::new(root, staging, id, Platform::WindowsX86_64, "0.5.1")
 }
+
 fn cleanup(root: &PathBuf) {
     let _ = fs::remove_dir_all(root);
 }

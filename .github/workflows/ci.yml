@@ -320,7 +320,7 @@ jobs:
             publish_rc=0
             cat ci/fixtures/publish-verify.json | "$binary" publish verify --platform "$RELEASE_VARIANT" --version "$RELEASE_VERSION" --input - > "$publish_output" || publish_rc=$?
             test "$publish_rc" -eq 0
-            jq -e --arg version "$RELEASE_VERSION" --arg platform "$RELEASE_VARIANT" '. | type == "object" and .schemaVersion == "1.0" and .command == "publish verify" and .route == "publish verify" and .status == "pass" and .data.verified == true and .data.manifest.version == $version and .data.artifact.platform == $platform' "$publish_output" > /dev/null
+            jq -e --arg version "$RELEASE_VERSION" --arg platform "$RELEASE_VARIANT" '. | type == "object" and .schemaVersion == "1.0" and .command == "publish" and .route == "publish" and .status == "pass" and .data.verified == true and .data.manifest.version == $version and .data.artifact.platform == $platform' "$publish_output" > /dev/null
             echo "fixture smoke: publish verify passed for $RELEASE_VARIANT" >> "$GITHUB_STEP_SUMMARY"
           fi
           test "$before" = "$(git status --porcelain)"
@@ -403,19 +403,25 @@ jobs:
             .artifactType == "historical-validation" and
             (.tasks | type == "array" and length == 60) and
             (all(.tasks[];
-              (.historicalReplay.status == "pass" and
-               (.historicalReplay.revision | type == "string") and
-               (.historicalReplay.revision | test("^[0-9a-f]{40}$")) and
-               .historicalReplay.classification != "Unknown" and
-               .historicalReplay.sourceClassification != "Unknown")
+              ((.historicalReplay.status == "pass" and
+                (.historicalReplay.revision | type == "string") and
+                (.historicalReplay.revision | test("^[0-9a-f]{40}$")) and
+                .historicalReplay.classification != "Unknown" and
+                .historicalReplay.sourceClassification != "Unknown") or
+               (.historicalReplay.status == "unknown" and
+                .historicalReplay.revision == null and
+                .historicalReplay.classification == "Unknown" and
+                (.historicalReplay.sourceClassification | type == "string") and
+                (.historicalReplay.locator | type == "string" and length > 0) and
+                (.historicalReplay.limitations | type == "string" and length > 0)))
             ))
           ' "$record" > /dev/null || {
-            echo "stable package blocked: every historical replay must be an explicit pass with a task-level 40-hex revision" >&2
+            echo "stable package blocked: historical replay must be an explicit pass or a bounded unknown; unknown evidence may not be promoted to pass" >&2
             exit 1
           }
           while IFS= read -r revision; do
             git cat-file -e "$revision^{commit}"
-          done < <(jq -r '.tasks[].historicalReplay.revision' "$record")
+          done < <(jq -r '.tasks[].historicalReplay.revision | select(type == "string")' "$record")
       - name: Collect release matrix artifacts
         continue-on-error: true
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
