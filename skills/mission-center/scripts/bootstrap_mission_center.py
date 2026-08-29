@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import shutil
 from pathlib import Path
@@ -229,6 +230,21 @@ MANAGED_VISUAL_ASSETS = {
     "mission-starfield.webp.json",
 }
 
+# Remove only byte-identical assets from earlier HUD generations. A workspace
+# may own files with the same names, so modified or replaced files are kept.
+LEGACY_VISUAL_ASSET_SHA256 = {
+    "cosmic-spectrum-rainbow.jpg": "783ccfd32e9417be77cfe9770259dff00741f5e9feb725a6007fb42d36045106",
+    "cosmic-spectrum-rainbow.jpg.json": "5e300bb3803fe07b39ad3f9de8ad6b64b6b79cc63c574b69ae2b8d87316744fd",
+    "mission-base-main.png": "ce30c5237b3f96a7d1f36ba224bf757d3b73e8c5a1b39bb0431f17598c602cca",
+    "mission-bridge-background.png.json": "157d6e0264536addc79dbbb73371a73c230824ed8271dbdc4d914bb78a6e24d3",
+    "mission-fleet-bridge-background.png.json": "6606986c9e5fa88c1e9db7d36bfca1b7e289b513b67600f0ae95a043d5132ec6",
+    "mission-helper-roster-8-fixed.png": "17afe8196dfa5dee7abcf406095de50703ba72de6f5b3728271705f89dab98f4",
+    "mission-helper-roster-8-girls-2.png": "748358a1a655c9f0a985f0535c3b1948b8c29d6765f9d70f3088740f657f5c11",
+    "mission-starfield.png.json": "f85918a8d306ba938f460bf75d56ba5244b5264d232a11581d624be5182ed669",
+    "readme-hero.png": "05190e5e38907008995fb97c2fb673bca4747e13547e9614d8e89b3050f0401e",
+    "update-visual-state.ps1": "d3de4c75a0ff0a8b16d509efb6f43e2f03e021882b43ba4c87d54c28d6c3ee81",
+}
+
 
 def choose_language(value: str) -> str:
     if value != "auto":
@@ -244,17 +260,26 @@ def copy_visual_assets(workspace_root: Path, force: bool) -> None:
     if not source.is_dir() or source.is_symlink():
         raise FileNotFoundError(f"Packaged HUD asset directory is unavailable: {source}")
 
-    target = workspace_root / "output" / "mission-center-assets"
-    output = target.parent
-    if any(path.is_symlink() for path in (output, target)):
-        raise OSError("HUD asset destination must not contain symlinks")
-    target.mkdir(parents=True, exist_ok=True)
     packaged = {}
     for name in sorted(MANAGED_VISUAL_ASSETS):
         item = source / name
         if item.is_symlink() or not item.is_file():
             raise FileNotFoundError(f"Packaged HUD asset is unavailable: {item}")
         packaged[name] = item
+
+    target = workspace_root / "output" / "mission-center-assets"
+    output = target.parent
+    if any(path.is_symlink() for path in (output, target)):
+        raise OSError("HUD asset destination must not contain symlinks")
+    target.mkdir(parents=True, exist_ok=True)
+    for name, expected_digest in LEGACY_VISUAL_ASSET_SHA256.items():
+        destination = target / name
+        if destination.is_symlink():
+            raise OSError(f"Legacy HUD asset destination must not be a symlink: {destination}")
+        if destination.is_file():
+            digest = hashlib.sha256(destination.read_bytes()).hexdigest()
+            if digest == expected_digest:
+                destination.unlink()
     for name, item in packaged.items():
         destination = target / item.name
         if destination.is_symlink():

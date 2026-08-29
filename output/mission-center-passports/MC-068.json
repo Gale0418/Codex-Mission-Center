@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-068",
+  "taskDigest": "9e4d9a2da59584f8b36662c5f98119a2b657ce80113ebf8ab7ef3c446713ac07",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "output/mission-center-evidence/mc-068-local-plugin-smoke-20260830.json",
+      "MissionCenter/smoke-tests.md",
+      "rust/mission-center-cli/tests/cli_contract.rs",
+      "rust/mission-center-workspace/src/lib.rs",
+      "tests/test_skill_contract.py",
+      "tests/test_windows_selector.py",
+      "tests/test_posix_selector.py"
+    ]
+  },
+  "findings": []
+}

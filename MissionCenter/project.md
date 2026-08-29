@@ -5,6 +5,10 @@
 - 週期: v0.5 Evidence and Reconciliation Hardening
 - 標籤: mission-center, reconciliation, evidence, runtime, ux, verification, hardening
 - 活動紀錄:
+  - 2026-08-30T02:48:38+08:00｜Change: 完成 MC-069 macOS 0.5.1 Plugin 登艦與 SMB 相容修復｜Reason: 實機發現 selector jq 結尾、publish preflight 過度掃描與 SMB fsync `ENOTSUP(45)` 殘留 writer lock｜Impact: Mac 運作 OK；`mission-center@mission-center-local` 0.5.1 installed/enabled；Darwin arm64 help／runtime／sync／status／resume／doctor 全通過，SMB sync committed 且無殘留 lock。
+  - 2026-08-30T02:32:29+08:00｜Change: 啟動 MC-069 macOS 0.5.1 Plugin 登艦與發布器收旂｜Reason: 本機仍載入 0.5.0，publish preflight 誤掃描整個 repo 造成長時間卡住｜Impact: 收旂為只驗證實際發布項目；完成安裝、Darwin arm64 resume／doctor 與證據記錄前不宣稱 Mac 運作 OK。
+  - 2026-08-30T01:41:36+08:00｜Change: 完成 MC-068 Rust sync／CLI help 與本機 Plugin 更新驗證｜Reason: 關閉 skill、CLI、freshness 與 cachebuster 契約漂移｜Impact: Windows 本機 plugin 0.5.1+codex.20260829174052 已啟用；四平台 stable release 未宣稱更新。
+  - 2026-08-30T01:25:42+08:00｜Change: 啟動 MC-068 Sync／Help 契約修復｜Reason: 正式 0.5.1 skill 使用缺少 receipt 的 sync 語法，且 CLI help 不可探索｜Impact: 僅修復契約、測試與本機 Windows Plugin，不變更 tasks.md 唯一 lifecycle truth。
   - 完成 69 項 unittest、CLI doctor、skill validation 與 publish dry-run。 已記錄 Smoke tests: 8.
   - GitHub main branch protection 已要求 `test` 通過，且管理員不可繞過。
   - 修正重複 sync 會堆疊活動紀錄與開放問題標籤的 parser bug。

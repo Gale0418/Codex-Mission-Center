@@ -599,6 +599,103 @@ fn validate_sync_options(options: &SyncOptions) -> Result<(), WorkspaceError> {
     Ok(())
 }
 
+fn sync_date(timestamp: &str) -> Result<&str, WorkspaceError> {
+    validate_timestamp(timestamp)?;
+    let date = timestamp.get(..10).filter(|date| {
+        let bytes = date.as_bytes();
+        bytes.len() == 10
+            && bytes[4] == b'-'
+            && bytes[7] == b'-'
+            && bytes
+                .iter()
+                .enumerate()
+                .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
+    });
+    date.ok_or_else(|| {
+        WorkspaceError::ClaimRejected("sync timestamp must be an RFC3339 date-time".to_owned())
+    })
+}
+
+fn organize_daily_log(
+    existing: Option<&[u8]>,
+    language: WorkspaceLanguage,
+    date: &str,
+) -> Result<Vec<u8>, WorkspaceError> {
+    let (title, preferred_marker) = match language {
+        WorkspaceLanguage::English => ("# Daily Log", "- Last organized:"),
+        WorkspaceLanguage::TraditionalChinese => ("# 每日紀錄", "- 最後整理："),
+    };
+    let text = existing
+        .map(|bytes| String::from_utf8(bytes.to_vec()))
+        .transpose()
+        .map_err(|_| WorkspaceError::InvalidUtf8 {
+            path: PathBuf::from("MissionCenter/daily-log.md"),
+        })?
+        .unwrap_or_else(|| format!("{title}\n\n{preferred_marker} 1970-01-01\n"));
+    let markers = [
+        "- 最後整理：",
+        "- 最後整理:",
+        "- Last organized:",
+        "- Last organized：",
+    ];
+    let marker = text
+        .split_inclusive('\n')
+        .scan(0usize, |offset, line| {
+            let line_start = *offset;
+            *offset += line.len();
+            Some((line_start, line))
+        })
+        .find_map(|(line_start, line)| {
+            let content = line.trim_start_matches([' ', '\t']);
+            let indentation = line.len() - content.len();
+            markers.iter().find_map(|candidate| {
+                content
+                    .starts_with(candidate)
+                    .then_some((*candidate, line_start + indentation))
+            })
+        });
+    if let Some((marker, position)) = marker {
+        let line_start = text[..position].rfind('\n').map_or(0, |index| index + 1);
+        let line_end = text[position..]
+            .find('\n')
+            .map_or(text.len(), |index| position + index);
+        let newline = if line_end > line_start && text.as_bytes()[line_end - 1] == b'\r' {
+            "\r\n"
+        } else if line_end < text.len() {
+            "\n"
+        } else {
+            ""
+        };
+        let suffix_start = if line_end < text.len() {
+            line_end + 1
+        } else {
+            line_end
+        };
+        let indentation = &text[line_start..position];
+        return Ok(format!(
+            "{}{}{} {}{}{}",
+            &text[..line_start],
+            indentation,
+            marker,
+            date,
+            newline,
+            &text[suffix_start..]
+        )
+        .into_bytes());
+    }
+
+    let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let separator = if text.is_empty() || text.ends_with('\n') {
+        newline
+    } else {
+        match newline {
+            "\r\n" => "\r\n\r\n",
+            _ => "\n\n",
+        }
+    };
+    Ok(format!("{text}{separator}{preferred_marker} {date}{newline}").into_bytes())
+}
+
 fn compute_progress(tasks: &[Task]) -> (u32, String, Vec<String>, Vec<String>) {
     let ids: std::collections::HashSet<&str> = tasks.iter().map(|task| task.id.as_str()).collect();
     let parents: std::collections::HashSet<&str> = tasks
@@ -885,7 +982,7 @@ impl MissionWorkspace {
         timestamp: &str,
         options: &SyncOptions,
     ) -> Result<WriteOutcome, WorkspaceError> {
-        validate_timestamp(timestamp)?;
+        let date = sync_date(timestamp)?;
         validate_sync_options(options)?;
         // Keep the canonical read, derivation and materialized-view writes in
         // one writer critical section. Reading tasks.md before locking could
@@ -899,6 +996,7 @@ impl MissionWorkspace {
         let brief_path = self.mission_dir().join("brief.md");
         let working_set_path = self.mission_dir().join("working-set.md");
         let focus_path = self.mission_dir().join("focus.md");
+        let daily_log_path = self.mission_dir().join("daily-log.md");
         let existing_project = read_optional(project_path.clone(), PROJECT_MAX_BYTES)?;
         let existing_progress = read_optional(progress_path.clone(), PROJECT_MAX_BYTES)?;
         let existing_brief = read_optional(brief_path.clone(), BRIEF_MAX_BYTES)?;
@@ -949,25 +1047,25 @@ impl MissionWorkspace {
             self.mission_dir().join("guardrails.md"),
             GUARDRAILS_MAX_BYTES,
         )?;
-        let daily_log_bytes =
-            read_optional(self.mission_dir().join("daily-log.md"), DAILY_LOG_MAX_BYTES)?;
+        let existing_daily_log = read_optional(daily_log_path.clone(), DAILY_LOG_MAX_BYTES)?;
+        let daily_log_bytes = organize_daily_log(existing_daily_log.as_deref(), language, date)?;
+        let daily_log_write = (existing_daily_log.as_deref() != Some(daily_log_bytes.as_slice()))
+            .then_some(daily_log_bytes.clone());
         let workspace_fingerprint = mission_center_core::workspace_fingerprint(&[
             ("project.md", final_project),
             ("tasks.md", Some(tasks_text.as_bytes())),
             ("guardrails.md", guardrails_bytes.as_deref()),
-            ("daily-log.md", daily_log_bytes.as_deref()),
+            ("daily-log.md", Some(daily_log_bytes.as_slice())),
         ]);
         let tasks_fingerprint = mission_center_core::workspace_fingerprint(&[(
             "tasks.md",
             Some(tasks_text.as_bytes()),
         )]);
-        let daily_log_text = daily_log_bytes
-            .as_deref()
-            .map(|bytes| String::from_utf8(bytes.to_vec()))
-            .transpose()
-            .map_err(|_| WorkspaceError::InvalidUtf8 {
-                path: self.mission_dir().join("daily-log.md"),
-            })?;
+        let daily_log_text = String::from_utf8(daily_log_bytes.clone()).map_err(|_| {
+            WorkspaceError::InvalidUtf8 {
+                path: daily_log_path.clone(),
+            }
+        })?;
         let guardrails_text = guardrails_bytes
             .as_deref()
             .map(|bytes| String::from_utf8(bytes.to_vec()))
@@ -985,7 +1083,7 @@ impl MissionWorkspace {
                 tasks_fingerprint: &tasks_fingerprint,
                 language,
                 timestamp,
-                daily_log: daily_log_text.as_deref(),
+                daily_log: Some(&daily_log_text),
                 guardrails: guardrails_text.as_deref(),
             },
         )
@@ -1052,6 +1150,11 @@ impl MissionWorkspace {
                 working_set_bytes.as_ref(),
             ),
             ("focus.md", existing_focus.as_ref(), focus_bytes.as_ref()),
+            (
+                "daily-log.md",
+                existing_daily_log.as_ref(),
+                daily_log_write.as_ref(),
+            ),
         ] {
             planned.push(0);
             planned.extend_from_slice(name.as_bytes());
@@ -1088,6 +1191,11 @@ impl MissionWorkspace {
                     existing_working_set.as_ref(),
                 ),
                 (&focus_path, focus_bytes.as_ref(), existing_focus.as_ref()),
+                (
+                    &daily_log_path,
+                    daily_log_write.as_ref(),
+                    existing_daily_log.as_ref(),
+                ),
             ];
             let mut applied: Vec<(&Path, Option<&Vec<u8>>)> = Vec::new();
             for (path, bytes, previous) in writes {
@@ -1472,9 +1580,15 @@ impl MissionWorkspace {
                 WorkspaceError::Io(error)
             }
         })?;
-        file.write_all(token.as_bytes())?;
-        file.flush()?;
-        file.sync_all()?;
+        if let Err(error) = (|| {
+            file.write_all(token.as_bytes())?;
+            file.flush()?;
+            sync_all_portable(&file)
+        })() {
+            drop(file);
+            let _ = fs::remove_file(&path);
+            return Err(WorkspaceError::Io(error));
+        }
         Ok(WriterLock {
             path,
             token,
@@ -1538,12 +1652,12 @@ impl MissionWorkspace {
             };
             file.write_all(bytes)?;
             file.flush()?;
-            file.sync_all()?;
+            sync_all_portable(&file)?;
             fs::rename(&temporary, target)?;
             #[cfg(unix)]
             {
                 let directory = File::open(parent)?;
-                directory.sync_all()?;
+                sync_all_portable(&directory)?;
             }
             Ok::<(), io::Error>(())
         })();
@@ -3843,11 +3957,11 @@ fn atomic_write_scoped(target: &Path, scope: &Path, bytes: &[u8]) -> Result<(), 
             .open(&temporary)?;
         file.write_all(bytes)?;
         file.flush()?;
-        file.sync_all()?;
+        sync_all_portable(&file)?;
         fs::rename(&temporary, target)?;
         #[cfg(unix)]
         {
-            File::open(scope)?.sync_all()?;
+            sync_all_portable(&File::open(scope)?)?;
         }
         Ok::<(), io::Error>(())
     })();
@@ -3870,13 +3984,27 @@ fn create_exclusive_file(path: &Path, bytes: &[u8]) -> Result<(), WorkspaceError
     if let Err(error) = (|| {
         file.write_all(bytes)?;
         file.flush()?;
-        file.sync_all()?;
+        sync_all_portable(&file)?;
         Ok::<(), io::Error>(())
     })() {
         let _ = fs::remove_file(path);
         return Err(WorkspaceError::Io(error));
     }
     Ok(())
+}
+
+fn sync_all_portable(file: &File) -> io::Result<()> {
+    match file.sync_all() {
+        Err(error) if is_unsupported_sync_error(&error) => Ok(()),
+        result => result,
+    }
+}
+
+fn is_unsupported_sync_error(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::InvalidInput | io::ErrorKind::Unsupported
+    ) || (cfg!(target_os = "macos") && error.raw_os_error() == Some(45))
 }
 
 fn safe_id(value: &str) -> Result<&str, WorkspaceError> {
@@ -4729,6 +4857,9 @@ mod tests {
         assert!(working_set.contains(&format!("source-fingerprint={task_fingerprint}")));
         assert!(focus.contains(&format!("source-fingerprint={task_fingerprint}")));
         assert!(working_set.contains("| MC-1 | 測試 |  | Ready |"));
+        let daily_log =
+            fs::read_to_string(fixture.workspace.mission_dir().join("daily-log.md")).unwrap();
+        assert!(daily_log.contains("2026-08-29"));
         assert_eq!(fs::read(fixture.workspace.tasks_path()).unwrap(), before);
         assert_eq!(
             fixture
@@ -4736,6 +4867,47 @@ mod tests {
                 .sync("sync-test", "2026-08-29T00:00:00Z")
                 .unwrap(),
             WriteOutcome::Unchanged
+        );
+    }
+
+    #[test]
+    fn sync_advances_daily_date_without_losing_existing_events_or_crlf() {
+        let fixture = fixture();
+        let path = fixture.workspace.mission_dir().join("daily-log.md");
+        fs::write(
+            &path,
+            "# 每日紀錄\r\n\r\n- 最後整理： 2026-08-28\r\n\r\n## 2026-08-28\r\n- 保留事件\r\n",
+        )
+        .unwrap();
+        fixture
+            .workspace
+            .sync("sync-daily-date", "2026-08-29T08:00:00+08:00")
+            .unwrap();
+        let bytes = fs::read(&path).unwrap();
+        assert!(bytes.windows(2).any(|pair| pair == b"\r\n"));
+        let text = String::from_utf8(bytes).unwrap();
+        assert!(text.contains("- 最後整理： 2026-08-29"));
+        assert!(text.contains("- 保留事件"));
+    }
+
+    #[test]
+    fn sync_does_not_replace_marker_text_embedded_in_daily_log_content() {
+        let fixture = fixture();
+        let path = fixture.workspace.mission_dir().join("daily-log.md");
+        fs::write(
+            &path,
+            "# 每日紀錄\n\n- 事件文字提到 - Last organized: yesterday\n",
+        )
+        .unwrap();
+        fixture
+            .workspace
+            .sync("sync-daily-embedded-marker", "2026-08-29T08:00:00+08:00")
+            .unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("- 事件文字提到 - Last organized: yesterday"));
+        assert!(
+            text.lines()
+                .any(|line| line == "- Last organized: 2026-08-29")
         );
     }
 
@@ -4862,6 +5034,21 @@ mod tests {
         first.release().unwrap();
         assert!(workspace.acquire_writer_lock("second").is_ok());
         let _ = fs::remove_file(workspace.writer_lock_path());
+    }
+
+    #[test]
+    fn durability_sync_fallback_is_limited_to_unsupported_errors() {
+        assert!(is_unsupported_sync_error(&io::Error::from(
+            io::ErrorKind::InvalidInput
+        )));
+        assert!(is_unsupported_sync_error(&io::Error::from(
+            io::ErrorKind::Unsupported
+        )));
+        assert!(!is_unsupported_sync_error(&io::Error::from(
+            io::ErrorKind::PermissionDenied
+        )));
+        #[cfg(target_os = "macos")]
+        assert!(is_unsupported_sync_error(&io::Error::from_raw_os_error(45)));
     }
 
     #[test]

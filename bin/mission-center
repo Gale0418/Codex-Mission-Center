@@ -44,7 +44,7 @@ manifest_version=$(jq -er '
     if (type != "object" or .schemaVersion != "1.0" or
         .pluginName != "mission-center" or
         (.version | type) != "string" or
-        ((.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+([.-][0-9A-Za-z.-]+)?$")) | not) or
+        ((.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$")) | not) or
         (.artifacts | type) != "array" or (.artifacts | length) != 4 or
         ([.artifacts[].platform] | sort) !=
           ["linux-x86_64", "macos-aarch64", "macos-x86_64", "windows-x86_64"] or
@@ -54,7 +54,7 @@ manifest_version=$(jq -er '
             (.version == $manifest.version) and
             (.os == ($platform | split("-")[0])) and
             (.arch == ($platform | split("-")[1])) and
-            (.path == ("bin/" + $platform + "/mission-center" + (if $platform == "windows-x86_64" then ".exe" else ""))) and
+            (.path == ("bin/" + $platform + "/mission-center" + (if $platform == "windows-x86_64" then ".exe" else "" end))) and
             (.executable == .path) and
             ((.sha256 | type) == "string") and
             ((.sha256 | test("^[0-9a-fA-F]{64}$")))
@@ -77,7 +77,7 @@ artifact_path=$(jq -er --arg platform "$selector_platform" --arg version "$manif
     select(.platform == $platform) |
     if (.version != $version or .os != ($platform | split("-")[0]) or
         .arch != ($platform | split("-")[1]) or
-        .path != ("bin/" + $platform + "/mission-center" + (if $platform == "windows-x86_64" then ".exe" else "")) or
+        .path != ("bin/" + $platform + "/mission-center" + (if $platform == "windows-x86_64" then ".exe" else "" end)) or
         .executable != .path or
         (.sha256 | type) != "string" or
         ((.sha256 | test("^[0-9a-fA-F]{64}$")) | not))

@@ -32,6 +32,10 @@ class SkillContractTests(unittest.TestCase):
         for behavior in required_behaviors:
             with self.subTest(behavior=behavior):
                 self.assertIn(behavior, text)
+        self.assertRegex(
+            text,
+            r"sync --root \. --operation-id <id> --timestamp <RFC3339>",
+        )
 
     def test_skill_routes_every_reference_in_one_markdown_hop(self):
         text = SKILL_PATH.read_text(encoding="utf-8")

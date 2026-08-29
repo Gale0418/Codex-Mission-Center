@@ -1,15 +1,15 @@
 <!-- Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files. -->
-<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=6be684c6822d03e994318b4c65fa83cf617935ebbf441f60060d2cb9f7f30209 -->
+<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=0792482c30ac2af7bc5eb971dc568047ee819c42448e175bc2ea758a6683195b -->
 # 任務簡報
 
-- 最後整理: 2026-08-29
-- 來源指紋: `6be684c6822d03e994318b4c65fa83cf617935ebbf441f60060d2cb9f7f30209`
+- 最後整理: 2026-08-30
+- 來源指紋: `0792482c30ac2af7bc5eb971dc568047ee819c42448e175bc2ea758a6683195b`
 - 唯一真實來源: `tasks.md`
 - 專案: Codex Mission Center
 - 北極星: 將 Mission Center 升級為研究驅動的自適應 Project OS，並提供可選的本機 Live Agent HUD
 - 週期: v0.5 Evidence and Reconciliation Hardening
 
-## 今日摘要 · 2026-08-29
+## 今日摘要 · 2026-08-30
 - 無
 
 ## 重要護欄 (7)

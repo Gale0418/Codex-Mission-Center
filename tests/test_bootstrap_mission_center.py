@@ -1,3 +1,4 @@
+import hashlib
 import subprocess
 import sys
 import unittest
@@ -136,16 +137,51 @@ class BootstrapMissionCenterTests(unittest.TestCase):
                 bootstrap.copy_visual_assets(workspace, force=True)
             self.assertEqual(outside.read_text(encoding="utf-8"), "keep")
 
+    def test_copy_visual_assets_prunes_only_byte_identical_legacy_assets(self):
+        with workspace_tempdir("bootstrap-hud-legacy-") as temporary:
+            workspace = Path(temporary)
+            assets = workspace / "output" / "mission-center-assets"
+            assets.mkdir(parents=True)
+            exact = assets / "legacy-exact.png"
+            modified = assets / "legacy-modified.png"
+            exact.write_bytes(b"known legacy bytes")
+            modified.write_bytes(b"workspace-owned replacement")
+            digest = hashlib.sha256(b"known legacy bytes").hexdigest()
+            with patch.object(
+                bootstrap,
+                "LEGACY_VISUAL_ASSET_SHA256",
+                {
+                    exact.name: digest,
+                    modified.name: digest,
+                },
+            ):
+                bootstrap.copy_visual_assets(workspace, force=True)
+            self.assertFalse(exact.exists())
+            self.assertEqual(modified.read_bytes(), b"workspace-owned replacement")
+
     def test_copy_visual_assets_rejects_missing_packaged_asset(self):
         with workspace_tempdir("bootstrap-hud-missing-") as temporary:
             workspace = Path(temporary)
-            with patch.object(
-                bootstrap,
-                "MANAGED_VISUAL_ASSETS",
-                set(bootstrap.MANAGED_VISUAL_ASSETS) | {"missing.webp"},
+            assets = workspace / "output" / "mission-center-assets"
+            assets.mkdir(parents=True)
+            legacy = assets / "legacy.png"
+            legacy_bytes = b"known legacy bytes"
+            legacy.write_bytes(legacy_bytes)
+            with (
+                patch.object(
+                    bootstrap,
+                    "MANAGED_VISUAL_ASSETS",
+                    set(bootstrap.MANAGED_VISUAL_ASSETS) | {"missing.webp"},
+                ),
+                patch.object(
+                    bootstrap,
+                    "LEGACY_VISUAL_ASSET_SHA256",
+                    {legacy.name: hashlib.sha256(legacy_bytes).hexdigest()},
+                ),
             ):
                 with self.assertRaisesRegex(FileNotFoundError, "missing.webp"):
                     bootstrap.copy_visual_assets(workspace, force=True)
+            self.assertEqual(legacy.read_bytes(), legacy_bytes)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ Mission Center 僅處理 `./MissionCenter/`，不掃描、註冊、監控或合�
 
 ## 先判斷意圖
 
-- **恢復**：執行 `<mission-center> resume --root .`，只用 bounded packet；`workingSet`、`activeCriticalLessons`、`snapshot` 對應 `working-set.md`、`critical-lessons.md`、有效 active `snapshot.md`。若 `fallbackReason` 為 `derived view stale`，先 `sync --root .` 再 resume；否則僅依 `packet.readNext`／`fallbackReason` 讀指定檔，不掃描 `MissionCenter/`。變更狀態、順序、優先級、依賴或下一步前須讀 `tasks.md`；詳見 [記憶維護](references/memory-maintenance.md)。
+- **恢復**：執行 `<mission-center> resume --root .`，只用 bounded packet；`workingSet`、`activeCriticalLessons`、`snapshot` 對應 `working-set.md`、`critical-lessons.md`、有效 active `snapshot.md`。若 `fallbackReason` 為 `derived view stale`，執行 `sync --root . --operation-id <id> --timestamp <RFC3339>` 後 resume；否則僅依 `packet.readNext`／`fallbackReason` 讀指定檔，不掃描 `MissionCenter/`。變更狀態、順序、優先級、依賴或下一步前須讀 `tasks.md`；詳見 [記憶維護](references/memory-maintenance.md)。
 - **目標未清**：依 [訪談](references/intake-protocol.md) 重述理解、指出最大缺口並提出**至多一個**阻塞問題；可用安全可逆假設繼續。完整前不建立工作區／任務。
 - **規劃／發布**：依 [任務工作區](references/task-workspace.md)、[Linear 規劃](references/linear-parity.md) 與 [執行閘門](references/execution-gates.md)；完整 Epic 地圖與首個里程碑須經使用者核准，才寫入 `tasks.md`。
 - **執行／變更**：維持最小可驗證切片，依 [任務種子](references/task-seeding.md)、[規格化](references/normalization-rules.md)、[活動紀錄](references/activity-log-format.md) 記錄事實。

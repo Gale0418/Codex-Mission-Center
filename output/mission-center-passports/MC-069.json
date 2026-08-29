@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-069",
+  "taskDigest": "964f8690c835299f4e67bc949eebad240f12356ba042adc2c5a8506684b91eec",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "MissionCenter/smoke-tests.md"
+    ]
+  },
+  "findings": [
+    {
+      "id": "MC069-F1",
+      "severity": "Medium",
+      "disposition": "fixed"
+    },
+    {
+      "id": "MC069-F2",
+      "severity": "High",
+      "disposition": "fixed"
+    },
+    {
+      "id": "MC069-F3",
+      "severity": "High",
+      "disposition": "fixed"
+    }
+  ]
+}

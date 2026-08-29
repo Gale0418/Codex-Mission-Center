@@ -202,7 +202,7 @@ Runtime 展開時是右側 fixed dock（桌面寬度 `min(420px, 30vw)`、距右
 
 ### Rainbow Singularity effects
 
-- **Cosmic field:** 現行 `.rainbow-background` hook 實際載入 `mission-fleet-bridge-background.webp` 作為 primary background，opacity `1`、`saturate(1.24)`、`contrast(1.08)`、`brightness(.9)`，並隨 pointer 以 far-layer `translate3d(... * -3px)`、scale `1.04` 產生 700ms parallax；starfield depth support 另以 `-6px` 移動。`cosmic-spectrum-rainbow.jpg` 僅是色彩/風格 reference，不是目前主背景。
+- **Cosmic field:** 現行 `.rainbow-background` hook 載入 `mission-fleet-bridge-background.webp` 作為 primary background，opacity `1`、`saturate(1.24)`、`contrast(1.08)`、`brightness(.9)`，並隨 pointer 以 far-layer `translate3d(... * -3px)`、scale `1.04` 產生 700ms parallax；starfield depth support 另以 `-6px` 移動。
 - **Counter-rotating rings:** 三層以中心約 `50% / 46%` 的同心 ring 疊加；primary `min(74vw, 980px)` / 30s 逆向旋轉，secondary `min(56vw, 700px)` / 22s、`scaleY(.7)`，tertiary `min(38vw, 500px)` / 16s、`scaleY(.48)`。
 - **Orbital trails and pulse:** primary orbital trail 約 12s、secondary 約 9s 反向運動，分別使用 cyan/pink、amber/violet 邊緣；中心 energy pulse 約 4.8s。不再有 radial scan 或背景掃描亮帶。
 - **Masked edge energy flow:** HUD shell 使用 1px masked conic edge，色序為 cyan → white → magenta → amber，透過 typed `--edge-angle` 約 9s 流動；mission plot/evidence rail 使用同樣 1px masked edge、typed `--panel-edge-angle` 約 12s 流動。mask 把能量限制在邊框，內容維持 z-index 1，絕不穿過內容；這些元素皆 `pointer-events: none`。
@@ -283,10 +283,8 @@ Runtime 展開時是右側 fixed dock（桌面寬度 `min(420px, 30vw)`、距右
 - Approved comp：`.impeccable/mocks/orbital-bridge-c.png`。它是方向參考，不是 runtime task truth；mock 裡的 ID、日期、數字、座標與依賴不可硬編碼。
 - Fleet bridge primary：`skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.webp`，對應 `mission-fleet-bridge-background.webp.json`；approved、`generated-background-plate`、generator `image_gen built-in`，generated `2026-08-24`。畫面構圖是多艘星艦向 upper-center 遠方目的地航行、行星位於 lower center，下方是 polished obsidian panoramic flagship window frame；無 UI、文字、logo、人像、水印、複製艦體或 product state。
 - Fleet provenance：JSON 記錄 WebP SHA-256 `321FC5A4F79317CED834E0DD9096A39614A27928B4F7C50348D224A5D4CF3D61`、usage `Mission Center Rainbow Singularity fleet-and-bridge background`，並標示 `containsProductState: false`。這是目前 primary background 的唯一素材真相。
-- Rainbow reference：`skills/mission-center/assets/visual-hub/cosmic-spectrum-rainbow.jpg`，對應 `cosmic-spectrum-rainbow.jpg.json`；approved 的 reference-derived-background，來源為 Chat Observatory repository `Gale0418/Chat-Observatory` 的 `assets/themes/cosmic-spectrum-rainbow.jpg`、ref `agent/chat-observatory-rename`。它現在只提供色彩/風格方向，HTML 不把它當 primary background。
-- Rainbow provenance：JSON 記錄 source blob SHA `c37fbabf08c952d5e05b1ca502c7c6c28ea4c94a`、asset SHA-256 `783CCFD32E9417BE77CFE9770259DFF00741F5E9FEB725A6007FB42D36045106`，並明確標示 `containsProductState: false`。
 - Bridge plate：`skills/mission-center/assets/visual-hub/mission-bridge-background.webp` 與 `mission-bridge-background.webp.json`；仍是 approved 的裝飾 depth support，現行 opacity `.06`。
-- Starfield plate：`skills/mission-center/assets/visual-hub/mission-starfield.webp` 與 `mission-starfield.webp.json`；仍是 approved 的裝飾 depth support，現行 opacity `.1`。四種 raster 都不得承擔 task/runtime state；只有 fleet WebP 是目前主背景，Rainbow JPG 是色彩/風格參考。
+- Starfield plate：`skills/mission-center/assets/visual-hub/mission-starfield.webp` 與 `mission-starfield.webp.json`；仍是 approved 的裝飾 depth support，現行 opacity `.1`。三種 raster 都不得承擔 task/runtime state；只有 fleet WebP 是目前主背景。
 
 ## Do's and Don'ts
 
@@ -306,7 +304,7 @@ Runtime 展開時是右側 fixed dock（桌面寬度 `min(420px, 30vw)`、距右
 - **Do** 將 `skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.webp` 視為 primary background：保留多艘遠航星艦、lower-center 行星與底部旗艦窗框的構圖意圖；其相鄰 `.webp.json` 是素材 provenance 的唯一 metadata 真相。
 - **Do** 保留 4–6px corners、compact controls、mono metadata 與 responsive regrouping。
 - **Do** 讓 Runtime 維持獨立、唯讀、預設收合，並保留 visible/total/hidden、stale/unavailable 的誠實揭露。
-- **Do** 維持 Chat Observatory Rainbow JPG、bridge/starfield 與相鄰 provenance JSON 的來源鏈；修改素材前先更新對應 metadata。
+- **Do** 維持 fleet、bridge、starfield 與相鄰 provenance JSON 的來源鏈；修改素材前先更新對應 metadata。
 - **Do** 在 hidden、reduced-motion 與 mobile 條件下執行既定降載，確保 overdrive 不犧牲可操作性。
 
 ### Don't:
@@ -320,7 +318,7 @@ Runtime 展開時是右側 fixed dock（桌面寬度 `min(420px, 30vw)`、距右
 - **Don't** 使用受保護的 EVA/EVE 名稱、logo、iconography 或 trade dress；EVA-inspired 只可作為高張力、資訊密度的閱讀節奏參考。
 - **Don't** 把 doctrine、broadcast、waterfall、fleet backdrop 或幾何裝飾解讀成 sensor feed；不得造假座標、資料、時鐘、計數或 polling 狀態。
 - **Don't** 為了填滿 rail 造假座標、任務數字、Runtime IDs、polling 狀態或 marquee；`<=760px` 隱藏次要資訊即可。
-- **Don't** 把 `cosmic-spectrum-rainbow.jpg` 誤當目前 primary background，或把 fleet/planet/window-frame 圖像解讀成 product state。
+- **Don't** 把 fleet/planet/window-frame 圖像解讀成 product state。
 - **Don't** 改成 generic SaaS 卡片牆、oversized pills、粗重陰影或純裝飾 dashboard。
 - **Don't** 讓 Runtime 改寫 Task lifecycle，或把 idle、unknown、stale、disconnected 顯示成完成。
 - **Don't** 移除鍵盤 focus、Escape/focus restoration、live region 或 reduced-motion 支援。

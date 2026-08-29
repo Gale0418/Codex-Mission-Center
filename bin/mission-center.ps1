@@ -31,7 +31,7 @@ try {
 }
 
 if ($null -eq $manifest -or $manifest -is [array] -or $manifest.schemaVersion -ne '1.0' -or
-    $manifest.pluginName -ne 'mission-center' -or $manifest.version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$') {
+    $manifest.pluginName -ne 'mission-center' -or $manifest.version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$') {
     Fail-Selector 'invalid platform manifest'
 }
 if ($null -eq $pluginManifest -or $pluginManifest -is [array] -or

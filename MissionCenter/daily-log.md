@@ -1,6 +1,6 @@
 # 每日紀錄
 
-- 最後整理： 2026-08-29
+- 最後整理： 2026-08-30
 
 ## 2026-08-26
 - 完成 Mission Center semantic Hook、HUD asset fingerprint／可攜側欄意圖、Windows launcher 與安裝回歸修正；HUD 預設不啟動 Chrome 或系統瀏覽器。

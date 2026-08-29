@@ -34,6 +34,8 @@ class PosixSelectorPolicyTests(unittest.TestCase):
             'exec "$binary" "$@"',
         ):
             self.assertIn(token.lower(), self.code)
+        self.assertIn(r"\\+", self.source)
+        self.assertEqual(self.source.count('then ".exe" else "" end'), 2)
         self.assertIn('type != "object"', self.code)
         self.assertNotIn('.type != "object"', self.code)
 

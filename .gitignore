@@ -7,7 +7,11 @@ __pycache__/
 MYKEY.txt
 .env
 .env.*
-output/
+output/*
+!output/mission-center-passports/
+!output/mission-center-passports/*.json
+.impeccable/
+MissionCenter/.mission-center/
 .worktrees/
 /rust/target/
 /rust/target-check/
