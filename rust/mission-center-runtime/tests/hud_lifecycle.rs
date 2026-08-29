@@ -92,10 +92,12 @@ fn frozen_bundle_constructor_enforces_allowlist_and_is_usable() {
     let launcher = HudLauncher::new();
     let result = launcher.launch(config, false).unwrap();
     assert!(result.server.is_running());
-    assert!(
-        request(&result.server, "/mission-center-assets/visual-summary.html")
-            .starts_with("HTTP/1.1 200")
-    );
+    for _ in 0..16 {
+        assert!(
+            request(&result.server, "/mission-center-assets/visual-summary.html")
+                .starts_with("HTTP/1.1 200")
+        );
+    }
     launcher.shutdown_all().unwrap();
     let _ = fs::remove_dir_all(workspace);
 }

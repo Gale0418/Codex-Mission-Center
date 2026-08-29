@@ -2464,6 +2464,15 @@ fn http_bytes(
     bytes
 }
 
+fn write_http_response(stream: &mut TcpStream, response: &[u8]) -> RuntimeResult<()> {
+    stream.write_all(response).map_err(RuntimeError::from)?;
+    stream.flush().map_err(RuntimeError::from)?;
+    // A graceful write-side close makes the response boundary deterministic
+    // on Windows, where dropping a socket immediately after write_all can be
+    // observed by the client as WSAECONNRESET instead of EOF.
+    stream.shutdown(Shutdown::Write).map_err(RuntimeError::from)
+}
+
 fn serve_hud_http_once(
     mut stream: TcpStream,
     server: &ServerInner,
@@ -2490,7 +2499,7 @@ fn serve_hud_http_once(
                 false,
                 None,
             );
-            stream.write_all(&response).map_err(RuntimeError::from)?;
+            write_http_response(&mut stream, &response)?;
             return Ok(HudRequestOutcome {
                 accepted: false,
                 status_code: 413,
@@ -2572,7 +2581,7 @@ fn serve_hud_http_once(
             ),
         }
     };
-    stream.write_all(&response).map_err(RuntimeError::from)?;
+    write_http_response(&mut stream, &response)?;
     Ok(HudRequestOutcome {
         accepted,
         status_code,

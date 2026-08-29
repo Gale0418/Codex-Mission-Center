@@ -69,3 +69,12 @@ policy schema 小功能仍需先依上方自然邊界定位，這是 0.5.2 的�
 這個 probe 顯示 production 修改點仍可在 bounded context 內定位，但也暴露
 `PythonRuntime` 同時承載 Python dependency 與 prohibited shell capability；0.5.2 應將
 後者改成獨立 typed error code，避免穩定 envelope 隱藏真正 domain failure。
+
+第三個 cross-platform probe：相同 revision 在 Windows CI 偶發 `WSAECONNRESET`。
+
+- GitHub job log 將 failure 定位到 `hud_lifecycle` 的單一 HTTP request helper，production
+  response boundary 則唯一落在 `mission-center-runtime::serve_hud_http_once`。
+- Server 改為 `write_all` 後 `flush` 並明確關閉 write half，避免 Windows 把立即 drop
+  socket 呈現為 reset；回歸測試每輪連續讀取 16 個完整 response。
+- 本機固定 Rust 1.98.0 將該測試重複 10 輪（160 responses）後全數通過，再交回三平台
+  CI 驗證；不以單次 rerun 掩蓋 flaky transport boundary。
