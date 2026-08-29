@@ -991,7 +991,7 @@ fn publish_select(args: &[String]) -> Result<String, String> {
         .select_artifact(platform, &version)
         .map_err(|error| error.to_string())?;
     Ok(value_envelope(
-        "publish select",
+        "publish",
         "pass",
         json!({"selected":true,"platform":platform,"os":platform.os(),"arch":platform.arch(),"artifact":artifact}),
     ))
@@ -2140,8 +2140,14 @@ fn spawn_hud_child(
                 let _ = child.wait();
                 return Err("schema_error: HUD companion startup receipt 超過大小上限".to_owned());
             }
-            break serde_json::from_slice::<HudReady>(&bytes)
-                .map_err(|_| "schema_error: HUD companion startup receipt 無效".to_owned())?;
+            match serde_json::from_slice::<HudReady>(&bytes) {
+                Ok(ready) => break ready,
+                Err(_) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err("schema_error: HUD companion startup receipt 無效".to_owned());
+                }
+            }
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
@@ -3231,7 +3237,8 @@ fn run(command: &str, root: PathBuf, args: &[String]) -> Result<String, String> 
     }
     if command == "runtime" {
         let mode = args.first().map(String::as_str).unwrap_or("capability");
-        return runtime_run(mode, &args[1..]);
+        let flags = args.get(1..).unwrap_or(&[]);
+        return runtime_run(mode, flags);
     }
     if command == "hud" {
         let mode = args.first().map(String::as_str).unwrap_or("capability");
@@ -4157,7 +4164,7 @@ fn main() -> ExitCode {
     let raw_host_output = (command == "hook"
         && matches!(all.get(1).map(String::as_str), Some("route" | "hud")))
         || (command == "hud" && all.get(1).map(String::as_str) == Some("serve"));
-    let (root, args, option_error) = option_root(&all[1..]);
+    let (root, args, option_error) = option_root(all.get(1..).unwrap_or(&[]));
     if raw_host_output {
         let output = match option_error {
             Some(_) => "{}".to_owned(),

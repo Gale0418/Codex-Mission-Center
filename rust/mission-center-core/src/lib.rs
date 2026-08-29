@@ -537,13 +537,7 @@ pub fn scan_forbidden_content(value: &serde_json::Value) -> Vec<String> {
                     .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { ' ' })
                     .collect();
                 let normalized = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
-                let assignment = ["password", "token", "api key", "apikey", "secret"]
-                    .iter()
-                    .any(|prefix| {
-                        normalized.contains(&format!("{prefix}:"))
-                            || normalized.contains(&format!("{prefix}="))
-                            || normalized.contains(&format!("{prefix} "))
-                    });
+                let assignment = secret_assignment(&lower);
                 let jwt = lower.starts_with("eyj") && lower.split('.').count() == 3;
                 let private_key = lower.contains("-----begin ")
                     || lower.contains("ssh-rsa ")
@@ -558,6 +552,36 @@ pub fn scan_forbidden_content(value: &serde_json::Value) -> Vec<String> {
     errors.sort();
     errors.dedup();
     errors
+}
+
+fn secret_assignment(text: &str) -> bool {
+    [
+        "password", "secret", "token", "api_key", "api-key", "api key", "apikey",
+    ]
+    .iter()
+    .any(|prefix| {
+        let mut offset = 0;
+        while let Some(relative) = text[offset..].find(prefix) {
+            let start = offset + relative;
+            let boundary = start == 0
+                || !text.as_bytes()[start - 1].is_ascii_alphanumeric()
+                    && text.as_bytes()[start - 1] != b'_';
+            let after = &text[start + prefix.len()..];
+            let trimmed = after.trim_start_matches(char::is_whitespace);
+            if boundary
+                && matches!(trimmed.as_bytes().first(), Some(b':' | b'='))
+                && trimmed[1..]
+                    .trim_start_matches(char::is_whitespace)
+                    .bytes()
+                    .next()
+                    .is_some_and(|byte| !byte.is_ascii_whitespace())
+            {
+                return true;
+            }
+            offset = start + prefix.len();
+        }
+        false
+    })
 }
 
 #[cfg(test)]

@@ -28,6 +28,21 @@ fn research_requires_low_marginal_gain_count() {
     )
     .expect_err("missing required signal must fail closed");
     assert!(errors.contains("lowMarginalGainCount"));
+
+    let errors = route_saturation(
+        &json!({
+            "repeatedRootCause": false,
+            "renamedHypothesis": false,
+            "metricStalled": false,
+            "budgetBurning": false,
+            "sharedUnverifiedPremise": false,
+            "lowMarginalGainCount": -1
+        }),
+        false,
+        false,
+    )
+    .expect_err("negative marginal gain count must fail closed");
+    assert!(errors.contains("non-negative integer"));
 }
 
 #[test]
@@ -117,5 +132,24 @@ fn critic_finding_disposition_and_acceptance_gates() {
         validate_critic_record(&record)
             .iter()
             .any(|error| error.contains("criticProposedDisposition"))
+    );
+
+    record["findings"][0]["severity"] = json!("High");
+    record["findings"][0]["criticProposedDisposition"] = json!("deferred");
+    record["findings"][0]["chairFinalDisposition"] = json!("deferred");
+    record["findings"][0]["humanAcceptance"] = json!({
+        "approverIdentity":"reviewer",
+        "approvalTime":"2026-08-29T10:00:00+08:00",
+        "scope":"finding",
+        "reason":"bounded exception",
+        "expiry":"2026-09-01T10:00:00+08:00",
+        "reopenTrigger":"new evidence"
+    });
+    assert!(validate_critic_record(&record).is_empty());
+    record["findings"][0]["humanAcceptance"]["approvalTime"] = json!("not-a-time");
+    assert!(
+        validate_critic_record(&record)
+            .iter()
+            .any(|error| error.contains("humanAcceptance"))
     );
 }

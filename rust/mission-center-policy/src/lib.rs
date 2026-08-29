@@ -826,18 +826,10 @@ pub fn route_saturation(
     if !s.contains_key("lowMarginalGainCount") {
         return Err("lowMarginalGainCount is required".to_owned());
     }
-    let marginal = s
-        .get("lowMarginalGainCount")
-        .and_then(Value::as_i64)
-        .filter(|v| *v >= 0)
-        .unwrap_or(0);
-    if s.get("lowMarginalGainCount").is_some()
-        && (s
-            .get("lowMarginalGainCount")
-            .and_then(Value::as_i64)
-            .is_none()
-            || marginal < 0)
-    {
+    let Some(marginal) = s.get("lowMarginalGainCount").and_then(Value::as_i64) else {
+        return Err("lowMarginalGainCount must be a non-negative integer".to_owned());
+    };
+    if marginal < 0 {
         return Err("lowMarginalGainCount must be a non-negative integer".to_owned());
     }
     if marginal > 0 {
@@ -2398,10 +2390,7 @@ fn critic_finding_id(value: Option<&Value>) -> bool {
 }
 
 fn timezone_aware_time(value: Option<&Value>) -> bool {
-    let Some(text) = strv(value) else {
-        return false;
-    };
-    text.len() <= 128
+    iso_timestamp(value)
 }
 
 fn valid_human_acceptance(value: Option<&Value>) -> bool {

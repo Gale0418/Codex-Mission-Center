@@ -609,8 +609,8 @@ fn compute_progress(tasks: &[Task]) -> (u32, String, Vec<String>, Vec<String>) {
     });
     let mut total = 0u32;
     let mut done = 0u32;
-    let mut total_est = 0u32;
-    let mut done_est = 0u32;
+    let mut total_est = 0u64;
+    let mut done_est = 0u64;
     let mut estimated = 0u32;
     let mut active = Vec::new();
     let mut blocked = Vec::new();
@@ -629,9 +629,9 @@ fn compute_progress(tasks: &[Task]) -> (u32, String, Vec<String>, Vec<String>) {
             .and_then(|v| v.parse::<u32>().ok());
         if let Some(value) = estimate {
             estimated += 1;
-            total_est = total_est.saturating_add(value);
+            total_est = total_est.saturating_add(u64::from(value));
             if task.status == mission_center_core::TaskStatus::Done {
-                done_est = done_est.saturating_add(value);
+                done_est = done_est.saturating_add(u64::from(value));
             }
         }
         if matches!(
@@ -650,7 +650,11 @@ fn compute_progress(tasks: &[Task]) -> (u32, String, Vec<String>, Vec<String>) {
     }
     let (percent, mode) = if total > 0 && estimated == total && total_est > 0 {
         (
-            ((done_est * 100 + total_est / 2) / total_est).min(100),
+            u32::try_from(
+                (u128::from(done_est) * 100 + u128::from(total_est) / 2) / u128::from(total_est),
+            )
+            .unwrap_or(100)
+            .min(100),
             format!("{done_est}/{total_est} estimated"),
         )
     } else if total > 0 {
@@ -4969,6 +4973,17 @@ mod tests {
             OperationOutcome::Committed
         );
         assert_eq!(workspace.operation_status("recover").unwrap(), "committed");
+    }
+
+    #[test]
+    fn progress_percentage_widens_saturated_estimates_before_multiplication() {
+        let tasks = mission_center_core::parse_tasks_markdown(
+            "| ID | Title | Status | Estimate |\n| --- | --- | --- | --- |\n| A | done | Done | 4294967295 |\n| B | ready | Ready | 4294967295 |\n",
+        )
+        .unwrap();
+        let (percent, mode, _, _) = compute_progress(&tasks);
+        assert_eq!(percent, 50);
+        assert_eq!(mode, "4294967295/8589934590 estimated");
     }
 
     #[cfg(unix)]

@@ -538,7 +538,7 @@ jobs:
             echo "stable package blocked: Python oracle boundary manifest is missing or permits formal runtime" >&2
             exit 1
           fi
-          if grep -R -n -E 'python([0-9]+)?[[:space:]]|prompt_router\\.py|hud_autolaunch\\.py|publish_local\\.py' hooks .codex-plugin 2>/dev/null; then
+          if grep -R -n -E 'python([0-9]+)?[[:space:]]|prompt_router\.py|hud_autolaunch\.py|publish_local\.py' hooks .codex-plugin 2>/dev/null; then
             echo "stable package blocked: formal plugin inputs still invoke Python runtime" >&2
             exit 1
           fi

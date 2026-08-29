@@ -580,6 +580,28 @@ fn runtime_capability_and_replay_are_bounded_read_only_contracts() {
 }
 
 #[test]
+fn bare_cli_and_bare_runtime_do_not_panic_on_empty_argument_slices() {
+    let root =
+        workspace("| ID | Title | Status |\n| --- | --- | --- |\n| MC-1 | ready | Ready |\n");
+    let bare = Command::new(env!("CARGO_BIN_EXE_mission-center"))
+        .current_dir(&root)
+        .output()
+        .expect("run bare cli");
+    assert_ne!(bare.status.code(), Some(101));
+    let bare_payload: serde_json::Value =
+        serde_json::from_slice(&bare.stdout).expect("bare CLI JSON envelope");
+    assert_eq!(bare_payload["command"], "status");
+
+    let runtime = Command::new(env!("CARGO_BIN_EXE_mission-center"))
+        .arg("runtime")
+        .output()
+        .expect("run bare runtime");
+    let runtime_payload = assert_machine_envelope(&runtime, "runtime", 0);
+    assert_eq!(runtime_payload["data"]["transports"]["stdio"], true);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn unsupported_mutations_return_operation_id_without_writing() {
     let output = Command::new(env!("CARGO_BIN_EXE_mission-center"))
         .args(["publish", "--operation-id", "op-cli-contract"])
@@ -884,6 +906,33 @@ fn frozen_package_parser_rejects_duplicate_keys_unknown_fields_and_noncanonical_
         assert_eq!(output.status.code(), Some(1));
         assert_eq!(payload["errorCode"], "invalid_manifest");
     }
+}
+
+#[test]
+fn publish_select_keeps_the_top_level_publish_command_token() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mission-center"))
+        .args([
+            "publish",
+            "select",
+            "--version",
+            "0.5.1",
+            "--platform",
+            "windows-x86_64",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("run publish select");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(include_bytes!("../../ci/fixtures/publish-verify.json"))
+        .expect("write package");
+    let output = child.wait_with_output().expect("wait publish select");
+    let payload = assert_machine_envelope(&output, "publish", 0);
+    assert_eq!(payload["status"], "pass");
+    assert_eq!(payload["data"]["selected"], true);
 }
 
 #[test]

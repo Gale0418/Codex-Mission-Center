@@ -161,7 +161,10 @@ class SupplyChainPolicyTests(unittest.TestCase):
         self.assertIn("MISSION_CENTER_RUST_BIN", self.workflow)
         self.assertIn("rust/target/debug/mission-center", self.workflow)
         self.assertIn("python -m unittest tests.test_rust_differential -v", self.workflow)
-        self.assertNotIn("skip", self.workflow[self.workflow.index("Run Rust/Python differential tests"):])
+        start = self.workflow.index("Run Rust/Python differential tests")
+        end = self.workflow.find("\n      - name:", start)
+        step = self.workflow[start:] if end == -1 else self.workflow[start:end]
+        self.assertNotIn("skip", step)
 
     def test_cargo_source_scanner_rejects_evil_registry_path_and_missing_checksum(self):
         cases = {

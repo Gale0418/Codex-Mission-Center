@@ -1669,10 +1669,10 @@ pub fn native_install_package(
     version: &str,
 ) -> Result<TransactionReceipt, PublishError> {
     validate_staging_operation_id(operation_id)?;
-    if destinations.is_empty() {
+    if destinations.is_empty() || destinations.len() > MAX_TRANSACTION_TARGETS {
         return Err(PublishError::stable(
             ErrorCode::InvalidManifest,
-            "至少需要一個明確的 install destination。",
+            "install destination 數量必須介於 1 與交易上限之間。",
         ));
     }
     let package = absolute_directory(package, "package")?;

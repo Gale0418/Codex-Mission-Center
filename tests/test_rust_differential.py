@@ -305,7 +305,7 @@ def _assert_no_actionable_done_handoff(test: unittest.TestCase, payload: dict[st
     canonical = handoff.get("canonicalTask")
     status = canonical.get("Status", canonical.get("status", "")) if isinstance(canonical, dict) else ""
     next_action = handoff.get("nextAction", handoff.get("executionNextAction", ""))
-    actionable = str(status).casefold() == "done" and bool(str(next_action).strip()) and str(next_action).strip().casefold() not in {"none", "no action", "n/a", "無", "無"}
+    actionable = str(status).casefold() == "done" and bool(str(next_action).strip()) and str(next_action).strip().casefold() not in {"none", "no action", "n/a", "無", "無動作"}
     if not actionable:
         return
     message = "all-Done + inactive resume returned an actionable Done handoff"

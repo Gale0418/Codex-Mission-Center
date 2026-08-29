@@ -1,4 +1,7 @@
-use mission_center_core::{TaskStatus, parse_tasks_markdown, sha256_digest};
+use mission_center_core::{
+    TaskStatus, parse_tasks_markdown, scan_forbidden_content, sha256_digest,
+};
+use serde_json::json;
 
 #[test]
 fn markdown_contract_handles_crlf_unicode_and_unknown_escape() {
@@ -38,5 +41,18 @@ fn lifecycle_aliases_are_not_accepted_as_canonical_statuses() {
             TaskStatus::parse(alias).is_err(),
             "alias unexpectedly accepted: {alias}"
         );
+    }
+}
+
+#[test]
+fn privacy_scanner_requires_assignment_delimiters_for_secret_names() {
+    assert!(scan_forbidden_content(&json!("the api token expired")).is_empty());
+    for value in [
+        "password: hidden",
+        "token = hidden",
+        "api key:\thidden",
+        "secret=hidden",
+    ] {
+        assert!(!scan_forbidden_content(&json!(value)).is_empty(), "{value}");
     }
 }

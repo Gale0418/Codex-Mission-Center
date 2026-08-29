@@ -546,6 +546,12 @@ class MissionMaintenanceTests(unittest.TestCase):
             self.assertFalse(atomic_write_if_changed(path, "same\n"))
             self.assertEqual(mtime, path.stat().st_mtime_ns)
 
+    def test_atomic_write_emits_exact_lf_bytes_on_windows_too(self):
+        with workspace_tempdir("memory-atomic-lf-") as temporary:
+            path = Path(temporary) / "value.txt"
+            self.assertTrue(atomic_write_if_changed(path, "one\ntwo\n"))
+            self.assertEqual(path.read_bytes(), b"one\ntwo\n")
+
     def test_atomic_write_uses_unique_staging_files_for_parallel_writers(self):
         with workspace_tempdir("memory-atomic-parallel-") as temporary:
             barrier = threading.Barrier(16)

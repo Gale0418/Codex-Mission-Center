@@ -258,6 +258,25 @@ fn native_install_validates_all_destinations_before_creating_parents() {
 }
 
 #[test]
+fn native_install_rejects_more_destinations_than_receipts_can_represent() {
+    let root = temp_root("too-many-destinations");
+    let destinations = (0..65)
+        .map(|index| root.join(format!("destination-{index}")))
+        .collect::<Vec<_>>();
+    let error = native_install_package(
+        &root.join("package-does-not-need-to-exist"),
+        &destinations,
+        "native-install-too-many",
+        Platform::host().expect("test host must be supported"),
+        "0.5.1",
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), ErrorCode::InvalidManifest);
+    assert!(destinations.iter().all(|destination| !destination.exists()));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn native_reconcile_rolls_back_started_receipt_after_crash() {
     let root = temp_root("reconcile");
     let package_root = root.join("package");

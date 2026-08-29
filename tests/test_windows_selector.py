@@ -37,7 +37,7 @@ class WindowsSelectorPolicyTests(unittest.TestCase):
         self.assertNotRegex(self.code, r"(set-content|out-file|add-content|remove-item|copy-item|move-item)")
         hooks = (ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8")
         self.assertIn("mission-center.ps1", hooks)
-        self.assertNotIn("windows-x86_64\\\\mission-center.exe\" hook", hooks)
+        self.assertNotRegex(hooks, r"(?i)mission-center(?:-[a-z0-9_.-]+)?\.exe")
 
 
 if __name__ == "__main__":
