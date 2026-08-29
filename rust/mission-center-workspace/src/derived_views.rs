@@ -492,7 +492,7 @@ fn render_brief(input: &RenderInput<'_>, working_count: usize) -> Result<String,
         ),
     };
     let normal = format!(
-        "<!-- {DERIVED_WARNING} -->\n{}\n# {title}\n\n- {organized_label}: {day}\n- {fingerprint_label}: `{fingerprint}`\n- {source_label}: `tasks.md`\n- {project_label}: {project}\n- {goal_label}: {goal_value}\n- {cycle_label}: {cycle_value}\n\n## {today_title} · {day}\n{entry_lines}\n\n## {guardrail_title} ({})\n{guardrail_lines}\n\n## {route_label}\n{}\n{}\n- {route_stale}\n",
+        "<!-- {DERIVED_WARNING} -->\n{}\n# {title}\n\n- {organized_label}: {day}\n- {fingerprint_label}: `{fingerprint}`\n- {source_label}: `tasks.md`\n- {project_label}: {project}\n- {goal_label}: {goal_value}\n- {cycle_label}: {cycle_value}\n\n## {today_title} · {day}\n{entry_lines}\n\n## {guardrail_title} ({})\n{guardrail_lines}\n\n## {route_label}\n{}\n{}\n{route_stale}\n",
         derived_marker(input.workspace_fingerprint),
         active_guardrails.active_ids.len(),
         work_line.replace("{working_count}", &working_count.to_string()),
@@ -533,6 +533,8 @@ mod tests {
         assert!(english.contains("- Last organized: 2026-08-29"));
         assert!(english.contains("## Today's Summary · 2026-08-29\n- None"));
         assert!(english.contains("## Relevant Guardrails (0)\n- None"));
+        assert!(english.contains("\n- Brief/working set stale or truncated"));
+        assert!(!english.contains("\n- - Brief/working set"));
 
         let chinese = render_brief(
             &RenderInput {
@@ -552,6 +554,8 @@ mod tests {
         assert!(chinese.contains("- 最後整理: 2026-08-29"));
         assert!(chinese.contains("## 今日摘要 · 2026-08-29\n- 無"));
         assert!(chinese.contains("## 重要護欄 (0)\n- 無"));
+        assert!(chinese.contains("\n- 簡報／工作集過期或截斷"));
+        assert!(!chinese.contains("\n- - 簡報／工作集"));
     }
 
     #[test]

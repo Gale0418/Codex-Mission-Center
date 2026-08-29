@@ -1,1 +1,17 @@
-{"artifactType":"completion-passport","findings":[],"schemaVersion":"1.0","status":"superseded","taskDigest":"b21dbf5179d640fa0c8a0c8cf41fedaccbbc32fdec696793d77c108cf44c8ef4","taskId":"MC-067","verification":{"evidenceRefs":["rust/mission-center-workspace/src/derived_views.rs","docs/rust-maintainability-audit-0.5.1.md","MissionCenter/smoke-tests.md"],"result":"pass"}}
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-067",
+  "taskDigest": "b21dbf5179d640fa0c8a0c8cf41fedaccbbc32fdec696793d77c108cf44c8ef4",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "rust/mission-center-workspace/src/derived_views.rs",
+      "docs/rust-maintainability-audit-0.5.1.md",
+      "MissionCenter/smoke-tests.md",
+      ".github/workflows/ci.yml"
+    ]
+  },
+  "findings": []
+}

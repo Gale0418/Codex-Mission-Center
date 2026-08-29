@@ -2311,7 +2311,7 @@ impl MissionWorkspace {
                 labels.9.to_owned()
             };
             let body = format!(
-                "# {}\n\n- State: {}\n- {}: {timestamp}\n- {}: {}\n- {}: {}\n- {}: {}\n- {}: {}\n- {}: {}\n- {}: {}\n- {}: {}\n{metadata}\n- {}:\n{}{}\n",
+                "# {}\n\n- State: {}\n- {}: {timestamp}\n- {}: {}\n- {}: {}\n- {}: {}\n- {}: {}\n- {}: {}\n- {}: {}\n- {}: {}\n{metadata}\n- {}:\n{}{}",
                 labels.0,
                 snapshot_facts.state,
                 labels.1,
@@ -4770,6 +4770,7 @@ mod tests {
         let snapshot = fs::read_to_string(fixture.workspace.snapshot_path()).unwrap();
         assert!(snapshot.contains("- Resume:"));
         assert!(snapshot.contains("No active task; resume from canonical task selection."));
+        assert!(!snapshot.ends_with("\n\n"));
     }
 
     #[test]
@@ -4990,6 +4991,7 @@ mod tests {
         let snapshot = fs::read_to_string(workspace.snapshot_path()).unwrap();
         assert!(snapshot.contains("- Resume:"));
         assert!(snapshot.contains("Read canonical task and next action for MC-1"));
+        assert!(!snapshot.ends_with("\n\n"));
         workspace
             .append_pulse_full(
                 "pulse-1",

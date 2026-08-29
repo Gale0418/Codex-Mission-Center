@@ -108,4 +108,5 @@ policy schema 小功能仍需先依上方自然邊界定位，這是 0.5.2 的�
   寫入 canonical task resume locator，inactive snapshot 寫入重新選取 canonical task 的明確
   指引；沒有修改 Python oracle 或放寬 release test。
 - 新增 active／all-Done inactive Rust regression，並以與 CI 相同的 435-test Python discovery
-  重驗。這顯示 clean-checkout gate 能抓到本機 focused suite 未覆蓋的 tracked artifact contract。
+  重驗；GitHub CI #83 的四平台 release、stable package gate 與 required `test` 全數成功。
+  這顯示 clean-checkout gate 能抓到本機 focused suite 未覆蓋的 tracked artifact contract。

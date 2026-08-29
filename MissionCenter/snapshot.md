@@ -1,11 +1,11 @@
 # 執行檢查點
 
 - State: inactive
-- 建立時間: 2026-08-29T15:20:00Z
+- 建立時間: 2026-08-29T15:50:00Z
 - 進行中任務: None
 - 狀態: Inactive
-- 版本: 2f30305f65b05679cca184a82df0bc44ff7692cb
-- 指紋: 6892da86b0842eb8eb41b06af48679613742487706a0bf0c300ad7f95d792e9f
+- 版本: b805c13cb99340145145aa2491550ba7a84ba91b
+- 指紋: eb0d84c14780480a4db4181194fd008e0c2328b5af65db2cf05834c4a9c193a5
 - 依賴: None
 - 驗證: None
 - 恢復: 目前沒有進行中任務；請從 canonical 任務清單重新選取。
@@ -14,4 +14,4 @@
 - Diagnosis evidence JSON: []
 - 近期嘗試:
   - 無
-- Notes: 本機 Rust 1.98 與 Python differential 全綠；MC-067 等待 GitHub 多平台 stable gate。
+- Notes: Rust-only 0.5.1 與 MC-067 sync／snapshot hardening 完成；GitHub CI #83 全數通過。
