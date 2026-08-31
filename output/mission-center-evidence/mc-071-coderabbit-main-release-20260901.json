@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "1.0",
+  "taskId": "MC-071",
+  "recordedAt": "2026-09-01T02:19:34+08:00",
+  "result": "pass",
+  "codeRabbit": {
+    "reviewRuns": 2,
+    "reviewedFiles": 17,
+    "findings": [
+      {
+        "id": "CR-MC071-001",
+        "severity": "Minor",
+        "disposition": "rejected-with-counterevidence",
+        "evidence": "MissionCenter/progress.md line 1 already contains the exact managed-summary marker"
+      },
+      {
+        "id": "CR-MC071-002",
+        "severity": "Minor",
+        "disposition": "fixed",
+        "evidence": "CI now performs same-operation sync replay and asserts replay status"
+      },
+      {
+        "id": "CR-MC071-003",
+        "severity": "Minor",
+        "disposition": "fixed",
+        "evidence": "CI now requires canonicalFallback to be Boolean false and policy regression covers the assertion"
+      }
+    ],
+    "recoveryRunReserved": true
+  },
+  "verification": {
+    "rustWorkspaceTests": 137,
+    "pythonFocusedTests": 41,
+    "pythonCapabilitySkips": 1,
+    "cleanCheckoutStale": false,
+    "cleanCheckoutSourceFresh": true,
+    "cleanCheckoutDateFresh": true,
+    "cleanCheckoutCanonicalFallback": false,
+    "cleanCheckoutDoctor": "pass",
+    "cleanCheckoutReconcile": "pass",
+    "githubCiRun": 90,
+    "githubCiConclusion": "success",
+    "pullRequest": "https://github.com/Gale0418/Codex-Mission-Center/pull/13",
+    "mergeCommit": "1e48647836f6081690563f199afdfe530a12a612"
+  },
+  "branchCleanup": {
+    "deleted": 7,
+    "remaining": [
+      "main"
+    ]
+  },
+  "localPlugin": {
+    "version": "0.5.1+codex.20260831173730",
+    "enabled": true,
+    "stale": false,
+    "sourceFresh": true,
+    "dateFresh": true,
+    "canonicalFallback": false,
+    "doctor": "pass"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-071",
+  "taskDigest": "ed0f0152d8731a7bf335b679ba1c9da148c7050d182eab3d02f4c9d02e45beb0",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "MissionCenter/smoke-tests.md",
+      "output/mission-center-evidence/mc-071-coderabbit-main-release-20260901.json",
+      ".github/workflows/ci.yml",
+      "tests/test_supply_chain_policy.py"
+    ]
+  },
+  "findings": [
+    {
+      "id": "CR-MC071-001",
+      "severity": "Low",
+      "disposition": "rejected-with-counterevidence"
+    },
+    {
+      "id": "CR-MC071-002",
+      "severity": "Low",
+      "disposition": "fixed"
+    },
+    {
+      "id": "CR-MC071-003",
+      "severity": "Low",
+      "disposition": "fixed"
+    }
+  ]
+}
