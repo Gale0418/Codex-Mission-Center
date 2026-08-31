@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.0",
+  "taskId": "MC-068",
+  "recordedAt": "2026-08-30T01:41:36+08:00",
+  "result": "pass",
+  "checks": {
+    "rustWorkspaceTests": 125,
+    "pythonFocusedTests": 23,
+    "skillValidator": "pass",
+    "pluginValidator": "pass",
+    "installedVersion": "0.5.1+codex.20260829174052",
+    "installedEnabled": true,
+    "dateFresh": true,
+    "sourceFresh": true,
+    "stale": false,
+    "canonicalFallback": false,
+    "doctor": "pass",
+    "skillHashMatches": true,
+    "binaryHashMatches": true
+  },
+  "operationId": "mc-068-installed-smoke-20260830-014136",
+  "scope": "Windows local development plugin; no cross-platform stable release claim"
+}

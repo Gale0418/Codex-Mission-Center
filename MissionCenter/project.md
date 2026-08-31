@@ -1,31 +1,9 @@
+<!-- mission-center-managed-summary v=1 -->
 # 專案
 
 - 專案: Codex Mission Center
 - 目標: 將 Mission Center 升級為研究驅動的自適應 Project OS，並提供可選的本機 Live Agent HUD
-- 週期: v0.5 Evidence and Reconciliation Hardening
+- 週期: v0.5.1 Repository Seal
 - 標籤: mission-center, reconciliation, evidence, runtime, ux, verification, hardening
 - 活動紀錄:
-  - 2026-08-30T02:48:38+08:00｜Change: 完成 MC-069 macOS 0.5.1 Plugin 登艦與 SMB 相容修復｜Reason: 實機發現 selector jq 結尾、publish preflight 過度掃描與 SMB fsync `ENOTSUP(45)` 殘留 writer lock｜Impact: Mac 運作 OK；`mission-center@mission-center-local` 0.5.1 installed/enabled；Darwin arm64 help／runtime／sync／status／resume／doctor 全通過，SMB sync committed 且無殘留 lock。
-  - 2026-08-30T02:32:29+08:00｜Change: 啟動 MC-069 macOS 0.5.1 Plugin 登艦與發布器收旂｜Reason: 本機仍載入 0.5.0，publish preflight 誤掃描整個 repo 造成長時間卡住｜Impact: 收旂為只驗證實際發布項目；完成安裝、Darwin arm64 resume／doctor 與證據記錄前不宣稱 Mac 運作 OK。
-  - 2026-08-30T01:41:36+08:00｜Change: 完成 MC-068 Rust sync／CLI help 與本機 Plugin 更新驗證｜Reason: 關閉 skill、CLI、freshness 與 cachebuster 契約漂移｜Impact: Windows 本機 plugin 0.5.1+codex.20260829174052 已啟用；四平台 stable release 未宣稱更新。
-  - 2026-08-30T01:25:42+08:00｜Change: 啟動 MC-068 Sync／Help 契約修復｜Reason: 正式 0.5.1 skill 使用缺少 receipt 的 sync 語法，且 CLI help 不可探索｜Impact: 僅修復契約、測試與本機 Windows Plugin，不變更 tasks.md 唯一 lifecycle truth。
-  - 完成 69 項 unittest、CLI doctor、skill validation 與 publish dry-run。 已記錄 Smoke tests: 8.
-  - GitHub main branch protection 已要求 `test` 通過，且管理員不可繞過。
-  - 修正重複 sync 會堆疊活動紀錄與開放問題標籤的 parser bug。
-  - 完成 GitHub required check 與重複 sync parser 回歸修正。 已記錄 Smoke tests: 8.
-  - 啟動 OWO+ Evolution cycle；保留既有 Task lifecycle 契約與完成任務。
-  - 完成自適應路由、Shadow 實驗契約、Runtime Adapter、HUD v2 與最終發布驗證；四個 Evolution Epic 已收斂。
-  - OWO+ Evolution final sync. 已記錄 Smoke tests: 12.
-  - 2026-08-20：核准 OWO+ v0.4 Epic 地圖；第一里程碑採 pulse → ledger → bounded handoff → resume 的 walking skeleton。
-  - 2026-08-20：MC-047 完成；31 focused tests＋8 subtests、完整 221 tests、Doctor 與實際 handoff/resume smoke 通過。
-  - 2026-08-20：MC-048 完成；route-specific Steelman 契約、高風險 full 路由、授權預算與兩輪上限驗證通過。
-  - 2026-08-20：MC-049 完成；三路研究投資組合、外部來源 fail-closed、預算與兩訊號飽和路由驗證通過。
-  - 2026-08-20：MC-050 完成；Shift-Loss 指標、privacy-safe cases、paired baseline 與四項安全硬限制驗證通過。
-  - 2026-08-20：MC-051 本機 release gate 通過；242 tests＋74 subtests、Doctor、Skill／Plugin validators、manifest、publish dry-run 與 diff check 全綠，等待外部審查授權。
-  - 2026-08-21：Antigravity 全工作區稽核與證據仲裁修正 Schema parity、因果時間、atomic handoff、Windows incident pointer 與 advisory artifact secret scan；246 tests＋74 subtests、Doctor、Skill／Plugin validators、publish dry-run 與 diff check 全綠。
-  - 2026-08-21：完成 OWO+ v0.4 release：CodeRabbit scoped review 與 critic_full 3 critic＋1 arbiter／唯一 delta 收斂 17 項 finding；261 tests、Doctor、validators 與 critic record 全綠；personal／marketplace／cache 發布無 drift。
-  - 2026-08-24：啟動 v0.5 hardening；現場重現 Doctor false-green、execution ledger corrupt 與 handoff failure，核准 MC-052～MC-059，先修唯讀 reconciliation spine，再處理 evidence、runtime、UX 與供應鏈。
-  - 2026-08-24：完成 OWO+ v0.5；ledger／resume、五態對帳、scope-aware evidence、runtime boundedness、HUD 誠實性、Action／wheel hash lock 與 immutable cycle closeout 全部通過 282 tests、Doctor、Chrome desktop/mobile 與 publish dry-run。
 - 開放問題:
-  - MC-001～MC-058 的歷史 evidence envelope 尚待漸進遷移；Doctor 以非阻塞 migration warning 如實揭露。
-  - HUD v2 視覺方向待使用者看過現行基準版後選擇；不影響本週期功能與安全 closeout。

@@ -672,16 +672,18 @@ fn organize_daily_log(
             line_end
         };
         let indentation = &text[line_start..position];
-        return Ok(format!(
-            "{}{}{} {}{}{}",
-            &text[..line_start],
-            indentation,
-            marker,
-            date,
-            newline,
-            &text[suffix_start..]
-        )
-        .into_bytes());
+        return bounded_daily_log(
+            format!(
+                "{}{}{} {}{}{}",
+                &text[..line_start],
+                indentation,
+                marker,
+                date,
+                newline,
+                &text[suffix_start..]
+            )
+            .into_bytes(),
+        );
     }
 
     let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
@@ -693,7 +695,17 @@ fn organize_daily_log(
             _ => "\n\n",
         }
     };
-    Ok(format!("{text}{separator}{preferred_marker} {date}{newline}").into_bytes())
+    bounded_daily_log(format!("{text}{separator}{preferred_marker} {date}{newline}").into_bytes())
+}
+
+fn bounded_daily_log(bytes: Vec<u8>) -> Result<Vec<u8>, WorkspaceError> {
+    if bytes.len() as u64 > DAILY_LOG_MAX_BYTES {
+        return Err(WorkspaceError::TooLarge {
+            path: PathBuf::from("MissionCenter/daily-log.md"),
+            limit: DAILY_LOG_MAX_BYTES,
+        });
+    }
+    Ok(bytes)
 }
 
 fn compute_progress(tasks: &[Task]) -> (u32, String, Vec<String>, Vec<String>) {
@@ -4909,6 +4921,26 @@ mod tests {
             text.lines()
                 .any(|line| line == "- Last organized: 2026-08-29")
         );
+    }
+
+    #[test]
+    fn sync_rejects_post_transform_daily_log_overflow_without_overwriting() {
+        let fixture = fixture();
+        let path = fixture.workspace.mission_dir().join("daily-log.md");
+        let mut original = "# 每日紀錄\n".as_bytes().to_vec();
+        original.resize(DAILY_LOG_MAX_BYTES as usize, b'x');
+        fs::write(&path, &original).unwrap();
+
+        let error = fixture
+            .workspace
+            .sync("sync-daily-overflow", "2026-08-29T08:00:00+08:00")
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            WorkspaceError::TooLarge { limit, .. } if limit == DAILY_LOG_MAX_BYTES
+        ));
+        assert_eq!(fs::read(path).unwrap(), original);
     }
 
     #[test]

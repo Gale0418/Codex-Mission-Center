@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-070",
+  "taskDigest": "93abe7904b4bc63456171d3b1d7a2d9bb8bf9038d89a2f7ff944e65c4eda3511",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "MissionCenter/smoke-tests.md",
+      "output/mission-center-evidence/mc-070-local-plugin-smoke-20260901.json",
+      "output/mission-center-evidence/mc-068-local-plugin-smoke-20260830.json",
+      "rust/mission-center-workspace/src/lib.rs",
+      ".github/workflows/ci.yml"
+    ]
+  },
+  "findings": []
+}

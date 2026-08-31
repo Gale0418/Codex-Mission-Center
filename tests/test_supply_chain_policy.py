@@ -129,6 +129,18 @@ class SupplyChainPolicyTests(unittest.TestCase):
         self.assertIn("cargo test --workspace --locked --offline", self.workflow)
         self.assertIn('rustup_bin="$HOME/.cargo/bin/rustup"', self.workflow)
 
+    def test_root_dogfood_replays_sync_before_read_only_checks(self):
+        self.assertIn("git archive HEAD -o $archive", self.workflow)
+        self.assertIn("$replay = Invoke-MissionCenter @('sync'", self.workflow)
+        self.assertIn("if ($replay.status -ne 'replay')", self.workflow)
+        self.assertIn(
+            "if ($resume.data.canonicalFallback -isnot [bool] -or "
+            "$resume.data.canonicalFallback -ne $false)",
+            self.workflow,
+        )
+        for command in ("status", "resume", "doctor", "reconcile"):
+            self.assertIn(f"Invoke-MissionCenter @('{command}'", self.workflow)
+
     def test_vendoring_license_and_artifact_policy_are_documented(self):
         self.assertIn("rust/vendor/", self.workflow)
         self.assertIn("Cargo.lock contains a git dependency", self.workflow)
