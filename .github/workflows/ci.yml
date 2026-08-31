@@ -186,6 +186,43 @@ jobs:
         shell: pwsh
         working-directory: ${{ github.workspace }}
         run: python -m unittest tests.test_rust_differential -v
+      - name: Dogfood clean-checkout Mission Center root
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'mission-center-root-dogfood'
+          $archive = Join-Path $env:RUNNER_TEMP 'mission-center-root-dogfood.tar'
+          if (Test-Path -LiteralPath $root) {
+            Remove-Item -Recurse -Force -LiteralPath $root
+          }
+          New-Item -ItemType Directory -Path $root | Out-Null
+          git archive HEAD -o $archive
+          if ($LASTEXITCODE -ne 0) { throw 'git archive failed' }
+          tar -xf $archive -C $root
+          if ($LASTEXITCODE -ne 0) { throw 'git archive extraction failed' }
+
+          function Invoke-MissionCenter([string[]] $Arguments) {
+            $json = & $env:MISSION_CENTER_RUST_BIN @Arguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "Mission Center failed: $($Arguments -join ' ')`n$json"
+            }
+            return $json | ConvertFrom-Json
+          }
+
+          $timestamp = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+          $operation = "ci-root-dogfood-$env:GITHUB_RUN_ID-$env:RUNNER_OS"
+          $sync = Invoke-MissionCenter @('sync', '--root', $root, '--operation-id', $operation, '--timestamp', $timestamp)
+          $replay = Invoke-MissionCenter @('sync', '--root', $root, '--operation-id', $operation, '--timestamp', $timestamp)
+          $status = Invoke-MissionCenter @('status', '--root', $root)
+          $resume = Invoke-MissionCenter @('resume', '--root', $root)
+          $doctor = Invoke-MissionCenter @('doctor', '--root', $root)
+          $reconcile = Invoke-MissionCenter @('reconcile', '--root', $root)
+          if ($sync.status -notin @('committed', 'replay')) { throw 'root sync did not commit' }
+          if ($replay.status -ne 'replay') { throw 'root sync replay was not idempotent' }
+          if ($status.data.stale -or -not $status.data.sourceFresh -or -not $status.data.dateFresh) { throw 'root status is stale' }
+          if ($resume.data.canonicalFallback -isnot [bool] -or $resume.data.canonicalFallback -ne $false) { throw 'root resume used canonical fallback' }
+          if ($doctor.status -ne 'pass') { throw 'root Doctor failed' }
+          if ($reconcile.status -ne 'pass') { throw 'root reconcile failed' }
 
   rust-release:
     name: rust release (${{ matrix.variant }})

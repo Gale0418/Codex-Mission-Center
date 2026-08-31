@@ -1,11 +1,11 @@
 # 執行檢查點
 
 - State: inactive
-- 建立時間: 2026-08-29T15:50:00Z
+- 建立時間: 2026-09-01T01:39:50+08:00
 - 進行中任務: None
 - 狀態: Inactive
-- 版本: b805c13cb99340145145aa2491550ba7a84ba91b
-- 指紋: eb0d84c14780480a4db4181194fd008e0c2328b5af65db2cf05834c4a9c193a5
+- 版本: 386f18ff1909423589eb7b1f57603e8b2dff57e1
+- 指紋: 9eecc426a5291fc17f7650dfb2b7847aba3d7a71d3dd497ac897d65a48f22422
 - 依賴: None
 - 驗證: None
 - 恢復: 目前沒有進行中任務；請從 canonical 任務清單重新選取。
@@ -14,4 +14,4 @@
 - Diagnosis evidence JSON: []
 - 近期嘗試:
   - 無
-- Notes: Rust-only 0.5.1 與 MC-067 sync／snapshot hardening 完成；GitHub CI #83 全數通過。
+- Notes: MC-070 repository seal and Windows local plugin 0.5.1+codex.20260831173730 complete; installed selector status/resume/Doctor pass and source/binary hashes match. WebMCP and public release remain outside scope.
