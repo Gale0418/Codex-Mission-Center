@@ -8,7 +8,7 @@
     "result": "pass",
     "evidenceRefs": [
       "MissionCenter/smoke-tests.md",
-      "output/mission-center-evidence/mc-071-coderabbit-main-release-20260901.json",
+      "output/mission-center-reports/mc-071-coderabbit-main-release-20260901.json",
       ".github/workflows/ci.yml",
       "tests/test_supply_chain_policy.py"
     ]

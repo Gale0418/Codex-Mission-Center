@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -77,6 +78,62 @@ class EvidenceEnvelopeTests(unittest.TestCase):
         self.assertEqual(schema["properties"]["artifactType"]["const"], "evidence-envelope")
         self.assertIn("scopeDigest", schema["required"])
         self.assertIn("supersedes", schema["properties"])
+
+    def test_tracked_repository_evidence_matches_strict_envelope_contract(self):
+        if not (ROOT / ".git").exists():
+            self.skipTest("requires a Git checkout")
+        result = subprocess.run(
+            ["git", "ls-files", "--", "output/mission-center-evidence/*.json"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        failures: list[str] = []
+        for relative in (line.strip() for line in result.stdout.splitlines()):
+            if not relative:
+                continue
+            path = ROOT / relative
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                failures.append(f"{relative}: invalid JSON: {exc}")
+                continue
+            verify_digest = not (
+                isinstance(payload, dict) and payload.get("status") == "superseded"
+            )
+            errors = validate_envelope(payload, ROOT, verify_digest=verify_digest)
+            if errors:
+                failures.append(f"{relative}: {'; '.join(errors)}")
+        self.assertFalse(
+            failures,
+            "Tracked files under output/mission-center-evidence must be strict EvidenceEnvelope JSON:\n"
+            + "\n".join(failures),
+        )
+
+    def test_smoke_report_namespace_regression(self):
+        report_path = (
+            ROOT
+            / "output"
+            / "mission-center-reports"
+            / "mc-068-local-plugin-smoke-20260830.json"
+        )
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+
+        with workspace_tempdir("envelope-report-wrong-namespace-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            self.write_envelope(workspace, report, name=report_path.name)
+            checks = {item["name"]: item for item in reconcile_workspace(workspace)["checks"]}
+            self.assertEqual(checks["evidence_envelope"]["status"], "corrupt")
+            self.assertIn("artifactType must be evidence-envelope", checks["evidence_envelope"]["message"])
+
+        with workspace_tempdir("envelope-report-right-namespace-") as temporary:
+            workspace = self.copy_fixture(Path(temporary))
+            reports = workspace / "output" / "mission-center-reports"
+            reports.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(report_path, reports / report_path.name)
+            checks = {item["name"]: item for item in reconcile_workspace(workspace)["checks"]}
+            self.assertEqual(checks["evidence_envelope"]["status"], "unknown")
 
     def test_scope_digest_ignores_unlisted_files(self):
         with workspace_tempdir("envelope-scope-") as temporary:

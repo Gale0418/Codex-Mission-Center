@@ -105,12 +105,11 @@ fn frozen_bundle_constructor_enforces_allowlist_and_is_usable() {
 fn request(server: &mission_center_runtime::HudServer, path: &str) -> String {
     use std::io::{Read, Write};
     let mut stream = std::net::TcpStream::connect(server.address()).unwrap();
-    write!(
-        stream,
+    let request = format!(
         "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
         server.port()
-    )
-    .unwrap();
+    );
+    stream.write_all(request.as_bytes()).unwrap();
     let mut response = Vec::new();
     stream.read_to_end(&mut response).unwrap();
     String::from_utf8(response).unwrap()
@@ -119,12 +118,11 @@ fn request(server: &mission_center_runtime::HudServer, path: &str) -> String {
 fn request_method(server: &mission_center_runtime::HudServer, method: &str, path: &str) -> String {
     use std::io::{Read, Write};
     let mut stream = std::net::TcpStream::connect(server.address()).unwrap();
-    write!(
-        stream,
+    let request = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
         server.port()
-    )
-    .unwrap();
+    );
+    stream.write_all(request.as_bytes()).unwrap();
     let mut response = Vec::new();
     stream.read_to_end(&mut response).unwrap();
     String::from_utf8(response).unwrap()
@@ -265,12 +263,11 @@ fn client_that_does_not_read_response_cannot_block_shutdown() {
     client
         .set_read_timeout(Some(Duration::from_millis(50)))
         .unwrap();
-    write!(
-        client,
+    let request = format!(
         "GET /mission-center-assets/visual-state.json HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
         result.server.port()
-    )
-    .unwrap();
+    );
+    client.write_all(request.as_bytes()).unwrap();
     let started = Instant::now();
     result.server.shutdown().unwrap();
     assert!(started.elapsed() < Duration::from_secs(2));

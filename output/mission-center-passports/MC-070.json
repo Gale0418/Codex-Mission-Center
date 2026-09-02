@@ -8,8 +8,8 @@
     "result": "pass",
     "evidenceRefs": [
       "MissionCenter/smoke-tests.md",
-      "output/mission-center-evidence/mc-070-local-plugin-smoke-20260901.json",
-      "output/mission-center-evidence/mc-068-local-plugin-smoke-20260830.json",
+      "output/mission-center-reports/mc-070-local-plugin-smoke-20260901.json",
+      "output/mission-center-reports/mc-068-local-plugin-smoke-20260830.json",
       "rust/mission-center-workspace/src/lib.rs",
       ".github/workflows/ci.yml"
     ]

@@ -10,11 +10,11 @@ MYKEY.txt
 output/*
 !output/mission-center-passports/
 !output/mission-center-passports/*.json
+!output/mission-center-reports/
+!output/mission-center-reports/*.json
 !output/mission-center-evidence/
 output/mission-center-evidence/*
-!output/mission-center-evidence/mc-068-local-plugin-smoke-20260830.json
-!output/mission-center-evidence/mc-070-local-plugin-smoke-20260901.json
-!output/mission-center-evidence/mc-071-coderabbit-main-release-20260901.json
+!output/mission-center-evidence/.gitkeep
 .impeccable/
 MissionCenter/.mission-center/
 .worktrees/
