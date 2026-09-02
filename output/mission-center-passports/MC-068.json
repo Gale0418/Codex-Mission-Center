@@ -7,7 +7,7 @@
   "verification": {
     "result": "pass",
     "evidenceRefs": [
-      "output/mission-center-evidence/mc-068-local-plugin-smoke-20260830.json",
+      "output/mission-center-reports/mc-068-local-plugin-smoke-20260830.json",
       "MissionCenter/smoke-tests.md",
       "rust/mission-center-cli/tests/cli_contract.rs",
       "rust/mission-center-workspace/src/lib.rs",
