@@ -76,7 +76,7 @@ jobs:
             rustup_bin="${rustup_bin}.exe"
           fi
           test -f "$rustup_bin"
-          "$rustup_bin" toolchain install 1.98.0 --profile minimal --component rustfmt,clippy
+          "$rustup_bin" toolchain install 1.98.1 --profile minimal --component rustfmt,clippy
           echo "RUSTUP_BIN=$rustup_bin" >> "$GITHUB_ENV"
       - name: Audit vendored Cargo.lock sources
         if: hashFiles('rust/vendor/**') != '' && hashFiles('rust/.cargo/config.toml') != ''
@@ -150,27 +150,27 @@ jobs:
         run: |
           set -euo pipefail
           test -f "$RUSTUP_BIN"
-          "$RUSTUP_BIN" run 1.98.0 cargo metadata --locked --offline --format-version 1 > /dev/null
+          "$RUSTUP_BIN" run 1.98.1 cargo metadata --locked --offline --format-version 1 > /dev/null
       - name: Check Rust formatting
         shell: bash
         run: |
           set -euo pipefail
-          "$RUSTUP_BIN" run 1.98.0 cargo fmt --all -- --check
+          "$RUSTUP_BIN" run 1.98.1 cargo fmt --all -- --check
       - name: Run Rust Clippy
         shell: bash
         run: |
           set -euo pipefail
-          "$RUSTUP_BIN" run 1.98.0 cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+          "$RUSTUP_BIN" run 1.98.1 cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
       - name: Run Rust tests offline
         shell: bash
         run: |
           set -euo pipefail
-          "$RUSTUP_BIN" run 1.98.0 cargo test --workspace --locked --offline
+          "$RUSTUP_BIN" run 1.98.1 cargo test --workspace --locked --offline
       - name: Build Rust CLI for differential tests
         shell: bash
         run: |
           set -euo pipefail
-          "$RUSTUP_BIN" run 1.98.0 cargo build --package mission-center-cli --locked --offline
+          "$RUSTUP_BIN" run 1.98.1 cargo build --package mission-center-cli --locked --offline
       - name: Configure Rust differential binary
         shell: pwsh
         run: |
@@ -280,14 +280,14 @@ jobs:
           rustup_bin="$HOME/.cargo/bin/rustup"
           if [ "$RUNNER_OS" = "Windows" ]; then rustup_bin="${rustup_bin}.exe"; fi
           test -f "$rustup_bin"
-          "$rustup_bin" toolchain install 1.98.0 --profile minimal
+          "$rustup_bin" toolchain install 1.98.1 --profile minimal
           echo "RUSTUP_BIN=$rustup_bin" >> "$GITHUB_ENV"
       - name: Check target availability without pretending to cross-build
         id: target
         shell: bash
         run: |
           set -euo pipefail
-          if "$RUSTUP_BIN" target list --toolchain 1.98.0 --installed | grep -Fx "$RELEASE_TARGET"; then
+          if "$RUSTUP_BIN" target list --toolchain 1.98.1 --installed | grep -Fx "$RELEASE_TARGET"; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           elif [ "$RELEASE_VARIANT" = "macos-aarch64" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
@@ -301,13 +301,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          "$RUSTUP_BIN" run 1.98.0 cargo metadata --locked --offline --format-version 1 > /dev/null
+          "$RUSTUP_BIN" run 1.98.1 cargo metadata --locked --offline --format-version 1 > /dev/null
       - name: Build release CLI without fallback
         if: steps.target.outputs.available == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          "$RUSTUP_BIN" run 1.98.0 cargo build --release --package mission-center-cli --target "$RELEASE_TARGET" --locked --offline
+          "$RUSTUP_BIN" run 1.98.1 cargo build --release --package mission-center-cli --target "$RELEASE_TARGET" --locked --offline
       - name: Check release binary architecture magic
         if: steps.target.outputs.available == 'true'
         shell: bash
