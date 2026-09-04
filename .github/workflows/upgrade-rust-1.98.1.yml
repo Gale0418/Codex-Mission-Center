@@ -7,7 +7,7 @@ on:
       - ".github/workflows/upgrade-rust-1.98.1.yml"
 
 jobs:
-  upgrade:
+  stage-ci:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:
@@ -16,78 +16,31 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
-      - name: Prepare the Rust 1.98.1 upgrade
+      - name: Generate exact Rust 1.98.1 CI candidate
         shell: bash
         run: |
           set -euo pipefail
-          live_files=(
-            .github/workflows/ci.yml
-            README.md
-            README.zh-TW.md
-            RELEASE_CHECKLIST.md
-            docs/supply-chain-policy.md
-            rust/rust-toolchain.toml
-            tests/test_ci_release_policy.py
-            tests/test_supply_chain_policy.py
-          )
-
           python - <<'PY'
           from pathlib import Path
-          files = [
-              Path('.github/workflows/ci.yml'),
-              Path('README.md'),
-              Path('README.zh-TW.md'),
-              Path('RELEASE_CHECKLIST.md'),
-              Path('docs/supply-chain-policy.md'),
-              Path('rust/rust-toolchain.toml'),
-              Path('tests/test_ci_release_policy.py'),
-              Path('tests/test_supply_chain_policy.py'),
-          ]
-          total = 0
-          for path in files:
-              text = path.read_text(encoding='utf-8')
-              count = text.count('1.98.0')
-              if count:
-                  path.write_text(text.replace('1.98.0', '1.98.1'), encoding='utf-8')
-                  total += count
-                  print(f'{path}: replaced {count} occurrence(s)')
-          if total != 18:
-              raise SystemExit(f'Expected exactly 18 live replacements, got {total}')
+          source = Path('.github/workflows/ci.yml')
+          text = source.read_text(encoding='utf-8')
+          count = text.count('1.98.0')
+          if count != 10:
+              raise SystemExit(f'Expected exactly 10 CI references to Rust 1.98.0, got {count}')
+          candidate = text.replace('1.98.0', '1.98.1')
+          if '1.98.0' in candidate:
+              raise SystemExit('Rust 1.98.0 remains in generated CI candidate')
+          Path('ci-rust-1.98.1.yml').write_text(candidate, encoding='utf-8')
+          print('Generated ci-rust-1.98.1.yml with 10 exact replacements')
           PY
-
-          mapfile -t remaining < <(git grep -l -F '1.98.0' || true)
-          printf 'Rust 1.98.0 references intentionally retained as historical evidence:\n'
-          printf ' - %s\n' "${remaining[@]}"
-          for file in "${remaining[@]}"; do
-            case "$file" in
-              .github/workflows/upgrade-rust-1.98.1.yml|MissionCenter/activity.md|MissionCenter/tasks.md|docs/rust-maintainability-audit-0.5.1.md)
-                ;;
-              *)
-                echo "Unexpected stale live Rust version reference: $file" >&2
-                exit 1
-                ;;
-            esac
-          done
-
-          git grep -n -F '1.98.1' -- "${live_files[@]}"
-          git diff --check
-
-          mkdir -p "$RUNNER_TEMP/rust-upgrade"
-          cp .github/workflows/ci.yml "$RUNNER_TEMP/rust-upgrade/ci.yml"
-          git restore .github/workflows/ci.yml
-      - name: Upload transformed CI workflow for connector write
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: rust-1.98.1-ci-workflow
-          path: ${{ runner.temp }}/rust-upgrade/ci.yml
-          if-no-files-found: error
-          retention-days: 1
-      - name: Commit non-workflow upgrade files to the upgrade branch
+          git diff --check -- ci-rust-1.98.1.yml
+          grep -n -F '1.98.1' ci-rust-1.98.1.yml
+      - name: Commit staged CI blob to upgrade branch
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add README.md README.zh-TW.md RELEASE_CHECKLIST.md docs/supply-chain-policy.md rust/rust-toolchain.toml tests/test_ci_release_policy.py tests/test_supply_chain_policy.py
-          git commit -m 'chore: upgrade Rust policy to 1.98.1'
+          git add ci-rust-1.98.1.yml
+          git commit -m 'chore: stage Rust 1.98.1 CI candidate'
           git push origin HEAD:chore/rust-1.98.1
