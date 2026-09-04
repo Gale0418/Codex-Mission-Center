@@ -1,0 +1,79 @@
+name: One-shot Rust 1.98.1 upgrade
+
+on:
+  push:
+    branches: [chore/rust-1.98.1]
+    paths:
+      - ".github/workflows/upgrade-rust-1.98.1.yml"
+
+jobs:
+  upgrade:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Replace the pinned toolchain consistently
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t matches < <(git grep -l -F '1.98.0' || true)
+          printf 'Rust 1.98.0 references before upgrade:\n'
+          printf ' - %s\n' "${matches[@]}"
+          test "${#matches[@]}" -gt 0
+
+          unexpected=0
+          for file in "${matches[@]}"; do
+            case "$file" in
+              .github/workflows/ci.yml|README.md|README.zh-TW.md|rust/rust-toolchain.toml)
+                ;;
+              *)
+                echo "Unexpected live Rust version reference: $file" >&2
+                unexpected=1
+                ;;
+            esac
+          done
+          test "$unexpected" -eq 0
+
+          python - <<'PY'
+          from pathlib import Path
+
+          files = [
+              Path('.github/workflows/ci.yml'),
+              Path('README.md'),
+              Path('README.zh-TW.md'),
+              Path('rust/rust-toolchain.toml'),
+          ]
+          total = 0
+          for path in files:
+              text = path.read_text(encoding='utf-8')
+              count = text.count('1.98.0')
+              if count:
+                  path.write_text(text.replace('1.98.0', '1.98.1'), encoding='utf-8')
+                  total += count
+                  print(f'{path}: replaced {count} occurrence(s)')
+          if total == 0:
+              raise SystemExit('No Rust 1.98.0 references were replaced')
+          print(f'total replacements: {total}')
+          PY
+
+          if git grep -n -F '1.98.0'; then
+            echo 'Rust 1.98.0 reference remains after replacement' >&2
+            exit 1
+          fi
+          git grep -n -F '1.98.1' -- .github/workflows/ci.yml README.md README.zh-TW.md rust/rust-toolchain.toml
+
+          rm .github/workflows/upgrade-rust-1.98.1.yml
+          git diff --check
+      - name: Commit the upgrade to the upgrade branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/ci.yml README.md README.zh-TW.md rust/rust-toolchain.toml .github/workflows/upgrade-rust-1.98.1.yml
+          git commit -m 'chore: upgrade Rust to 1.98.1'
+          git push origin HEAD:chore/rust-1.98.1
