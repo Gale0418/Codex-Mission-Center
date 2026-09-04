@@ -16,15 +16,10 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
-      - name: Replace the live pinned toolchain consistently
+      - name: Prepare the Rust 1.98.1 upgrade
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t matches < <(git grep -l -F '1.98.0' || true)
-          printf 'Rust 1.98.0 references before upgrade:\n'
-          printf ' - %s\n' "${matches[@]}"
-          test "${#matches[@]}" -gt 0
-
           live_files=(
             .github/workflows/ci.yml
             README.md
@@ -38,7 +33,6 @@ jobs:
 
           python - <<'PY'
           from pathlib import Path
-
           files = [
               Path('.github/workflows/ci.yml'),
               Path('README.md'),
@@ -57,9 +51,8 @@ jobs:
                   path.write_text(text.replace('1.98.0', '1.98.1'), encoding='utf-8')
                   total += count
                   print(f'{path}: replaced {count} occurrence(s)')
-          if total == 0:
-              raise SystemExit('No live Rust 1.98.0 references were replaced')
-          print(f'total live replacements: {total}')
+          if total != 18:
+              raise SystemExit(f'Expected exactly 18 live replacements, got {total}')
           PY
 
           mapfile -t remaining < <(git grep -l -F '1.98.0' || true)
@@ -77,14 +70,24 @@ jobs:
           done
 
           git grep -n -F '1.98.1' -- "${live_files[@]}"
-          rm .github/workflows/upgrade-rust-1.98.1.yml
           git diff --check
-      - name: Commit the upgrade to the upgrade branch
+
+          mkdir -p "$RUNNER_TEMP/rust-upgrade"
+          cp .github/workflows/ci.yml "$RUNNER_TEMP/rust-upgrade/ci.yml"
+          git restore .github/workflows/ci.yml
+      - name: Upload transformed CI workflow for connector write
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rust-1.98.1-ci-workflow
+          path: ${{ runner.temp }}/rust-upgrade/ci.yml
+          if-no-files-found: error
+          retention-days: 1
+      - name: Commit non-workflow upgrade files to the upgrade branch
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/workflows/ci.yml README.md README.zh-TW.md RELEASE_CHECKLIST.md docs/supply-chain-policy.md rust/rust-toolchain.toml tests/test_ci_release_policy.py tests/test_supply_chain_policy.py .github/workflows/upgrade-rust-1.98.1.yml
-          git commit -m 'chore: upgrade Rust to 1.98.1'
+          git add README.md README.zh-TW.md RELEASE_CHECKLIST.md docs/supply-chain-policy.md rust/rust-toolchain.toml tests/test_ci_release_policy.py tests/test_supply_chain_policy.py
+          git commit -m 'chore: upgrade Rust policy to 1.98.1'
           git push origin HEAD:chore/rust-1.98.1
