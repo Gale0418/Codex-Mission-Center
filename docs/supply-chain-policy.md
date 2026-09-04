@@ -16,7 +16,7 @@ Release rules:
 
 Rust workspace rules:
 
-- Rust CI installs the exact `1.98.0` toolchain with the minimal profile and
+- Rust CI installs the exact `1.98.1` toolchain with the minimal profile and
   `rustfmt`/`clippy`, then runs metadata, formatting, Clippy, and workspace
   tests with `--locked --offline` where dependency resolution is involved.
 - When `rust/vendor/` and `rust/.cargo/config.toml` are present, CI requires

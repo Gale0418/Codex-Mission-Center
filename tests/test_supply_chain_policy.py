@@ -122,7 +122,7 @@ class SupplyChainPolicyTests(unittest.TestCase):
 
     def test_rust_ci_locks_toolchain_and_offline_commands(self):
         self.assertIn("os: [ubuntu-latest, windows-latest, macos-latest]", self.workflow)
-        self.assertIn("toolchain install 1.98.0 --profile minimal --component rustfmt,clippy", self.workflow)
+        self.assertIn("toolchain install 1.98.1 --profile minimal --component rustfmt,clippy", self.workflow)
         self.assertIn("cargo metadata --locked --offline", self.workflow)
         self.assertIn("cargo fmt --all -- --check", self.workflow)
         self.assertIn("cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings", self.workflow)
