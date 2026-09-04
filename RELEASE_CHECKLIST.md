@@ -9,7 +9,7 @@
 - [ ] The release adds no global monitoring, repository scanner, registry, or background service.
 - [ ] The release does not merge tasks across repositories.
 - [ ] `MissionCenter/tasks.md` remains the only task lifecycle source for its repository.
-- [ ] `cargo fmt --check`, Clippy `-D warnings`, and workspace tests pass with Rust 1.98.0 using `--locked --offline` where supported.
+- [ ] `cargo fmt --check`, Clippy `-D warnings`, and workspace tests pass with Rust 1.98.1 using `--locked --offline` where supported.
 - [ ] All four release artifacts match their SHA-256 manifests and the stable `0.5.1` plugin/release contracts.
 - [ ] The frozen package contains no Python runtime, fallback, compatibility scripts, or preview metadata.
 - [ ] Rust native registration, install, publish, reconcile, and receipt-bound rollback pass in an isolated directory.

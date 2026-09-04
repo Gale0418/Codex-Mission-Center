@@ -3,7 +3,7 @@
 [![CI](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml/badge.svg)](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml)
 [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![版本](https://img.shields.io/badge/version-0.5.1-F59E0B.svg)](.codex-plugin/plugin.json)
-[![Rust](https://img.shields.io/badge/rust-1.98.0-DEA584.svg)](rust/rust-toolchain.toml)
+[![Rust](https://img.shields.io/badge/rust-1.98.1-DEA584.svg)](rust/rust-toolchain.toml)
 
 **把模糊目標變成 Codex 可持續接手、可審查、以證據收尾的本地任務工作區。**
 

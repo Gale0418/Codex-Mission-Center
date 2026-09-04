@@ -70,7 +70,7 @@ class CiReleasePolicyTests(unittest.TestCase):
         self.assertIn('test "${{ needs.rust-stable-package.result }}" = "success"', self.workflow)
 
     def test_release_is_pinned_locked_offline_and_has_no_fallback_or_python(self):
-        self.assertIn("toolchain install 1.98.0 --profile minimal", self.release)
+        self.assertIn("toolchain install 1.98.1 --profile minimal", self.release)
         self.assertIn("cargo metadata --locked --offline", self.release)
         self.assertIn(
             "cargo build --release --package mission-center-cli --target \"$RELEASE_TARGET\" --locked --offline",
@@ -78,7 +78,7 @@ class CiReleasePolicyTests(unittest.TestCase):
         )
         self.assertNotIn("download-artifact", self.release)
         self.assertNotRegex(self.release, r"\b(curl|wget|python(?:3)?|pip)\b")
-        self.assertIn("target list --toolchain 1.98.0 --installed", self.release)
+        self.assertIn("target list --toolchain 1.98.1 --installed", self.release)
         self.assertIn('echo "available=false"', self.release)
         self.assertIn("cross-build unavailable", self.release)
         self.assertIn("if: always() && steps.target.outputs.available != 'true'", self.release)

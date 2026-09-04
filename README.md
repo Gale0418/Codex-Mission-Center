@@ -3,7 +3,7 @@
 [![CI](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml/badge.svg)](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml)
 [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.5.1-F59E0B.svg)](.codex-plugin/plugin.json)
-[![Rust](https://img.shields.io/badge/rust-1.98.0-DEA584.svg)](rust/rust-toolchain.toml)
+[![Rust](https://img.shields.io/badge/rust-1.98.1-DEA584.svg)](rust/rust-toolchain.toml)
 
 **Turn an unclear goal into a local, reviewable, evidence-backed task workspace for Codex.**
 
