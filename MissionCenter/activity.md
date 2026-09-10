@@ -229,3 +229,8 @@
 - Change: GitHub Actions macOS release runners 由已退役／進入淘汰期的 `macos-13`、`macos-14` 更新為原生架構配對 `macos-15-intel`、`macos-15`。
 - Reason: 使用者不需持有實體 Mac；四平台實測由 GitHub-hosted runners 提供，但 runner label 必須仍受官方支援。
 - Impact: release matrix policy 與 per-project release 共 20 tests 通過、3 skip；尚未推送或觸發遠端 workflow，因此真實 macOS artifacts 仍為 Unknown。
+
+- Timestamp: 2026-09-11T03:00:00+08:00
+- Change: 重新執行 MC-071 的 main 發布前驗證；CodeRabbit 以 `HEAD~8` 為基準完成 71 檔歷史程式／測試審查並回報 0 issues，另補強 `.coderabbit.yaml` 排除 vendored dependencies、lockfiles、生成輸出、資產與純文件。
+- Reason: 依使用者同意進行 CodeRabbit 審查，遵守每小時最多 3 次、每次最多 150 檔；先排除不需語意審查的內容，保留後續 recovery 額度。
+- Impact: Python 3.11 全套 452 tests（5 skipped）、Rust 1.98.1 fmt／clippy／workspace tests（155 tests）通過；本機 selector `doctor`／`resume` 仍因 repo 缺少 `platform-manifest.json` fail closed；main 尚無待推送程式差異。
