@@ -91,7 +91,7 @@ def check_status(result: dict[str, Any], name: str) -> str | None:
 
 
 def _bounded_resume_string_bytes(payload: dict[str, Any]) -> int | None:
-    """Count every public string value governed by the shared resume fuse."""
+    """Count every public JSON object key/string value governed by the resume fuse."""
     stack: list[Any] = [payload]
     total = 0
     nodes = 0
@@ -103,7 +103,11 @@ def _bounded_resume_string_bytes(payload: dict[str, Any]) -> int | None:
         if isinstance(value, str):
             total += len(value.encode("utf-8"))
         elif isinstance(value, dict):
-            stack.extend(value.values())
+            for key, item in value.items():
+                if not isinstance(key, str):
+                    return None
+                stack.append(key)
+                stack.append(item)
         elif isinstance(value, list):
             stack.extend(value)
         elif value is None or isinstance(value, (bool, int, float)):
@@ -148,7 +152,7 @@ def resume_contract_valid(result: dict[str, Any]) -> bool:
     }
     if not required_fields.issubset(payload):
         return False
-    if not isinstance(payload.get("schemaVersion"), str) or not payload["schemaVersion"]:
+    if payload.get("schemaVersion") != "1.1":
         return False
     if payload.get("route") != "resume":
         return False
