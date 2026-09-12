@@ -119,6 +119,13 @@ class ResumeReportRedactionTests(unittest.TestCase):
             self.assertNotIn(str(root), str(redacted))
             self.assertIn("<fixture>", str(redacted))
 
+    def test_report_redaction_handles_windows_backslashes_after_json_encoding(self):
+        root = Path(r"C:\Users\alice\workspace")
+        source = {"value": str(root), "nested": [f"prefix:{root}:suffix"]}
+        redacted = _redact_report_paths(source, root)
+        self.assertEqual(redacted["value"], "<fixture>")
+        self.assertEqual(redacted["nested"], ["prefix:<fixture>:suffix"])
+
 
 if __name__ == "__main__":
     unittest.main()

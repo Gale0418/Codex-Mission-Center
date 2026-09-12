@@ -83,3 +83,28 @@ The exact source then passed. On this macOS host the Rust differential harness r
 CodeRabbit raised two minor test-quality findings. Both were fixed: the evidence-directory limit test now proves the valid 256-entry and rejected 257-entry boundaries, and the CLI test asserts the parsed overall status rather than searching the whole JSON text.
 
 Per the operator's updated stop rule, the independent loop may stop after one round reports no P0/P1. P2 advisories, if any, remain visible but do not force another round.
+
+## Broad historical CodeRabbit review, 2026-09-13
+
+With explicit operator consent, CodeRabbit reviewed the committed range `6d39dd5..0123b3c`: 113 changed files, below the 150-file service limit. Repository path filters excluded generated/build/vendor classes from the intended semantic scope; CodeRabbit nevertheless reported its full reviewed-file inventory. This was the only new review run for this checkpoint, preserving the remaining rolling-hour capacity.
+
+CodeRabbit raised six issues: one major and five minor. Each was checked against the current source and formal contracts before editing.
+
+Three issues were valid and fixed:
+
+- Working-set and focus rendering now use bounded UTF-8-safe fallback views with `[TRUNCATED]` and a canonical `tasks.md` pointer when oversized task cells exceed the 4 KiB / 16 KiB budgets.
+- A peer-close error during best-effort HTTP write-side shutdown no longer reverses an already successful HUD response; write and flush errors remain hard failures.
+- Disposable report redaction now matches the JSON-escaped fixture root, including Windows backslashes.
+
+Three issues were rejected with evidence:
+
+- The public resume `bytes` metric already converges across encoded integer-width boundaries; a regression now exercises the boundary explicitly.
+- Native PE/ELF/Mach-O payloads intentionally retain the binary exemption even when appended bytes resemble a shebang. Existing Wave 4 tests enforce this formal contract.
+- The alleged `scan_frozen_python` helper divergence does not exist in the immutable source; the test invokes production verification directly.
+
+Post-fix local verification on macOS:
+
+- Rust workspace: 179 tests passed with all targets and features, offline; a temporary local `CARGO_TARGET_DIR` was required because the mounted workspace filesystem does not support Cargo incremental lock files.
+- Clippy with warnings denied, Rust formatting, and `git diff --check` passed.
+- Python 3.11: 500 tests passed, 20 platform/dependency skips. `MISSION_CENTER_RUST_BIN` pointed to the newly built macOS binary so the suite could not select an unrelated stale Windows debug artifact.
+- Read-only trial run of the new binary: `status` and `resume` returned current, non-stale success. `reconcile` correctly remained nonzero because historical closeout/evidence envelopes contain stale, missing, oversized, or digest-mismatched legacy evidence; those historical records were not rewritten to manufacture a pass.

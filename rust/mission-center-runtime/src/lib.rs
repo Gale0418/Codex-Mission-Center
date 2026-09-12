@@ -2465,12 +2465,24 @@ fn http_bytes(
 }
 
 fn write_http_response(stream: &mut TcpStream, response: &[u8]) -> RuntimeResult<()> {
+    write_http_response_with_shutdown(stream, response, |stream| stream.shutdown(Shutdown::Write))
+}
+
+fn write_http_response_with_shutdown<F>(
+    stream: &mut TcpStream,
+    response: &[u8],
+    shutdown: F,
+) -> RuntimeResult<()>
+where
+    F: FnOnce(&mut TcpStream) -> io::Result<()>,
+{
     stream.write_all(response).map_err(RuntimeError::from)?;
     stream.flush().map_err(RuntimeError::from)?;
     // A graceful write-side close makes the response boundary deterministic
     // on Windows, where dropping a socket immediately after write_all can be
     // observed by the client as WSAECONNRESET instead of EOF.
-    stream.shutdown(Shutdown::Write).map_err(RuntimeError::from)
+    let _ = shutdown(stream);
+    Ok(())
 }
 
 fn serve_hud_http_once(
@@ -2665,6 +2677,27 @@ pub fn serve_hud_request(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn hud_response_survives_peer_close_during_write_shutdown() {
+        let listener = bind_loopback("127.0.0.1", 0).unwrap();
+        let address = listener.local_addr().unwrap();
+        let response = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK".to_vec();
+        let expected = response.clone();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            write_http_response_with_shutdown(&mut stream, &response, |_| {
+                Err(io::Error::new(io::ErrorKind::NotConnected, "peer closed"))
+            })
+            .unwrap();
+        });
+
+        let mut client = TcpStream::connect(address).unwrap();
+        let mut received = Vec::new();
+        client.read_to_end(&mut received).unwrap();
+        server.join().unwrap();
+        assert_eq!(received, expected);
+    }
 
     #[test]
     fn replay_and_event_parser_reject_duplicate_json_keys_as_validation() {

@@ -238,41 +238,51 @@ fn render_working_set(tasks: &[Task], fingerprint: &str, language: WorkspaceLang
         };
         lines.push(format!("- Status: {reason}"));
         lines.extend(candidate_lines);
-        return lines.join("\n") + "\n";
+    } else {
+        lines.extend([
+            String::new(),
+            headers.to_owned(),
+            "| --- | --- | --- | --- | --- | --- | --- | --- |".to_owned(),
+        ]);
+        for task in items {
+            let blocker = if task.status == TaskStatus::Blocked {
+                task.notes.as_str()
+            } else {
+                ""
+            };
+            let dependencies = task.dependencies.join(", ");
+            let values = [
+                task.id.as_str(),
+                task.title.as_str(),
+                task.priority.as_str(),
+                task.status.as_str(),
+                task.next_action.as_str(),
+                dependencies.as_str(),
+                task.verification.as_str(),
+                blocker,
+            ];
+            lines.push(format!(
+                "| {} |",
+                values
+                    .iter()
+                    .map(|value| escape_derived_cell(value))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            ));
+        }
+        lines.extend(candidate_lines);
     }
-    lines.extend([
-        String::new(),
-        headers.to_owned(),
-        "| --- | --- | --- | --- | --- | --- | --- | --- |".to_owned(),
-    ]);
-    for task in items {
-        let blocker = if task.status == TaskStatus::Blocked {
-            task.notes.as_str()
-        } else {
-            ""
-        };
-        let dependencies = task.dependencies.join(", ");
-        let values = [
-            task.id.as_str(),
-            task.title.as_str(),
-            task.priority.as_str(),
-            task.status.as_str(),
-            task.next_action.as_str(),
-            dependencies.as_str(),
-            task.verification.as_str(),
-            blocker,
-        ];
-        lines.push(format!(
-            "| {} |",
-            values
-                .iter()
-                .map(|value| escape_derived_cell(value))
-                .collect::<Vec<_>>()
-                .join(" | ")
-        ));
-    }
-    lines.extend(candidate_lines);
-    lines.join("\n") + "\n"
+    bounded_derived_view(
+        lines.join("\n") + "\n",
+        WORKING_SET_MAX_BYTES,
+        match language {
+            WorkspaceLanguage::English => "Active Working Set",
+            WorkspaceLanguage::TraditionalChinese => "當前工作集",
+        },
+        fingerprint,
+        language,
+        None,
+    )
 }
 
 fn render_focus(tasks: &[Task], fingerprint: &str, language: WorkspaceLanguage) -> String {
@@ -325,7 +335,14 @@ fn render_focus(tasks: &[Task], fingerprint: &str, language: WorkspaceLanguage) 
                 .join(" | ")
         ));
     }
-    lines.join("\n") + "\n"
+    bounded_derived_view(
+        lines.join("\n") + "\n",
+        FOCUS_MAX_BYTES,
+        title,
+        fingerprint,
+        language,
+        Some(FOCUS_DEPRECATION),
+    )
 }
 
 #[derive(Debug, Default)]
@@ -449,6 +466,45 @@ fn bounded_lines(items: &[String], limit: usize, none: &str) -> String {
         ));
     }
     lines.join("\n")
+}
+
+fn bounded_derived_view(
+    normal: String,
+    limit: u64,
+    title: &str,
+    fingerprint: &str,
+    language: WorkspaceLanguage,
+    deprecation: Option<&str>,
+) -> String {
+    if normal.len() as u64 <= limit {
+        return normal;
+    }
+    let (source_label, message) = match language {
+        WorkspaceLanguage::English => (
+            "Source of truth",
+            "[TRUNCATED] Generated view exceeded its byte budget; read canonical tasks.md.",
+        ),
+        WorkspaceLanguage::TraditionalChinese => (
+            "唯一真實來源",
+            "[TRUNCATED] 產生檢視超過位元組上限；請讀取 canonical tasks.md。",
+        ),
+    };
+    let deprecation = deprecation
+        .map(|value| format!("<!-- {value} -->\n"))
+        .unwrap_or_default();
+    let fallback = format!(
+        "<!-- {DERIVED_WARNING} -->\n{deprecation}{}\n# {title}\n\n- {source_label}: `tasks.md`\n- {message}\n",
+        derived_marker(fingerprint),
+    );
+    if fallback.len() as u64 <= limit {
+        fallback
+    } else {
+        let mut end = limit as usize;
+        while end > 0 && !fallback.is_char_boundary(end) {
+            end -= 1;
+        }
+        fallback[..end].to_owned()
+    }
 }
 
 fn render_brief(input: &RenderInput<'_>, working_count: usize) -> Result<String, CoreError> {
@@ -703,5 +759,47 @@ mod tests {
         );
         assert!(focus.len() > WORKING_SET_MAX_BYTES as usize);
         assert!(focus.len() <= FOCUS_MAX_BYTES as usize);
+    }
+
+    #[test]
+    fn oversize_cells_fall_back_to_bounded_working_and_focus_views() {
+        let tasks = vec![Task {
+            id: "MC-oversize".to_owned(),
+            title: "巨大標題".repeat(4_000),
+            kind: "Task".to_owned(),
+            parent: String::new(),
+            priority: "P0".to_owned(),
+            status: TaskStatus::InProgress,
+            assignee: "Codex".to_owned(),
+            dependencies: vec!["MC-dependency".repeat(1_000)],
+            next_action: "下一步".repeat(2_000),
+            verification: "驗證".repeat(2_000),
+            estimate: "1h".to_owned(),
+            tags: vec!["oversize".to_owned()],
+            notes: "備註".repeat(2_000),
+        }];
+        let workspace_fingerprint = "a".repeat(64);
+        let tasks_fingerprint = "b".repeat(64);
+        let views = render_views(
+            &tasks,
+            &RenderInput {
+                project: "Project",
+                goal: "Goal",
+                cycle: "Cycle",
+                workspace_fingerprint: &workspace_fingerprint,
+                tasks_fingerprint: &tasks_fingerprint,
+                language: WorkspaceLanguage::TraditionalChinese,
+                timestamp: "2026-08-29T00:00:00Z",
+                daily_log: None,
+                guardrails: None,
+            },
+        )
+        .expect("oversize cells should use bounded fallbacks");
+        assert!(views.working_set.len() <= WORKING_SET_MAX_BYTES as usize);
+        assert!(views.focus.len() <= FOCUS_MAX_BYTES as usize);
+        assert!(views.working_set.contains("[TRUNCATED]"));
+        assert!(views.focus.contains("[TRUNCATED]"));
+        assert!(!views.working_set.contains(&"巨大標題".repeat(128)));
+        assert!(!views.focus.contains(&"巨大標題".repeat(128)));
     }
 }

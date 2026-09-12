@@ -5629,3 +5629,33 @@ mod hook_route_tests {
         let _ = std::fs::remove_file(path);
     }
 }
+
+#[cfg(test)]
+mod resume_budget_tests {
+    use super::*;
+
+    #[test]
+    fn public_bytes_metric_converges_across_number_width_boundaries() {
+        let mut saw_width_change = false;
+        for payload_len in 0..20_000 {
+            let mut value = json!({"payload": "x".repeat(payload_len), "bytes": 0});
+            let mut previous = 0usize;
+            for _ in 0..4 {
+                let mut nodes = 0;
+                let bytes = public_value_bytes(&value, &mut nodes).expect("bounded value");
+                if bytes.to_string().len() != previous.to_string().len() {
+                    saw_width_change = true;
+                }
+                value["bytes"] = Value::from(bytes as u64);
+                previous = bytes;
+            }
+            let mut nodes = 0;
+            let converged = public_value_bytes(&value, &mut nodes).expect("bounded value");
+            assert_eq!(value["bytes"].as_u64(), Some(converged as u64));
+        }
+        assert!(
+            saw_width_change,
+            "regression must exercise a digit-width transition"
+        );
+    }
+}

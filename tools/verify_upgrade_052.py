@@ -322,7 +322,8 @@ def sync(binary: Path, root: Path, operation: str) -> None:
 def _redact_report_paths(report: dict[str, Any], root: Path) -> dict[str, Any]:
     """Redact disposable paths only after every acceptance assertion is done."""
     serialized = json.dumps(report, ensure_ascii=False)
-    return json.loads(serialized.replace(str(root), "<fixture>"))
+    escaped_root = json.dumps(str(root), ensure_ascii=False)[1:-1]
+    return json.loads(serialized.replace(escaped_root, "<fixture>"))
 
 
 def collect(binary: Path) -> dict[str, Any]:
