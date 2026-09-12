@@ -91,7 +91,14 @@ def check_status(result: dict[str, Any], name: str) -> str | None:
 
 
 def _bounded_resume_string_bytes(payload: dict[str, Any]) -> int | None:
-    """Count every public JSON object key/string value governed by the resume fuse."""
+    """Count every bounded public JSON key/string/scalar representation.
+
+    The metric intentionally excludes JSON structural punctuation/quotes but
+    includes every object key, string value, null, boolean, and integer value.
+    Floats are not part of the documented resume contract and fail closed.
+    Counting the numeric ``bytes`` declaration itself is safe: a valid packet
+    must use the small fixed point implied by its decimal digit count.
+    """
     stack: list[Any] = [payload]
     total = 0
     nodes = 0
@@ -110,10 +117,21 @@ def _bounded_resume_string_bytes(payload: dict[str, Any]) -> int | None:
                 stack.append(item)
         elif isinstance(value, list):
             stack.extend(value)
-        elif value is None or isinstance(value, (bool, int, float)):
-            continue
+        elif value is None:
+            total += 4  # null
+        elif isinstance(value, bool):
+            total += 4 if value else 5  # true / false
+        elif isinstance(value, int):
+            total += len(str(value).encode("ascii"))
+        elif isinstance(value, float):
+            return None
         else:
             return None
+        if total > RESUME_MAX_BYTES:
+            # No valid packet can recover once the governed public material is
+            # already over the hard cap; fail early rather than walking attacker
+            # controlled metadata until the node fuse is reached.
+            return total
     return total
 
 
@@ -162,7 +180,7 @@ def resume_contract_valid(result: dict[str, Any]) -> bool:
     for name in ("staleReasons", "filesRead", "readNext"):
         if not _string_list(payload.get(name)):
             return False
-    if not isinstance(payload.get("ledgerStatus"), str) or not payload["ledgerStatus"]:
+    if payload.get("ledgerStatus") not in {"missing", "ready", "corrupt"}:
         return False
     for name in ("ledgerError", "fallbackReason", "truncatedMarker"):
         if not _nullable_string(payload.get(name)):
