@@ -192,7 +192,7 @@ class EnvelopeTests(unittest.TestCase):
     def test_resume_contract_rejects_oversized_or_false_byte_claims(self):
         self.assertFalse(resume_contract_valid(self.resume_result(brief="x" * 16385)))
         self.assertFalse(resume_contract_valid(self.resume_result(declared_bytes=1)))
-        self.assertFalse(resume_contract_valid(self.resume_result(max_bytes=16385))
+        self.assertFalse(resume_contract_valid(self.resume_result(max_bytes=16385)))
 
 
 if __name__ == "__main__":
