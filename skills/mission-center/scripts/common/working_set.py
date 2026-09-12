@@ -12,9 +12,17 @@ WORKING_SET_LIMIT = 6
 
 
 def priority_key(task: dict[str, str]) -> tuple[int, str]:
-    """Keep the historical priority/ID order for compatibility callers."""
-    priority = task.get("Priority", "").strip().upper()
-    value = int(priority[1:]) if re.fullmatch(r"P\d+", priority) else 99
+    """Match the native u32 priority key without unbounded integer parsing."""
+    priority = task.get("Priority", "").strip()
+    digits = priority[1:] if priority.startswith(("P", "p")) else ""
+    digits = digits.removeprefix("+")
+    value = 99
+    if digits and all("0" <= character <= "9" for character in digits):
+        significant = digits.lstrip("0") or "0"
+        if len(significant) <= 10:
+            parsed = int(significant)
+            if parsed <= 0xFFFFFFFF:
+                value = parsed
     return value, task.get("ID", "").strip()
 
 
@@ -42,7 +50,17 @@ def select_working_set(
         return task.get("Status", "").strip().casefold()
 
     anchor = next((task for task in tasks if status(task) == "in progress"), None)
-    dependencies = dependency_ids(anchor) if anchor is not None else set()
+    # The native canonical parser splits on commas and permits non-MC IDs.
+    # Keep the historical regex helper available for its existing callers,
+    # but do not let it silently drop an anchor dependency such as T1.
+    dependencies = {
+        item.strip() for item in anchor.get("Depends on", "").split(",") if item.strip()
+    } if anchor is not None else set()
+
+    def ready_in_order():
+        # Sort only when earlier categories have not filled the bounded view.
+        yield from sorted((task for task in tasks if status(task) == "ready"), key=priority_key)
+
     categories = (
         (anchor,) if anchor is not None else (),
         (task for task in tasks if task.get("Priority", "").strip().casefold() == "p0"),
@@ -50,7 +68,7 @@ def select_working_set(
         (task for task in tasks if status(task) == "in progress"),
         (task for task in tasks if status(task) == "review"),
         (task for task in tasks if status(task) == "blocked"),
-        sorted((task for task in tasks if status(task) == "ready"), key=priority_key),
+        ready_in_order(),
     )
     selected: list[dict[str, str]] = []
     seen: set[str] = set()

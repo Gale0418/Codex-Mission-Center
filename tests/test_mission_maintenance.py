@@ -593,7 +593,7 @@ class MissionMaintenanceTests(unittest.TestCase):
             daily = (workspace / "MissionCenter/daily-log.md").read_text(encoding="utf-8")
             self.assertIn("- 最後整理： 2026-08-09", daily)
 
-    def test_working_set_prioritizes_blocked_in_progress_review_then_ready(self):
+    def test_working_set_anchors_in_progress_before_review_blocked_and_ready(self):
         tasks = [
             {"ID": "T-ready", "Priority": "P1", "Status": "Ready"},
             {"ID": "T-review", "Priority": "P3", "Status": "Review"},
@@ -603,7 +603,7 @@ class MissionMaintenanceTests(unittest.TestCase):
         ]
         self.assertEqual(
             [task["ID"] for task in extract_working_set_tasks(tasks)],
-            ["T-blocked", "T-progress", "T-review", "T-ready"],
+            ["T-progress", "T-review", "T-blocked", "T-ready"],
         )
 
     def test_working_set_lists_at_most_two_backlog_candidates_separately(self):

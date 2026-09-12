@@ -78,6 +78,24 @@ class WorkingSetPolicyTests(unittest.TestCase):
                  task("MC-002", " in PROGRESS ")]
         self.assertEqual(ids(tasks), ["MC-002"])
 
+    def test_non_numeric_anchor_dependency_matches_native_parser(self):
+        tasks = self.blockers() + [task("T1", "Blocked"), task("T2", "In Progress", deps=" T1 ")]
+        self.assertEqual(ids(tasks)[:2], ["T2", "T1"])
+
+    def test_comma_dependencies_keep_complete_non_mc_identifiers(self):
+        tasks = self.blockers() + [task("T1", "Blocked"), task("custom-name", "Review"),
+                                   task("T2", "In Progress", deps=" T1,, custom-name, ")]
+        self.assertEqual(ids(tasks)[:3], ["T2", "T1", "custom-name"])
+
+    def test_priority_key_matches_native_u32_and_handles_long_zero_prefixes(self):
+        cases = [("P4294967295", 4294967295), ("P4294967296", 99),
+                 ("P+2", 2), ("P-1", 99), ("P１２", 99),
+                 ("P" + "0" * 10000, 0), ("p" + "0" * 10000 + "3", 3),
+                 ("P" + "9" * 10000, 99)]
+        for priority, expected in cases:
+            with self.subTest(priority=priority[:30]):
+                self.assertEqual(priority_key(task("T1", priority=priority)), (expected, "T1"))
+
     def test_historical_helpers_are_preserved(self):
         self.assertEqual(priority_key(task(" MC-001 ", priority=" p2 ")), (2, "MC-001"))
         self.assertEqual(dependency_ids(task("MC-001", deps="MC-002, MC-003")), {"MC-002", "MC-003"})
