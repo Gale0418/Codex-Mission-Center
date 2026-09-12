@@ -100,16 +100,23 @@ def _kill_identity(pid: int, starttime: str) -> None:
 
 
 def _terminate_tracked_identities(tracked: dict[int, str]) -> bool:
-    """Kill every observed identity, including descendants reparented after supervisor death."""
+    """Kill observed identities, including descendants reparented after helper death."""
     deadline = time.monotonic() + _CLEANUP_SECONDS
     while True:
-        live = [(pid, start) for pid, start in tracked.items() if _identity_alive(pid, start)]
+        live = [
+            (pid, starttime)
+            for pid, starttime in tracked.items()
+            if _identity_alive(pid, starttime)
+        ]
         if not live:
             return True
-        for pid, start in reversed(live):
-            _kill_identity(pid, start)
+        for pid, starttime in reversed(live):
+            _kill_identity(pid, starttime)
         if time.monotonic() >= deadline:
-            return not any(_identity_alive(pid, start) for pid, start in tracked.items())
+            return not any(
+                _identity_alive(pid, starttime)
+                for pid, starttime in tracked.items()
+            )
         time.sleep(0.01)
 
 
@@ -218,10 +225,7 @@ def _supervise(argv: list[str]) -> int:
 
 
 def _signal_supervisor(process: subprocess.Popen[bytes], tracked: dict[int, str]) -> None:
-    """Ask the subreaper to clean up, then kill every observed identity as fallback."""
-    # Capture any still-visible descendants before signalling. The caller also
-    # refreshes this map during normal execution, so already-reparented setsid
-    # descendants remain addressable by PID + starttime if the supervisor died.
+    """Ask the subreaper to clean up, with an identity-checked hard fallback."""
     _remember_descendants(process.pid, tracked)
     if process.poll() is None:
         try:
@@ -233,9 +237,14 @@ def _signal_supervisor(process: subprocess.Popen[bytes], tracked: dict[int, str]
             _remember_descendants(process.pid, tracked)
             time.sleep(0.01)
         if process.poll() is None:
-            # The helper itself is wedged. Kill every identity observed before
-            # reparenting can hide it, then the helper's original process group.
-            _terminate_tracked_identities(tracked)
+            # The helper itself is wedged. Kill every observed descendant
+            # before reparenting can hide it, then its original process group.
+            descendants = {
+                pid: starttime
+                for pid, starttime in tracked.items()
+                if pid != process.pid
+            }
+            _terminate_tracked_identities(descendants)
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
@@ -246,8 +255,14 @@ def _signal_supervisor(process: subprocess.Popen[bytes], tracked: dict[int, str]
                 pass
     # Never return merely because the supervisor has already exited. It may
     # have been killed by its candidate while tracked descendants still hold
-    # pipes or continue running in another session.
-    _terminate_tracked_identities(tracked)
+    # pipes or continue running in another session. Exclude the helper itself:
+    # until wait() reaps it, an exited helper may remain as a harmless zombie.
+    descendants = {
+        pid: starttime
+        for pid, starttime in tracked.items()
+        if pid != process.pid
+    }
+    _terminate_tracked_identities(descendants)
 
 
 def run_bounded(
@@ -349,7 +364,12 @@ def run_bounded(
                 stream.close()
         if any(reader.is_alive() for reader in started):
             raise RuntimeError("candidate pipe cleanup did not complete")
-        if not _terminate_tracked_identities(tracked):
+        descendants = {
+            pid: starttime
+            for pid, starttime in tracked.items()
+            if pid != process.pid
+        }
+        if not _terminate_tracked_identities(descendants):
             raise RuntimeError("candidate process-tree cleanup did not complete")
 
 
