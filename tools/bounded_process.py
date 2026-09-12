@@ -183,22 +183,22 @@ def run_bounded(
     done = [threading.Event(), threading.Event()]
     abort = threading.Event()
     ready_read, ready_write = os.pipe()
-    os.set_inheritable(ready_write, True)
-    environment = os.environ.copy()
-    environment[_READY_ENV] = str(ready_write)
-    supervisor_argv = [
-        unshare,
-        "--user",
-        "--map-root-user",
-        "--pid",
-        "--fork",
-        "--kill-child=SIGKILL",
-        sys.executable,
-        str(Path(__file__).resolve()),
-        _SUPERVISOR_FLAG,
-        *argv,
-    ]
     try:
+        os.set_inheritable(ready_write, True)
+        environment = os.environ.copy()
+        environment[_READY_ENV] = str(ready_write)
+        supervisor_argv = [
+            unshare,
+            "--user",
+            "--map-root-user",
+            "--pid",
+            "--fork",
+            "--kill-child=SIGKILL",
+            sys.executable,
+            str(Path(__file__).resolve()),
+            _SUPERVISOR_FLAG,
+            *argv,
+        ]
         process = subprocess.Popen(
             supervisor_argv,
             stdin=subprocess.DEVNULL,
@@ -210,6 +210,9 @@ def run_bounded(
             pass_fds=(ready_write,),
             env=environment,
         )
+    except BaseException:
+        os.close(ready_read)
+        raise
     finally:
         os.close(ready_write)
     assert process.stdout is not None and process.stderr is not None
@@ -242,7 +245,6 @@ def run_bounded(
     ]
     deadline = time.monotonic() + timeout
     started: list[threading.Thread] = []
-    primary_error: BaseException | None = None
     try:
         for reader in readers:
             reader.start()
@@ -264,9 +266,6 @@ def run_bounded(
             if remaining <= 0:
                 raise subprocess.TimeoutExpired(list(argv), timeout)
             abort.wait(min(0.02, remaining))
-    except BaseException as error:
-        primary_error = error
-        raise
     finally:
         os.close(ready_read)
         cleanup_error: BaseException | None = None
