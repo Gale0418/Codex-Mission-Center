@@ -94,7 +94,7 @@ fn check_status<'a>(payload: &'a Value, name: &str) -> Option<&'a str> {
         .as_str()
 }
 
-fn public_string_bytes(value: &Value, nodes: &mut usize) -> Option<usize> {
+fn public_packet_bytes(value: &Value, nodes: &mut usize) -> Option<usize> {
     *nodes = nodes.checked_add(1)?;
     if *nodes > RESUME_MAX_VALUE_NODES {
         return None;
@@ -104,7 +104,7 @@ fn public_string_bytes(value: &Value, nodes: &mut usize) -> Option<usize> {
         Value::Array(items) => {
             let mut total = 0usize;
             for item in items {
-                total = total.checked_add(public_string_bytes(item, nodes)?)?;
+                total = total.checked_add(public_packet_bytes(item, nodes)?)?;
             }
             Some(total)
         }
@@ -116,11 +116,13 @@ fn public_string_bytes(value: &Value, nodes: &mut usize) -> Option<usize> {
                     return None;
                 }
                 total = total.checked_add(key.len())?;
-                total = total.checked_add(public_string_bytes(item, nodes)?)?;
+                total = total.checked_add(public_packet_bytes(item, nodes)?)?;
             }
             Some(total)
         }
-        Value::Null | Value::Bool(_) | Value::Number(_) => Some(0),
+        Value::Null => Some(4),
+        Value::Bool(value) => Some(if *value { 4 } else { 5 }),
+        Value::Number(number) => Some(number.to_string().len()),
     }
 }
 
@@ -150,7 +152,10 @@ fn assert_resume_public_contract(payload: &Value) {
             "{field} must be nullable string"
         );
     }
-    assert!(data["ledgerStatus"].is_string(), "ledgerStatus must be string");
+    assert!(
+        matches!(data["ledgerStatus"].as_str(), Some("missing" | "ready" | "corrupt")),
+        "ledgerStatus must use the documented vocabulary"
+    );
     assert!(
         data["handoff"].is_null() || data["handoff"].is_object(),
         "handoff must be nullable object"
@@ -191,13 +196,13 @@ fn assert_resume_public_contract(payload: &Value) {
     );
 
     let mut nodes = 0usize;
-    let actual = public_string_bytes(&payload["data"], &mut nodes)
+    let actual = public_packet_bytes(&payload["data"], &mut nodes)
         .expect("resume packet must remain within public node bounds");
     let declared = data["bytes"].as_u64().expect("declared bytes") as usize;
     let maximum = data["maxBytes"].as_u64().expect("declared maxBytes") as usize;
     assert_eq!(
         declared, actual,
-        "declared bytes must include every public JSON key/string value"
+        "declared bytes must include every public JSON key/string/scalar representation"
     );
     assert!(actual <= maximum && maximum <= RESUME_MAX_BYTES);
 }
