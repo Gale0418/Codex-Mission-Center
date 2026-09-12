@@ -12,7 +12,12 @@ from unittest.mock import patch
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
 sys.path.insert(0, str(TOOLS))
 from bounded_process import run_bounded  # noqa: E402
-from verify_upgrade_052 import check_status, collect, resume_contract_valid  # noqa: E402
+from verify_upgrade_052 import (  # noqa: E402
+    check_status,
+    collect,
+    corrupt_resume_contract_valid,
+    resume_contract_valid,
+)
 
 
 def _proc_state(pid: int) -> str | None:
@@ -208,8 +213,6 @@ class BoundedProcessTests(unittest.TestCase):
             )
             rc, out, err = self.run_python(code, timeout=3.0)
             self.assertEqual(rc, 0, err.decode("utf-8", errors="replace"))
-            # Linux may reject this signal or report success while namespace
-            # init semantics suppress it. Either way the descendant must not escape.
             self.assertIn(out, {b"protected\n", b"unexpected\n"})
             self.assert_terminated(
                 int(pid_file.read_text(encoding="utf-8")),
@@ -264,9 +267,10 @@ elif command == 'resume':
         'schemaVersion': '1.1', 'route': 'resume', 'sourceFresh': True, 'dateFresh': True,
         'staleReasons': [], 'filesRead': [], 'content': content, 'handoff': None,
         'ledgerStatus': 'corrupt', 'ledgerError': 'bad ledger',
-        'context': {'includedBytes': {}}, 'maxBytes': 16384,
-        'canonicalFallback': True, 'fallbackReason': 'execution ledger corrupt',
-        'truncated': False, 'truncatedMarker': None, 'readNext': [],
+        'context': {'includedBytes': {key: len((value or '').encode('utf-8')) for key, value in content.items()}},
+        'maxBytes': 16384, 'canonicalFallback': True,
+        'fallbackReason': 'execution ledger corrupt', 'truncated': False,
+        'truncatedMarker': None, 'readNext': ['handoff'],
     }
     def packet_bytes(value):
         if isinstance(value, str): return len(value.encode('utf-8'))
@@ -319,6 +323,9 @@ class EnvelopeTests(unittest.TestCase):
         omit: str | None = None,
         schema_version: str = "1.1",
         ledger_status: str = "missing",
+        envelope_schema: str = "1.0",
+        envelope_command: str = "resume",
+        envelope_status: str = "ok",
     ):
         content = {
             "handoff": None,
@@ -338,7 +345,12 @@ class EnvelopeTests(unittest.TestCase):
             "handoff": None,
             "ledgerStatus": ledger_status,
             "ledgerError": None,
-            "context": {"includedBytes": {"brief": len(brief.encode("utf-8"))}},
+            "context": {
+                "includedBytes": {
+                    key: len((value or "").encode("utf-8"))
+                    for key, value in content.items()
+                }
+            },
             "bytes": 0,
             "maxBytes": max_bytes,
             "canonicalFallback": False,
@@ -353,7 +365,15 @@ class EnvelopeTests(unittest.TestCase):
             payload["bytes"] = declared_bytes
         if omit is not None:
             payload.pop(omit, None)
-        return {"exitCode": exit_code, "envelope": {"data": payload}}
+        return {
+            "exitCode": exit_code,
+            "envelope": {
+                "schemaVersion": envelope_schema,
+                "command": envelope_command,
+                "status": envelope_status,
+                "data": payload,
+            },
+        }
 
     def test_malformed_status_is_not_treated_as_verified(self):
         result = {
@@ -369,6 +389,23 @@ class EnvelopeTests(unittest.TestCase):
                 self.resume_result(brief="繁體內容", working="工作集")
             )
         )
+
+    def test_resume_contract_rejects_invalid_top_level_envelope(self):
+        self.assertFalse(
+            resume_contract_valid(self.resume_result(envelope_schema="2.0"))
+        )
+        self.assertFalse(
+            resume_contract_valid(self.resume_result(envelope_command="status"))
+        )
+        self.assertFalse(
+            resume_contract_valid(self.resume_result(envelope_status="error"))
+        )
+        result = self.resume_result()
+        result["envelope"]["unexpected"] = True
+        self.assertFalse(resume_contract_valid(result))
+        result = self.resume_result()
+        del result["envelope"]["status"]
+        self.assertFalse(resume_contract_valid(result))
 
     def test_resume_contract_rejects_nonzero_exit_even_with_content(self):
         self.assertFalse(resume_contract_valid(self.resume_result(exit_code=7)))
@@ -395,8 +432,6 @@ class EnvelopeTests(unittest.TestCase):
         payload = result["envelope"]["data"]
         numbers = [int("9" * 101) for _ in range(1000)]
         payload["handoff"] = {"numbers": numbers}
-        # Reproduce the old bypass declaration: strings/keys are counted, the
-        # 101,000 integer digits are not. The hardened validator must reject it.
         payload["bytes"] = _legacy_string_key_bytes(payload)
         self.assertLess(payload["bytes"], payload["maxBytes"])
         self.assertFalse(resume_contract_valid(result))
@@ -405,6 +440,71 @@ class EnvelopeTests(unittest.TestCase):
         self.assertFalse(
             resume_contract_valid(self.resume_result(ledger_status="banana"))
         )
+
+    def test_resume_contract_requires_exact_included_bytes(self):
+        result = self.resume_result()
+        included = result["envelope"]["data"]["context"]["includedBytes"]
+        included.pop("workingSet")
+        _set_self_consistent_bytes(result["envelope"]["data"])
+        self.assertFalse(resume_contract_valid(result))
+
+        result = self.resume_result()
+        result["envelope"]["data"]["context"]["includedBytes"]["brief"] = 0
+        _set_self_consistent_bytes(result["envelope"]["data"])
+        self.assertFalse(resume_contract_valid(result))
+
+    def test_resume_contract_compares_workspace_content_and_truncation(self):
+        result = self.resume_result(brief="real brief", working="real work")
+        self.assertTrue(
+            resume_contract_valid(
+                result, {"brief": "real brief", "workingSet": "real work"}
+            )
+        )
+        self.assertFalse(
+            resume_contract_valid(
+                result, {"brief": "different", "workingSet": "real work"}
+            )
+        )
+
+        truncated = self.resume_result(
+            brief="real [TRUNCATED]", working="real work", read_next=["brief"]
+        )
+        self.assertTrue(
+            resume_contract_valid(
+                truncated,
+                {"brief": "real full source", "workingSet": "real work"},
+            )
+        )
+
+    def test_corrupt_resume_requires_fail_closed_invariants(self):
+        result = self.resume_result(ledger_status="corrupt", read_next=["handoff"])
+        data = result["envelope"]["data"]
+        data["ledgerError"] = "malformed ledger"
+        data["canonicalFallback"] = True
+        data["fallbackReason"] = "execution ledger corrupt"
+        _set_self_consistent_bytes(data)
+        self.assertTrue(corrupt_resume_contract_valid(result))
+
+        for mutation in ("handoff", "content_handoff", "ledger_error", "fallback", "read_next"):
+            with self.subTest(mutation=mutation):
+                candidate = self.resume_result(ledger_status="corrupt", read_next=["handoff"])
+                payload = candidate["envelope"]["data"]
+                payload["ledgerError"] = "malformed ledger"
+                payload["canonicalFallback"] = True
+                payload["fallbackReason"] = "execution ledger corrupt"
+                if mutation == "handoff":
+                    payload["handoff"] = {"trusted": True}
+                elif mutation == "content_handoff":
+                    payload["content"]["handoff"] = "trusted"
+                    payload["context"]["includedBytes"]["handoff"] = len(b"trusted")
+                elif mutation == "ledger_error":
+                    payload["ledgerError"] = None
+                elif mutation == "fallback":
+                    payload["canonicalFallback"] = False
+                else:
+                    payload["readNext"] = []
+                _set_self_consistent_bytes(payload)
+                self.assertFalse(corrupt_resume_contract_valid(candidate))
 
     def test_resume_contract_requires_supported_schema_version(self):
         self.assertFalse(
