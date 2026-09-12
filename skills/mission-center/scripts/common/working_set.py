@@ -33,9 +33,11 @@ def dependency_ids(task: dict[str, str]) -> set[str]:
 
 def _selector_dependency_ids(task: dict[str, str]) -> set[str]:
     """Match the canonical Rust header fallback and comma-separated ID parser."""
-    # mission-center-core accepts ``Dependencies`` only when ``Depends on`` is
-    # absent. Preserve that precedence instead of merging two competing cells.
-    raw = task.get("Depends on", task.get("Dependencies", ""))
+    # mission-center-core falls back to ``Dependencies`` when the canonical
+    # ``Depends on`` cell is absent *or empty*. Preserve that exact precedence
+    # instead of merging two competing cells.
+    primary = task.get("Depends on")
+    raw = primary if isinstance(primary, str) and primary.strip() else task.get("Dependencies", "")
     if not isinstance(raw, str):
         return set()
     return {item.strip() for item in raw.split(",") if item.strip()}
