@@ -49,6 +49,12 @@ def task_row(task_id: str, status: str, priority: str = "P1") -> str:
 
 
 def invoke(binary: Path, root: Path, *args: str) -> dict[str, Any]:
+    """Run one candidate command and retain its raw envelope for validation.
+
+    Path redaction is deliberately deferred until the final report is built.
+    Otherwise replacing a long fixture path with ``<fixture>`` could shrink a
+    resume packet before its shared 16 KiB contract is measured.
+    """
     exit_code, output, errors = run_bounded(
         [str(binary), *args, "--root", str(root)],
         timeout=TIMEOUT_SECONDS,
@@ -57,13 +63,11 @@ def invoke(binary: Path, root: Path, *args: str) -> dict[str, Any]:
     payload = json.loads(output.decode("utf-8"))
     if not isinstance(payload, dict):
         raise RuntimeError("CLI envelope must be a JSON object")
-    # Only disposable fixture paths can appear here; avoid publishing them.
-    serialized = json.dumps(payload, ensure_ascii=False).replace(str(root), "<fixture>")
     return {
         "command": list(args),
         "exitCode": exit_code,
-        "envelope": json.loads(serialized),
-        "stderr": errors.decode("utf-8", errors="replace").replace(str(root), "<fixture>"),
+        "envelope": payload,
+        "stderr": errors.decode("utf-8", errors="replace"),
     }
 
 
@@ -128,7 +132,7 @@ def _bounded_resume_string_bytes(payload: dict[str, Any]) -> int | None:
         else:
             return None
         if total > RESUME_MAX_BYTES:
-            # No valid packet can recover once the governed public material is
+            # No valid packet can recover once governed public material is
             # already over the hard cap; fail early rather than walking attacker
             # controlled metadata until the node fuse is reached.
             return total
@@ -247,6 +251,12 @@ def sync(binary: Path, root: Path, operation: str) -> None:
         raise RuntimeError("fixture sync failed: " + json.dumps(result, ensure_ascii=False))
 
 
+def _redact_report_paths(report: dict[str, Any], root: Path) -> dict[str, Any]:
+    """Redact disposable paths only after every acceptance assertion is done."""
+    serialized = json.dumps(report, ensure_ascii=False)
+    return json.loads(serialized.replace(str(root), "<fixture>"))
+
+
 def collect(binary: Path) -> dict[str, Any]:
     probes: list[dict[str, Any]] = []
 
@@ -327,10 +337,10 @@ def collect(binary: Path) -> dict[str, Any]:
         corrupted_resume = invoke(binary, root, "resume", "--date", FIXTURE_DATE)
         record(
             "resume_does_not_call_corrupt_ledger_ready",
-            data_of(corrupted_resume).get("ledgerStatus")
-            in {"corrupt", "invalid", "error"},
+            resume_contract_valid(corrupted_resume)
+            and data_of(corrupted_resume).get("ledgerStatus") == "corrupt",
             corrupted_resume,
-            "resume identifies ledger corruption and supplies an explicit safe route.",
+            "A corrupt ledger still yields a successful complete Resume 1.1 packet whose ledgerStatus is exactly corrupt.",
         )
         record(
             "read_only_commands_preserve_canonical_tasks",
@@ -360,20 +370,21 @@ def collect(binary: Path) -> dict[str, Any]:
             doctors,
             "A corrupt passport remains an error regardless of a later missing passport.",
         )
-    return {
-        "schemaVersion": "1.0",
-        "artifactType": "upgrade-052-black-box-probes",
-        "fixtureDate": FIXTURE_DATE,
-        "fixtureIsSynthetic": True,
-        "binarySha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
-        "pythonVersion": platform.python_version(),
-        "platform": platform.system(),
-        "ciExecuted": False,
-        "independentReview": "not-performed",
-        "passed": sum(probe["passed"] for probe in probes),
-        "total": len(probes),
-        "probes": probes,
-    }
+        report = {
+            "schemaVersion": "1.0",
+            "artifactType": "upgrade-052-black-box-probes",
+            "fixtureDate": FIXTURE_DATE,
+            "fixtureIsSynthetic": True,
+            "binarySha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+            "pythonVersion": platform.python_version(),
+            "platform": platform.system(),
+            "ciExecuted": False,
+            "independentReview": "not-performed",
+            "passed": sum(probe["passed"] for probe in probes),
+            "total": len(probes),
+            "probes": probes,
+        }
+        return _redact_report_paths(report, root)
 
 
 def main() -> int:
