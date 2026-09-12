@@ -40,6 +40,18 @@ class WorkingSetPolicyTests(unittest.TestCase):
         tasks = self.blockers() + [task("MC-007", "In Progress", deps=" MC-006 ")]
         self.assertEqual(ids(tasks)[:2], ["MC-007", "MC-006"])
 
+    def test_dependencies_header_fallback_matches_native_parser(self):
+        dependency = {"ID": "T1", "Status": "Ready", "Priority": "P1"}
+        anchor = {"ID": "T2", "Status": "In Progress", "Priority": "P1", "Dependencies": " T1 "}
+        self.assertEqual(ids(self.blockers() + [dependency, anchor])[:2], ["T2", "T1"])
+
+    def test_depends_on_header_keeps_precedence_over_dependencies_alias(self):
+        first = task("T1")
+        second = task("T2")
+        anchor = {"ID": "T3", "Status": "In Progress", "Priority": "P1",
+                  "Depends on": "T1", "Dependencies": "T2"}
+        self.assertEqual(ids(self.blockers() + [first, second, anchor])[:2], ["T3", "T1"])
+
     def test_no_done_or_backlog_promotion(self):
         tasks = [task("MC-001", "Done", "P0"), task("MC-002", "Backlog", "P0"),
                  task("MC-003", "In Progress", deps="MC-001, MC-002")]
