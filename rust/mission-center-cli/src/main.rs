@@ -22,7 +22,7 @@ use std::os::windows::fs::MetadataExt;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     env,
     fmt::Write as _,
     fs::{self, OpenOptions},
@@ -1636,13 +1636,11 @@ fn bounded_utf8_truncated(value: &str, max_bytes: usize) -> String {
 }
 
 fn active_lessons(value: &str) -> String {
-    let Some(start) = ["## Active Lessons", "## 主動教訓"]
+    let start = ["## Active Lessons", "## 主動教訓"]
         .iter()
         .filter_map(|marker| value.find(marker))
         .min()
-    else {
-        return String::new();
-    };
+        .unwrap_or(0);
     let tail = &value[start..];
     let end = [
         "## Resolved Index",
@@ -1772,6 +1770,7 @@ fn resume_packet(ws: &MissionWorkspace, _tasks: &[Task], date: &str) -> Result<V
         .artifact_exists("execution-ledger.jsonl")
         .map_err(|e| e.to_string())?
     {
+        files_read.push("MissionCenter/execution-ledger.jsonl".to_owned());
         match ws.validate_execution_ledger() {
             Ok(()) => {
                 ledger_status = "ready";
@@ -1785,7 +1784,10 @@ fn resume_packet(ws: &MissionWorkspace, _tasks: &[Task], date: &str) -> Result<V
                             read_next.push("handoff".to_owned());
                         }
                     },
-                    Err(mission_center_workspace::WorkspaceError::TooLarge { .. }) => {
+                    Err(error @ mission_center_workspace::WorkspaceError::TooLarge { .. }) => {
+                        ledger_status = "corrupt";
+                        ledger_error = Some(error.to_string());
+                        read_next.push("execution-ledger.jsonl".to_owned());
                         read_next.push("handoff".to_owned());
                     }
                     Err(error) => {
@@ -2029,6 +2031,7 @@ fn metadata_is_reparse(_metadata: &fs::Metadata) -> bool {
 fn normalize_locator(locator: &str) -> Option<String> {
     if locator.is_empty()
         || locator.len() > 1024
+        || locator.contains(':')
         || locator.contains("://")
         || locator.starts_with('/')
         || locator.as_bytes().get(1) == Some(&b':')
@@ -2206,23 +2209,48 @@ fn task_ids_in_text(text: &str, tasks: &[Task]) -> HashSet<String> {
         .collect()
 }
 
-fn progress_section<'a>(text: &'a str, start: &str, end: &str) -> &'a str {
-    let Some(start_index) = text.find(start) else {
-        return "";
-    };
-    let body = &text[start_index + start.len()..];
-    body.find(end).map_or(body, |end_index| &body[..end_index])
+fn label_line_value<'a>(line: &'a str, labels: &[&str]) -> Option<&'a str> {
+    let line = line.trim_start();
+    let rest = line.strip_prefix('-')?;
+    let spaced = rest.trim_start();
+    if spaced.len() == rest.len() {
+        return None;
+    }
+    labels.iter().find_map(|label| {
+        let value = spaced.strip_prefix(label)?;
+        let value = value
+            .strip_prefix(':')
+            .or_else(|| value.strip_prefix('：'))?;
+        Some(value.trim())
+    })
+}
+
+fn has_label(text: &str, labels: &[&str]) -> bool {
+    text.lines()
+        .any(|line| label_line_value(line, labels).is_some())
+}
+
+fn progress_section<'a>(text: &'a str, starts: &[&str], ends: &[&str]) -> &'a str {
+    let mut offset = 0;
+    let mut body_start = None;
+    for line_with_newline in text.split_inclusive('\n') {
+        let line = line_with_newline
+            .strip_suffix('\n')
+            .unwrap_or(line_with_newline);
+        if body_start.is_none() && label_line_value(line, starts).is_some() {
+            body_start = Some(offset + line_with_newline.len());
+        } else if let Some(start) = body_start
+            && label_line_value(line, ends).is_some()
+        {
+            return &text[start..offset];
+        }
+        offset += line_with_newline.len();
+    }
+    body_start.map_or("", |start| &text[start..])
 }
 
 fn closeout_field<'a>(text: &'a str, labels: &[&str]) -> Option<&'a str> {
-    text.lines().find_map(|line| {
-        let line = line.trim_start();
-        labels.iter().find_map(|label| {
-            line.strip_prefix(&format!("- {label}:"))
-                .or_else(|| line.strip_prefix(&format!("- {label}：")))
-                .map(str::trim)
-        })
-    })
+    text.lines().find_map(|line| label_line_value(line, labels))
 }
 
 fn evidence_text(value: Option<&Value>, field: &str, errors: &mut Vec<String>) -> Option<String> {
@@ -2244,6 +2272,53 @@ fn strict_evidence_text(
         errors.push(format!("{field} has invalid surrounding whitespace"));
     }
     text.map(ToOwned::to_owned)
+}
+
+fn cache_top_level_evidence_file(
+    root: &Path,
+    path: &Path,
+    bytes: &[u8],
+    cache: &mut HashMap<String, Result<Vec<u8>, String>>,
+) {
+    let Some(relative) = path
+        .strip_prefix(root)
+        .ok()
+        .and_then(|value| value.to_str())
+    else {
+        return;
+    };
+    let Some(locator) = normalize_locator(relative) else {
+        return;
+    };
+    cache.entry(locator).or_insert_with(|| Ok(bytes.to_owned()));
+}
+
+fn read_cached_evidence_locator(
+    root: &Path,
+    locator: &str,
+    cache: &mut HashMap<String, Result<Vec<u8>, String>>,
+    aggregate_bytes: &mut u64,
+) -> Result<Vec<u8>, String> {
+    if let Some(result) = cache.get(locator) {
+        return result.clone();
+    }
+    let result = match evidence_path(root, locator) {
+        Some(path) => match read_bounded_file(&path, EVIDENCE_MAX_BYTES) {
+            Ok(bytes) => match aggregate_bytes.checked_add(bytes.len() as u64) {
+                Some(total) if total <= MAX_EVIDENCE_TOTAL_BYTES => {
+                    *aggregate_bytes = total;
+                    Ok(bytes)
+                }
+                _ => Err(format!(
+                    "evidence aggregate exceeds {MAX_EVIDENCE_TOTAL_BYTES} bytes"
+                )),
+            },
+            Err(error) => Err(error.to_string()),
+        },
+        None => Err(format!("unsafe evidence locator: {locator}")),
+    };
+    cache.insert(locator.to_owned(), result.clone());
+    result
 }
 
 fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
@@ -2336,6 +2411,9 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
     if paths.is_empty() {
         return unknown();
     }
+    paths.sort();
+    let mut aggregate_bytes = total_bytes;
+    let mut locator_cache: HashMap<String, Result<Vec<u8>, String>> = HashMap::new();
     let task_ids: HashSet<String> = tasks.iter().map(|task| task.id.clone()).collect();
     let mut records = Vec::new();
     let mut statuses = Vec::new();
@@ -2353,6 +2431,7 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
                 continue;
             }
         };
+        cache_top_level_evidence_file(root, &path, &bytes, &mut locator_cache);
         let payload: Value = match serde_json::from_slice(&bytes) {
             Ok(value) => value,
             Err(error) => {
@@ -2457,7 +2536,7 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
                     local.push(format!("unsafe scope locator: {raw_locator}"));
                     continue;
                 };
-                let Some(path) = evidence_path(root, &locator) else {
+                let Some(_path) = evidence_path(root, &locator) else {
                     local.push(format!("unsafe scope locator: {raw_locator}"));
                     continue;
                 };
@@ -2465,7 +2544,12 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
                     local.push(format!("duplicate scope locator: {locator}"));
                     continue;
                 }
-                match read_bounded_file(&path, EVIDENCE_MAX_BYTES) {
+                match read_cached_evidence_locator(
+                    root,
+                    &locator,
+                    &mut locator_cache,
+                    &mut aggregate_bytes,
+                ) {
                     Ok(bytes) => scope_files.push((locator.to_owned(), bytes)),
                     Err(error) => local.push(format!("scope {locator}: {error}")),
                 }
@@ -2485,7 +2569,7 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
                     local.push(format!("unsafe artifact locator: {raw_locator}"));
                     continue;
                 };
-                let Some(path) = evidence_path(root, &locator) else {
+                let Some(_path) = evidence_path(root, &locator) else {
                     local.push(format!("unsafe artifact locator: {raw_locator}"));
                     continue;
                 };
@@ -2493,7 +2577,12 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
                     local.push(format!("duplicate artifact locator: {locator}"));
                     continue;
                 }
-                if let Err(error) = read_bounded_file(&path, EVIDENCE_MAX_BYTES) {
+                if let Err(error) = read_cached_evidence_locator(
+                    root,
+                    &locator,
+                    &mut locator_cache,
+                    &mut aggregate_bytes,
+                ) {
                     local.push(format!("artifact {locator}: {error}"));
                 }
             }
@@ -2644,37 +2733,20 @@ fn reconcile_workspace_checks(
     let mission = ws.mission_dir();
     let progress = match read_bounded_utf8(&mission.join("progress.md"), 64 * 1024) {
         Ok(text)
-            if (text.contains("- Active tasks:")
-                || text.contains("- 進行中任務:")
-                || text.contains("- 進行中任務："))
-                && (text.contains("- Blocked by:")
-                    || text.contains("- 阻塞原因:")
-                    || text.contains("- 阻塞原因：")) =>
+            if has_label(&text, &["Active tasks", "進行中任務"])
+                && has_label(&text, &["Blocked by", "阻塞原因"]) =>
         {
             let (percent, mode, active, blocked) = ws.progress_expectations(tasks);
-            let active_label = if text.contains("- Active tasks:") {
-                "- Active tasks:"
-            } else if text.contains("- 進行中任務:") {
-                "- 進行中任務:"
-            } else {
-                "- 進行中任務："
-            };
-            let blocked_label = if text.contains("- Blocked by:") {
-                "- Blocked by:"
-            } else if text.contains("- 阻塞原因:") {
-                "- 阻塞原因:"
-            } else {
-                "- 阻塞原因："
-            };
-            let next_label = if text.contains("- Next update:") {
-                "- Next update:"
-            } else if text.contains("- 下次更新:") {
-                "- 下次更新:"
-            } else {
-                "- 下次更新："
-            };
-            let active_section = progress_section(&text, active_label, blocked_label);
-            let blocked_section = progress_section(&text, blocked_label, next_label);
+            let active_section = progress_section(
+                &text,
+                &["Active tasks", "進行中任務"],
+                &["Blocked by", "阻塞原因"],
+            );
+            let blocked_section = progress_section(
+                &text,
+                &["Blocked by", "阻塞原因"],
+                &["Next update", "下次更新"],
+            );
             let expected_active: HashSet<String> = active
                 .iter()
                 .filter_map(|value| value.split_whitespace().next().map(ToOwned::to_owned))
@@ -2693,18 +2765,12 @@ fn reconcile_workspace_checks(
                     .filter(|task| task.status == TaskStatus::Blocked)
                     .all(|task| !actual_active.contains(&task.id));
             let status_ok = text.lines().any(|line| {
-                let line = line.trim_start();
-                line.strip_prefix("- Current status:")
-                    .or_else(|| line.strip_prefix("- 目前狀態:"))
-                    .or_else(|| line.strip_prefix("- 目前狀態："))
-                    .is_some_and(|value| value.trim() == mode)
+                label_line_value(line, &["Current status", "目前狀態"])
+                    .is_some_and(|value| value == mode)
             });
             let percent_ok = text.lines().any(|line| {
-                let line = line.trim_start();
-                (line.starts_with("- Progress bar:")
-                    || line.starts_with("- 進度條:")
-                    || line.starts_with("- 進度條："))
-                    && line.contains(&format!("] {percent}%"))
+                label_line_value(line, &["Progress bar", "進度條"])
+                    .is_some_and(|value| value.contains(&format!("] {percent}%")))
             });
             if progress_sets_match && blocked_not_active && status_ok && percent_ok {
                 (
