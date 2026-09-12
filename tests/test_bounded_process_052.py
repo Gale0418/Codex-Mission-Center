@@ -5,16 +5,17 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
 sys.path.insert(0, str(TOOLS))
 from bounded_process import run_bounded  # noqa: E402
-from verify_upgrade_052 import check_status, resume_contract_valid  # noqa: E402
+from verify_upgrade_052 import check_status, collect, resume_contract_valid  # noqa: E402
 
 
-@unittest.skipUnless(os.name == "posix", "POSIX process-tree containment is required")
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux subreaper containment is required")
 class BoundedProcessTests(unittest.TestCase):
     def run_python(self, code: str, *, limit: int = 1024, timeout: float = 2.0):
         return run_bounded([sys.executable, "-c", code], timeout=timeout, max_output_bytes=limit)
@@ -54,6 +55,48 @@ class BoundedProcessTests(unittest.TestCase):
             self.run_python(code, timeout=0.2)
         self.assertLess(time.monotonic() - start, 3.0)
 
+    def test_descendant_that_creates_a_new_session_is_reaped(self):
+        with tempfile.TemporaryDirectory(prefix="mc-bounded-setsid-") as temporary:
+            pid_file = Path(temporary) / "escaped.pid"
+            child = "import time; time.sleep(60)"
+            code = (
+                "import pathlib,subprocess,sys; "
+                f"p=subprocess.Popen([sys.executable,'-c',{child!r}],start_new_session=True); "
+                f"pathlib.Path({str(pid_file)!r}).write_text(str(p.pid)); "
+                "print('parent done')"
+            )
+            rc, out, err = self.run_python(code, timeout=2.0)
+            self.assertEqual((rc, out, err), (0, b"parent done\n", b""))
+            escaped_pid = int(pid_file.read_text(encoding="utf-8"))
+            deadline = time.monotonic() + 2.0
+            while Path(f"/proc/{escaped_pid}").exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertFalse(
+                Path(f"/proc/{escaped_pid}").exists(),
+                "setsid descendant escaped the bounded supervisor",
+            )
+
+    def test_timeout_reaps_descendant_that_creates_a_new_session(self):
+        with tempfile.TemporaryDirectory(prefix="mc-bounded-setsid-timeout-") as temporary:
+            pid_file = Path(temporary) / "escaped.pid"
+            child = "import time; time.sleep(60)"
+            code = (
+                "import pathlib,subprocess,sys,time; "
+                f"p=subprocess.Popen([sys.executable,'-c',{child!r}],start_new_session=True); "
+                f"pathlib.Path({str(pid_file)!r}).write_text(str(p.pid)); "
+                "time.sleep(60)"
+            )
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.run_python(code, timeout=1.0)
+            escaped_pid = int(pid_file.read_text(encoding="utf-8"))
+            deadline = time.monotonic() + 2.0
+            while Path(f"/proc/{escaped_pid}").exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertFalse(
+                Path(f"/proc/{escaped_pid}").exists(),
+                "setsid descendant survived the timeout cleanup",
+            )
+
     def test_invalid_limits_fail_before_execution(self):
         for invalid in (float("inf"), float("nan"), 0, -1):
             with self.subTest(timeout=invalid), self.assertRaises(ValueError):
@@ -61,6 +104,58 @@ class BoundedProcessTests(unittest.TestCase):
         for invalid in (-1, True, 1.5):
             with self.subTest(limit=invalid), self.assertRaises(ValueError):
                 self.run_python("pass", limit=invalid)
+
+
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux bounded runner is required")
+class HarnessMutationTests(unittest.TestCase):
+    def test_collect_detects_mutation_by_the_first_resume(self):
+        with tempfile.TemporaryDirectory(prefix="mc-052-fake-cli-") as temporary:
+            binary = Path(temporary) / "fake-mission-center"
+            binary.write_text(
+                """#!/usr/bin/env python3
+import json
+from pathlib import Path
+import sys
+
+args = sys.argv[1:]
+command = args[0]
+root = Path(args[args.index('--root') + 1])
+mission = root / 'MissionCenter'
+mission.mkdir(parents=True, exist_ok=True)
+exit_code = 0
+if command == 'sync':
+    tasks = (mission / 'tasks.md').read_text(encoding='utf-8')
+    (mission / 'working-set.md').write_text(tasks, encoding='utf-8')
+    (mission / 'brief.md').write_text('brief', encoding='utf-8')
+    data = {}
+elif command == 'resume':
+    path = mission / 'tasks.md'
+    path.write_text(path.read_text(encoding='utf-8') + '# mutated by resume\\n', encoding='utf-8')
+    content = {'brief': 'brief', 'workingSet': 'work', 'activeCriticalLessons': '', 'snapshot': None}
+    used = sum(len(value.encode('utf-8')) for value in content.values() if isinstance(value, str))
+    data = {'content': content, 'readNext': [], 'bytes': used, 'maxBytes': 16384, 'ledgerStatus': 'corrupt'}
+elif command == 'reconcile':
+    data = {'checks': [
+        {'name': 'ledger', 'status': 'error'},
+        {'name': 'evidence_envelope', 'status': 'unknown'},
+    ]}
+elif command == 'doctor':
+    data = {'checks': [{'name': 'completion_passport', 'status': 'error'}]}
+    exit_code = 1
+else:
+    data = {}
+print(json.dumps({'schemaVersion': '1.0', 'command': command, 'status': 'ok', 'data': data}))
+raise SystemExit(exit_code)
+""",
+                encoding="utf-8",
+            )
+            binary.chmod(0o700)
+            report = collect(binary)
+            probe = next(
+                item for item in report["probes"]
+                if item["name"] == "read_only_commands_preserve_canonical_tasks"
+            )
+            self.assertFalse(probe["passed"])
 
 
 class EnvelopeTests(unittest.TestCase):
@@ -97,7 +192,7 @@ class EnvelopeTests(unittest.TestCase):
     def test_resume_contract_rejects_oversized_or_false_byte_claims(self):
         self.assertFalse(resume_contract_valid(self.resume_result(brief="x" * 16385)))
         self.assertFalse(resume_contract_valid(self.resume_result(declared_bytes=1)))
-        self.assertFalse(resume_contract_valid(self.resume_result(max_bytes=16385)))
+        self.assertFalse(resume_contract_valid(self.resume_result(max_bytes=16385))
 
 
 if __name__ == "__main__":
