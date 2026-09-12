@@ -11,7 +11,7 @@ import unittest
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
 sys.path.insert(0, str(TOOLS))
 from bounded_process import run_bounded  # noqa: E402
-from verify_upgrade_052 import check_status  # noqa: E402
+from verify_upgrade_052 import check_status, resume_contract_valid  # noqa: E402
 
 
 @unittest.skipUnless(os.name == "posix", "POSIX process-tree containment is required")
@@ -64,9 +64,40 @@ class BoundedProcessTests(unittest.TestCase):
 
 
 class EnvelopeTests(unittest.TestCase):
+    @staticmethod
+    def resume_result(*, exit_code: int = 0, brief: str = "brief", working: str = "work",
+                      max_bytes: int = 16384, declared_bytes: int | None = None):
+        content = {
+            "brief": brief,
+            "workingSet": working,
+            "activeCriticalLessons": "",
+            "snapshot": None,
+        }
+        actual = sum(len(value.encode("utf-8")) for value in content.values() if isinstance(value, str))
+        return {
+            "exitCode": exit_code,
+            "envelope": {"data": {
+                "content": content,
+                "readNext": [],
+                "bytes": actual if declared_bytes is None else declared_bytes,
+                "maxBytes": max_bytes,
+            }},
+        }
+
     def test_malformed_status_is_not_treated_as_verified(self):
         result = {"envelope": {"data": {"checks": [{"name": "ledger", "status": ["pass"]}]}}}
         self.assertIsNone(check_status(result, "ledger"))
+
+    def test_resume_contract_accepts_exact_success_packet(self):
+        self.assertTrue(resume_contract_valid(self.resume_result(brief="繁體內容", working="工作集")))
+
+    def test_resume_contract_rejects_nonzero_exit_even_with_content(self):
+        self.assertFalse(resume_contract_valid(self.resume_result(exit_code=7)))
+
+    def test_resume_contract_rejects_oversized_or_false_byte_claims(self):
+        self.assertFalse(resume_contract_valid(self.resume_result(brief="x" * 16385)))
+        self.assertFalse(resume_contract_valid(self.resume_result(declared_bytes=1)))
+        self.assertFalse(resume_contract_valid(self.resume_result(max_bytes=16385)))
 
 
 if __name__ == "__main__":
