@@ -39,6 +39,13 @@ TASK_HEADER = (
     "Next action | Verification | Estimate | Labels | Comments |\n"
     "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
 )
+RESUME_CONTENT_FIELDS = {
+    "handoff",
+    "brief",
+    "workingSet",
+    "activeCriticalLessons",
+    "snapshot",
+}
 
 
 def task_row(task_id: str, status: str, priority: str = "P1") -> str:
@@ -94,6 +101,26 @@ def check_status(result: dict[str, Any], name: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _resume_envelope_valid(result: dict[str, Any]) -> bool:
+    """Enforce the stable closed-world successful CLI envelope before data use."""
+    if result.get("exitCode") != 0:
+        return False
+    envelope = result.get("envelope")
+    if not isinstance(envelope, dict):
+        return False
+    required = {"schemaVersion", "command", "status", "data"}
+    allowed = required | {"route"}
+    if not required.issubset(envelope) or not set(envelope).issubset(allowed):
+        return False
+    if envelope.get("schemaVersion") != "1.0":
+        return False
+    if envelope.get("command") != "resume" or envelope.get("status") != "ok":
+        return False
+    if "route" in envelope and envelope.get("route") != "resume":
+        return False
+    return isinstance(envelope.get("data"), dict)
+
+
 def _bounded_resume_string_bytes(payload: dict[str, Any]) -> int | None:
     """Count every bounded public JSON key/string/scalar representation.
 
@@ -122,9 +149,9 @@ def _bounded_resume_string_bytes(payload: dict[str, Any]) -> int | None:
         elif isinstance(value, list):
             stack.extend(value)
         elif value is None:
-            total += 4  # null
+            total += 4
         elif isinstance(value, bool):
-            total += 4 if value else 5  # true / false
+            total += 4 if value else 5
         elif isinstance(value, int):
             total += len(str(value).encode("ascii"))
         elif isinstance(value, float):
@@ -132,9 +159,6 @@ def _bounded_resume_string_bytes(payload: dict[str, Any]) -> int | None:
         else:
             return None
         if total > RESUME_MAX_BYTES:
-            # No valid packet can recover once governed public material is
-            # already over the hard cap; fail early rather than walking attacker
-            # controlled metadata until the node fuse is reached.
             return total
     return total
 
@@ -147,9 +171,30 @@ def _nullable_string(value: Any) -> bool:
     return value is None or isinstance(value, str)
 
 
-def resume_contract_valid(result: dict[str, Any]) -> bool:
-    """Validate the complete successful, shared-budget resume public packet."""
-    if result.get("exitCode") != 0:
+def _section_matches_source(
+    name: str,
+    value: str | None,
+    source: str | None,
+    read_next: list[str],
+) -> bool:
+    if source is None:
+        return value is None
+    if value == source:
+        return True
+    if name not in read_next or not isinstance(value, str):
+        return False
+    marker = "[TRUNCATED]"
+    if value.endswith(marker):
+        return source.startswith(value[: -len(marker)])
+    return False
+
+
+def resume_contract_valid(
+    result: dict[str, Any],
+    expected_sections: dict[str, str | None] | None = None,
+) -> bool:
+    """Validate the complete successful shared-budget Resume 1.1 packet."""
+    if not _resume_envelope_valid(result):
         return False
     payload = data_of(result)
     required_fields = {
@@ -174,9 +219,7 @@ def resume_contract_valid(result: dict[str, Any]) -> bool:
     }
     if not required_fields.issubset(payload):
         return False
-    if payload.get("schemaVersion") != "1.1":
-        return False
-    if payload.get("route") != "resume":
+    if payload.get("schemaVersion") != "1.1" or payload.get("route") != "resume":
         return False
     for name in ("sourceFresh", "dateFresh", "canonicalFallback", "truncated"):
         if not isinstance(payload.get(name), bool):
@@ -192,28 +235,8 @@ def resume_contract_valid(result: dict[str, Any]) -> bool:
     if payload.get("handoff") is not None and not isinstance(payload.get("handoff"), dict):
         return False
 
-    context = payload.get("context")
-    if not isinstance(context, dict):
-        return False
-    included = context.get("includedBytes")
-    if not isinstance(included, dict) or not all(
-        isinstance(key, str)
-        and not isinstance(value, bool)
-        and isinstance(value, int)
-        and value >= 0
-        for key, value in included.items()
-    ):
-        return False
-
     content = payload.get("content")
-    required_content = {
-        "handoff",
-        "brief",
-        "workingSet",
-        "activeCriticalLessons",
-        "snapshot",
-    }
-    if not isinstance(content, dict) or not required_content.issubset(content):
+    if not isinstance(content, dict) or not RESUME_CONTENT_FIELDS.issubset(content):
         return False
     if not all(value is None or isinstance(value, str) for value in content.values()):
         return False
@@ -221,6 +244,30 @@ def resume_contract_valid(result: dict[str, Any]) -> bool:
         return False
     if not isinstance(content.get("workingSet"), str) or not content["workingSet"]:
         return False
+
+    context = payload.get("context")
+    if not isinstance(context, dict):
+        return False
+    included = context.get("includedBytes")
+    if not isinstance(included, dict) or set(included) != set(content):
+        return False
+    for name, value in content.items():
+        declared = included.get(name)
+        if (
+            isinstance(declared, bool)
+            or not isinstance(declared, int)
+            or declared < 0
+            or declared != len((value or "").encode("utf-8"))
+        ):
+            return False
+
+    read_next = payload["readNext"]
+    if expected_sections is not None:
+        for name, source in expected_sections.items():
+            if name not in content or not _section_matches_source(
+                name, content[name], source, read_next
+            ):
+                return False
 
     actual_bytes = _bounded_resume_string_bytes(payload)
     if actual_bytes is None:
@@ -235,6 +282,27 @@ def resume_contract_valid(result: dict[str, Any]) -> bool:
     ):
         return False
     return used_bytes == actual_bytes and 0 <= used_bytes <= max_bytes <= RESUME_MAX_BYTES
+
+
+def corrupt_resume_contract_valid(
+    result: dict[str, Any],
+    expected_sections: dict[str, str | None] | None = None,
+) -> bool:
+    if not resume_contract_valid(result, expected_sections):
+        return False
+    data = data_of(result)
+    content = data["content"]
+    return (
+        data.get("ledgerStatus") == "corrupt"
+        and isinstance(data.get("ledgerError"), str)
+        and bool(data["ledgerError"].strip())
+        and data.get("handoff") is None
+        and content.get("handoff") is None
+        and data.get("canonicalFallback") is True
+        and isinstance(data.get("fallbackReason"), str)
+        and bool(data["fallbackReason"].strip())
+        and bool(data.get("readNext"))
+    )
 
 
 def sync(binary: Path, root: Path, operation: str) -> None:
@@ -294,7 +362,13 @@ def collect(binary: Path) -> dict[str, Any]:
             encoding="utf-8",
         )
         sync(binary, root, "probe-sync-active")
-        working_set = (mission / "working-set.md").read_text(encoding="utf-8")
+        working_set_path = mission / "working-set.md"
+        brief_path = mission / "brief.md"
+        working_set = working_set_path.read_text(encoding="utf-8")
+        expected_sections = {
+            "brief": brief_path.read_text(encoding="utf-8"),
+            "workingSet": working_set,
+        }
         record(
             "active_task_survives_six_unrelated_blockers",
             "MC-007" in working_set,
@@ -305,9 +379,9 @@ def collect(binary: Path) -> dict[str, Any]:
         resumed = invoke(binary, root, "resume", "--date", FIXTURE_DATE)
         record(
             "resume_delivers_documented_context",
-            resume_contract_valid(resumed),
+            resume_contract_valid(resumed, expected_sections),
             resumed,
-            "resume exits successfully and returns the complete public packet within the shared 16 KiB budget.",
+            "resume returns the stable CLI envelope and actual generated workspace context within the shared 16 KiB budget.",
         )
         (mission / "execution-ledger.jsonl").write_text("{not-json}\n", encoding="utf-8")
         (root / "output" / "mission-center-evidence").mkdir(parents=True)
@@ -337,10 +411,9 @@ def collect(binary: Path) -> dict[str, Any]:
         corrupted_resume = invoke(binary, root, "resume", "--date", FIXTURE_DATE)
         record(
             "resume_does_not_call_corrupt_ledger_ready",
-            resume_contract_valid(corrupted_resume)
-            and data_of(corrupted_resume).get("ledgerStatus") == "corrupt",
+            corrupt_resume_contract_valid(corrupted_resume, expected_sections),
             corrupted_resume,
-            "A corrupt ledger still yields a successful complete Resume 1.1 packet whose ledgerStatus is exactly corrupt.",
+            "A corrupt ledger yields a complete Resume 1.1 packet with no trusted handoff, a nonempty corruption error, canonical fallback, and explicit read-next guidance.",
         )
         record(
             "read_only_commands_preserve_canonical_tasks",
