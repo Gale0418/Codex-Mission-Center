@@ -1,0 +1,267 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "upgrade-052-black-box-probes",
+  "fixtureDate": "2026-09-12",
+  "fixtureIsSynthetic": true,
+  "binarySha256": "3d116fdbed8b15cfa6425d69e835b54eff99d5b109f60f94c7a09fe8e14ab4a9",
+  "pythonVersion": "3.13.5",
+  "platform": "Linux",
+  "ciExecuted": false,
+  "independentReview": "not-performed",
+  "passed": 1,
+  "total": 7,
+  "probes": [
+    {
+      "name": "active_task_survives_six_unrelated_blockers",
+      "passed": false,
+      "expected": "The active MC-007 remains represented in the bounded working set.",
+      "observed": "<!-- Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files. -->\n<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=be8096b2a209adef2a7600817c73266159b5104ab1ec18cef6c0761406b3d513 -->\n# Active Working Set\n\n- Source of truth: `tasks.md`\n- Unfinished working set count: 6\n\n| ID | Title | Priority | Status | Next action | Depends on | Verification | Blocker reason |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| MC-001 | Fixture MC-001 | P1 | Blocked | Run local check |  | local test |  |\n| MC-002 | Fixture MC-002 | P1 | Blocked | Run local check |  | local test |  |\n| MC-003 | Fixture MC-003 | P1 | Blocked | Run local check |  | local test |  |\n| MC-004 | Fixture MC-004 | P1 | Blocked | Run local check |  | local test |  |\n| MC-005 | Fixture MC-005 | P1 | Blocked | Run local check |  | local test |  |\n| MC-006 | Fixture MC-006 | P1 | Blocked | Run local check |  | local test |  |\n"
+    },
+    {
+      "name": "resume_delivers_documented_context",
+      "passed": false,
+      "expected": "resume returns actual bounded content and the documented recovery fields.",
+      "observed": {
+        "command": [
+          "resume",
+          "--date",
+          "2026-09-12"
+        ],
+        "exitCode": 0,
+        "envelope": {
+          "command": "resume",
+          "data": {
+            "actionableHandoff": false,
+            "canonicalFallback": false,
+            "dateFresh": true,
+            "fallbackReason": null,
+            "ledgerStatus": "missing",
+            "route": "select_task",
+            "sourceFresh": true,
+            "staleReasons": []
+          },
+          "schemaVersion": "1.0",
+          "status": "ok"
+        },
+        "stderr": ""
+      }
+    },
+    {
+      "name": "reconcile_rejects_corrupt_ledger",
+      "passed": false,
+      "expected": "A present but malformed ledger is explicitly rejected, not passed by existence.",
+      "observed": {
+        "command": [
+          "reconcile",
+          "--date",
+          "2026-09-12"
+        ],
+        "exitCode": 0,
+        "envelope": {
+          "command": "reconcile",
+          "data": {
+            "checks": [
+              {
+                "name": "ledger",
+                "status": "pass"
+              },
+              {
+                "name": "progress",
+                "status": "pass"
+              },
+              {
+                "name": "closeout",
+                "status": "pass"
+              },
+              {
+                "name": "derived_source",
+                "status": "pass"
+              },
+              {
+                "name": "derived_date",
+                "status": "pass"
+              },
+              {
+                "name": "evidence_envelope",
+                "status": "pass"
+              }
+            ],
+            "readOnly": true,
+            "status": "pass"
+          },
+          "schemaVersion": "1.0",
+          "status": "pass"
+        },
+        "stderr": ""
+      }
+    },
+    {
+      "name": "empty_evidence_directory_is_not_verified",
+      "passed": false,
+      "expected": "An empty evidence directory does not count as verified evidence.",
+      "observed": {
+        "command": [
+          "reconcile",
+          "--date",
+          "2026-09-12"
+        ],
+        "exitCode": 0,
+        "envelope": {
+          "command": "reconcile",
+          "data": {
+            "checks": [
+              {
+                "name": "ledger",
+                "status": "pass"
+              },
+              {
+                "name": "progress",
+                "status": "pass"
+              },
+              {
+                "name": "closeout",
+                "status": "pass"
+              },
+              {
+                "name": "derived_source",
+                "status": "pass"
+              },
+              {
+                "name": "derived_date",
+                "status": "pass"
+              },
+              {
+                "name": "evidence_envelope",
+                "status": "pass"
+              }
+            ],
+            "readOnly": true,
+            "status": "pass"
+          },
+          "schemaVersion": "1.0",
+          "status": "pass"
+        },
+        "stderr": ""
+      }
+    },
+    {
+      "name": "resume_does_not_call_corrupt_ledger_ready",
+      "passed": false,
+      "expected": "resume identifies ledger corruption and supplies an explicit safe route.",
+      "observed": {
+        "command": [
+          "resume",
+          "--date",
+          "2026-09-12"
+        ],
+        "exitCode": 0,
+        "envelope": {
+          "command": "resume",
+          "data": {
+            "actionableHandoff": false,
+            "canonicalFallback": false,
+            "dateFresh": true,
+            "fallbackReason": null,
+            "ledgerStatus": "ready",
+            "route": "select_task",
+            "sourceFresh": true,
+            "staleReasons": []
+          },
+          "schemaVersion": "1.0",
+          "status": "ok"
+        },
+        "stderr": ""
+      }
+    },
+    {
+      "name": "read_only_commands_preserve_canonical_tasks",
+      "passed": true,
+      "expected": "resume and reconcile do not mutate tasks.md.",
+      "observed": {
+        "tasksUnchanged": true
+      }
+    },
+    {
+      "name": "doctor_error_severity_is_order_independent",
+      "passed": false,
+      "expected": "A corrupt passport remains an error regardless of a later missing passport.",
+      "observed": [
+        {
+          "command": [
+            "doctor"
+          ],
+          "exitCode": 0,
+          "envelope": {
+            "command": "doctor",
+            "data": {
+              "checks": [
+                {
+                  "name": "tasks",
+                  "status": "pass"
+                },
+                {
+                  "details": [
+                    "MC-001: schemaVersion must be 1.0; artifactType must be completion-passport; taskId does not match canonical task; taskDigest does not match canonical task identity; status must be current; verification must be an object",
+                    "MC-002 has no completion passport (legacy warning)"
+                  ],
+                  "name": "completion_passport",
+                  "status": "unknown"
+                },
+                {
+                  "details": [],
+                  "name": "writer_lock_recovery",
+                  "status": "pass"
+                }
+              ],
+              "taskCount": 2
+            },
+            "schemaVersion": "1.0",
+            "status": "pass"
+          },
+          "stderr": ""
+        },
+        {
+          "command": [
+            "doctor"
+          ],
+          "exitCode": 1,
+          "envelope": {
+            "command": "doctor",
+            "data": {
+              "checks": [
+                {
+                  "name": "tasks",
+                  "status": "pass"
+                },
+                {
+                  "details": [
+                    "MC-002 has no completion passport (legacy warning)",
+                    "MC-001: schemaVersion must be 1.0; artifactType must be completion-passport; taskId does not match canonical task; taskDigest does not match canonical task identity; status must be current; verification must be an object"
+                  ],
+                  "name": "completion_passport",
+                  "status": "error"
+                },
+                {
+                  "details": [],
+                  "name": "writer_lock_recovery",
+                  "status": "pass"
+                }
+              ],
+              "taskCount": 2
+            },
+            "error": {
+              "code": "validation_failed",
+              "message": "輸入驗證失敗。",
+              "remediation": "請修正輸入後重試。"
+            },
+            "errorCode": "validation_failed",
+            "route": "doctor",
+            "schemaVersion": "1.0",
+            "status": "error"
+          },
+          "stderr": ""
+        }
+      ]
+    }
+  ]
+}

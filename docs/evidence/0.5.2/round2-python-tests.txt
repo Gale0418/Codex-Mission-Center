@@ -1,0 +1,46 @@
+Local verification of round-two fixes, not a complete 0.5.2 certificate.
+Source commit: 1b82f4f684f76df376100d922f9af9f5fea726de.
+Environment: Linux, Python 3.13.5. No GitHub Actions/CI.
+Command: python -m unittest discover -s tests -p 'test_*_052.py' -v
+Exit code: 0.
+
+Captured output:
+
+test_both_streams_cannot_deadlock (test_bounded_process_052.BoundedProcessTests.test_both_streams_cannot_deadlock) ... ok
+test_descendant_holding_a_pipe_cannot_evade_timeout (test_bounded_process_052.BoundedProcessTests.test_descendant_holding_a_pipe_cannot_evade_timeout) ... ok
+test_exact_per_stream_limit_is_allowed (test_bounded_process_052.BoundedProcessTests.test_exact_per_stream_limit_is_allowed) ... ok
+test_invalid_limits_fail_before_execution (test_bounded_process_052.BoundedProcessTests.test_invalid_limits_fail_before_execution) ... ok
+test_nonzero_exit_is_not_hidden (test_bounded_process_052.BoundedProcessTests.test_nonzero_exit_is_not_hidden) ... ok
+test_stderr_overflow_is_stopped (test_bounded_process_052.BoundedProcessTests.test_stderr_overflow_is_stopped) ... ok
+test_stdout_overflow_is_stopped (test_bounded_process_052.BoundedProcessTests.test_stdout_overflow_is_stopped) ... ok
+test_timeout_kills_silent_child (test_bounded_process_052.BoundedProcessTests.test_timeout_kills_silent_child) ... ok
+test_zero_limit_allows_silent_process (test_bounded_process_052.BoundedProcessTests.test_zero_limit_allows_silent_process) ... ok
+test_malformed_status_is_not_treated_as_verified (test_bounded_process_052.EnvelopeTests.test_malformed_status_is_not_treated_as_verified) ... ok
+test_active_anchor_survives_six_blockers_without_mutation (test_working_set_052.WorkingSetPolicyTests.test_active_anchor_survives_six_blockers_without_mutation) ... ok
+test_anchor_and_urgent_work_survive_blockers (test_working_set_052.WorkingSetPolicyTests.test_anchor_and_urgent_work_survive_blockers) ... ok
+test_comma_dependencies_keep_complete_non_mc_identifiers (test_working_set_052.WorkingSetPolicyTests.test_comma_dependencies_keep_complete_non_mc_identifiers) ... ok
+test_direct_dependency_precedes_unrelated_blockers (test_working_set_052.WorkingSetPolicyTests.test_direct_dependency_precedes_unrelated_blockers) ... ok
+test_historical_helpers_are_preserved (test_working_set_052.WorkingSetPolicyTests.test_historical_helpers_are_preserved) ... ok
+test_large_urgent_set_stays_bounded_with_anchor (test_working_set_052.WorkingSetPolicyTests.test_large_urgent_set_stays_bounded_with_anchor) ... ok
+test_no_done_or_backlog_promotion (test_working_set_052.WorkingSetPolicyTests.test_no_done_or_backlog_promotion) ... ok
+test_non_numeric_anchor_dependency_matches_native_parser (test_working_set_052.WorkingSetPolicyTests.test_non_numeric_anchor_dependency_matches_native_parser) ... ok
+test_overlapping_categories_are_deduplicated (test_working_set_052.WorkingSetPolicyTests.test_overlapping_categories_are_deduplicated) ... ok
+test_priority_key_matches_native_u32_and_handles_long_zero_prefixes (test_working_set_052.WorkingSetPolicyTests.test_priority_key_matches_native_u32_and_handles_long_zero_prefixes) ... ok
+test_ready_ties_and_empty_input (test_working_set_052.WorkingSetPolicyTests.test_ready_ties_and_empty_input) ... ok
+test_small_zero_and_oversize_limits (test_working_set_052.WorkingSetPolicyTests.test_small_zero_and_oversize_limits) ... ok
+test_status_normalization_and_invalid_rows (test_working_set_052.WorkingSetPolicyTests.test_status_normalization_and_invalid_rows) ... ok
+
+----------------------------------------------------------------------
+Ran 23 tests in 3.944s
+
+OK
+
+The modified existing maintenance test was syntax-compiled and its affected
+method passed when run in isolation with the real selector. The complete
+39-test maintenance module must still be re-run after these fixes by an
+environment containing the full repository. Reviewer round 2 had independently
+run it on the previous commit and found the old-order expectation failure.
+
+NOT VERIFIED HERE: new native Rust compilation/tests/fmt/clippy/differential
+checks; complete A/B/C/D implementation; cross-platform behavior; stable release
+artifacts. Existing baseline binary results are NOT results of the new source.
