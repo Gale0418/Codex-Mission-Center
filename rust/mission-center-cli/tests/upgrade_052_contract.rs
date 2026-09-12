@@ -238,6 +238,30 @@ fn resume_returns_actual_context_with_one_shared_utf8_budget() {
     )
     .expect("write tasks");
     sync(&root, "resume-sync");
+    let (pulse_output, pulse_payload) = run(
+        &root,
+        &[
+            "pulse",
+            "--task-id",
+            "MC-052",
+            "--operation-id",
+            "resume-pulse",
+            "--pulse-id",
+            "resume-pulse-1",
+            "--phase",
+            "execute",
+            "--outcome",
+            "continue",
+            "--next-action",
+            "run native checks",
+            "--recorded-at",
+            "2026-09-12T08:00:02Z",
+        ],
+    );
+    assert!(
+        pulse_output.status.success(),
+        "pulse failed: {pulse_payload}"
+    );
 
     // Keep the canonical file below its own read limit while forcing the resume
     // packet to exercise the shared 16 KiB fuse at UTF-8 boundaries.
@@ -256,6 +280,14 @@ fn resume_returns_actual_context_with_one_shared_utf8_budget() {
     assert_resume_public_contract(&payload);
 
     let data = payload["data"].as_object().expect("resume data object");
+    assert_eq!(data["ledgerStatus"], "ready");
+    assert!(
+        data["filesRead"]
+            .as_array()
+            .expect("filesRead")
+            .iter()
+            .any(|item| item == "MissionCenter/execution-ledger.jsonl")
+    );
     assert!(
         data["truncated"].as_bool() == Some(true)
             || !data["readNext"]
@@ -315,6 +347,16 @@ fn resume_only_includes_active_critical_lessons_and_marks_snapshot_errors() {
             .iter()
             .any(|item| item == "snapshot.md")
     );
+    fs::write(
+        mission.join("critical-lessons.md"),
+        "# Critical Lessons\n\nNo heading means the whole file remains visible.\n",
+    )
+    .expect("write headingless lessons");
+    let (output, payload) = run(&root, &["resume", "--date", FIXTURE_DATE]);
+    assert!(output.status.success(), "resume failed: {payload}");
+    assert!(payload["data"]["content"]["activeCriticalLessons"]
+        .as_str()
+        .is_some_and(|value| value.contains("No heading means the whole file remains visible.")));
     let _ = fs::remove_dir_all(root);
 }
 
@@ -333,6 +375,16 @@ fn reconcile_checks_progress_content_and_daily_date_states() {
     let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
     assert_eq!(check_status(&payload, "derived_date"), Some("unknown"));
     sync(&root, "reconcile-derived-sync-refresh");
+    let progress = fs::read_to_string(mission.join("progress.md")).expect("read progress");
+    let spaced_labels = progress
+        .replace("- Active tasks:", "-    Active tasks:")
+        .replace("- Blocked by:", "-      Blocked by:")
+        .replace("- Current status:", "-   Current status:")
+        .replace("- Progress bar:", "-    Progress bar:")
+        .replace("- Next update:", "-  Next update:");
+    fs::write(mission.join("progress.md"), spaced_labels).expect("write spaced progress labels");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "progress"), Some("pass"));
     let progress = fs::read_to_string(mission.join("progress.md")).expect("read progress");
     fs::write(
         mission.join("progress.md"),
@@ -436,6 +488,20 @@ fn reconcile_rejects_mismatched_evidence_supersedes_and_bad_schema_fields() {
         .expect("write whitespace scopeDigest envelope");
     let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
     assert_eq!(check_status(&payload, "evidence_envelope"), Some("corrupt"));
+    let colon_locator = serde_json::json!({
+        "schemaVersion":"1.0","artifactType":"evidence-envelope",
+        "envelopeId":"colon-1","taskId":"MC-052","checkId":"smoke",
+        "scope":[scope],"scopeDigest":digest.clone(),"result":"pass","status":"current",
+        "artifactLocators":["foo:bar"],"recordedAt":"2026-09-12T08:00:01Z"
+    });
+    fs::write(evidence.join("current.json"), colon_locator.to_string())
+        .expect("write colon locator envelope");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(
+        check_status(&payload, "evidence_envelope"),
+        Some("corrupt"),
+        "colon/ADS-like locator must be rejected"
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -560,6 +626,77 @@ fn reconcile_fails_closed_on_evidence_directory_limits() {
 }
 
 #[test]
+fn reconcile_evidence_budget_caches_duplicate_nested_locators() {
+    let root = workspace();
+    initialize(&root, "reconcile-evidence-nested-init");
+    let mission = root.join("MissionCenter");
+    fs::write(
+        mission.join("tasks.md"),
+        format!("{TASK_HEADER}{}", task_row("MC-052", "In Progress")),
+    )
+    .expect("write tasks");
+    sync(&root, "reconcile-evidence-nested-sync");
+    let evidence = root.join("output/mission-center-evidence");
+    let nested = root.join("nested-evidence");
+    fs::create_dir_all(&evidence).expect("create evidence");
+    fs::create_dir_all(&nested).expect("create nested evidence");
+    let nested_bytes = vec![b'x'; 64 * 1024];
+    for index in 0..64 {
+        let locator = format!("nested-evidence/{index}.bin");
+        fs::write(root.join(&locator), &nested_bytes).expect("write nested evidence");
+        let digest = mission_center_publish::scope_digest_files(&[(&locator, &nested_bytes)]);
+        let envelope = serde_json::json!({
+            "schemaVersion":"1.0","artifactType":"evidence-envelope",
+            "envelopeId":format!("nested-{index}"),"taskId":"MC-052",
+            "checkId":format!("nested-{index}"),"scope":[locator],"scopeDigest":digest,
+            "result":"pass","status":"current","artifactLocators":[format!("nested-evidence/{index}.bin")],
+            "recordedAt":"2026-09-12T08:00:00Z"
+        });
+        fs::write(
+            evidence.join(format!("nested-{index}.json")),
+            envelope.to_string(),
+        )
+        .expect("write nested envelope");
+    }
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(
+        check_status(&payload, "evidence_envelope"),
+        Some("pass"),
+        "duplicate scope/artifact locators must be charged once via cache"
+    );
+    for index in 64..129 {
+        let locator = format!("nested-evidence/{index}.bin");
+        fs::write(root.join(&locator), &nested_bytes).expect("write nested evidence");
+        let digest = mission_center_publish::scope_digest_files(&[(&locator, &nested_bytes)]);
+        let envelope = serde_json::json!({
+            "schemaVersion":"1.0","artifactType":"evidence-envelope",
+            "envelopeId":format!("nested-{index}"),"taskId":"MC-052",
+            "checkId":format!("nested-{index}"),"scope":[locator],"scopeDigest":digest,
+            "result":"pass","status":"current","artifactLocators":[format!("nested-evidence/{index}.bin")],
+            "recordedAt":"2026-09-12T08:00:00Z"
+        });
+        fs::write(
+            evidence.join(format!("nested-{index}.json")),
+            envelope.to_string(),
+        )
+        .expect("write nested envelope");
+    }
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "evidence_envelope"), Some("corrupt"));
+    let message = payload["data"]["checks"]
+        .as_array()
+        .and_then(|checks| {
+            checks
+                .iter()
+                .find(|check| check["name"] == "evidence_envelope")
+        })
+        .and_then(|check| check["message"].as_str())
+        .expect("nested aggregate limit message");
+    assert!(message.contains("aggregate exceeds"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn reconcile_accepts_legacy_localized_closeout_and_checks_task_contradictions() {
     let root = workspace();
     initialize(&root, "reconcile-legacy-closeout-init");
@@ -574,7 +711,8 @@ fn reconcile_accepts_legacy_localized_closeout_and_checks_task_contradictions() 
     )
     .expect("write tasks");
     sync(&root, "reconcile-legacy-closeout-sync");
-    let legacy = "# 收尾\n\n- 摘要: 舊版 fixture\n- 已完成: MC-052X, MC-052\n- 未完成: MC-053\n";
+    let legacy =
+        "# 收尾\n\n- 摘要: 舊版 fixture\n-    已完成: MC-052X, MC-052\n-      未完成: MC-053\n";
     fs::write(mission.join("closeout.md"), legacy).expect("write legacy closeout");
     let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
     assert_eq!(check_status(&payload, "closeout"), Some("pass"));
