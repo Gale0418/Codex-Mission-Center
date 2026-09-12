@@ -77,31 +77,49 @@ def check_status(result: dict[str, Any], name: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _bounded_resume_string_bytes(payload: dict[str, Any], content: dict[str, Any]) -> int | None:
+    """Count every user-controlled string governed by the shared resume fuse."""
+    total = 0
+    for value in content.values():
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            return None
+        total += len(value.encode("utf-8"))
+
+    for name in ("route", "ledgerStatus", "ledgerError", "fallbackReason", "truncatedMarker"):
+        value = payload.get(name)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            return None
+        total += len(value.encode("utf-8"))
+
+    for name in ("readNext", "filesRead", "staleReasons"):
+        values = payload.get(name, [])
+        if not isinstance(values, list) or not all(isinstance(item, str) for item in values):
+            return None
+        total += sum(len(item.encode("utf-8")) for item in values)
+    return total
+
+
 def resume_contract_valid(result: dict[str, Any]) -> bool:
     """Validate the documented successful, shared-budget resume packet."""
     if result.get("exitCode") != 0:
         return False
     payload = data_of(result)
     content = payload.get("content")
-    required = {"brief", "workingSet", "activeCriticalLessons", "snapshot"}
+    required = {"handoff", "brief", "workingSet", "activeCriticalLessons", "snapshot"}
     if not isinstance(content, dict) or not required.issubset(content):
         return False
     if not isinstance(content.get("brief"), str) or not content["brief"]:
         return False
     if not isinstance(content.get("workingSet"), str) or not content["workingSet"]:
         return False
-    if not isinstance(payload.get("readNext"), list) or not all(
-        isinstance(item, str) for item in payload["readNext"]
-    ):
-        return False
 
-    actual_bytes = 0
-    for value in content.values():
-        if value is None:
-            continue
-        if not isinstance(value, str):
-            return False
-        actual_bytes += len(value.encode("utf-8"))
+    actual_bytes = _bounded_resume_string_bytes(payload, content)
+    if actual_bytes is None:
+        return False
 
     used_bytes = payload.get("bytes")
     max_bytes = payload.get("maxBytes")
@@ -154,7 +172,7 @@ def collect(binary: Path) -> dict[str, Any]:
         resumed = invoke(binary, root, "resume", "--date", FIXTURE_DATE)
         record(
             "resume_delivers_documented_context", resume_contract_valid(resumed),
-            resumed, "resume exits successfully and returns actual content within the shared 16 KiB budget.",
+            resumed, "resume exits successfully and returns content plus routing metadata within the shared 16 KiB budget.",
         )
         (mission / "execution-ledger.jsonl").write_text("{not-json}\n", encoding="utf-8")
         (root / "output" / "mission-center-evidence").mkdir(parents=True)
