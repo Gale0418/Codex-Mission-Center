@@ -45,6 +45,50 @@ def _wait_for_file(path: Path) -> str:
     )
 
 
+def _public_packet_bytes(value) -> int:
+    if isinstance(value, str):
+        return len(value.encode("utf-8"))
+    if isinstance(value, dict):
+        return sum(
+            len(str(key).encode("utf-8")) + _public_packet_bytes(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return sum(_public_packet_bytes(item) for item in value)
+    if value is None:
+        return 4
+    if isinstance(value, bool):
+        return 4 if value else 5
+    if isinstance(value, int):
+        return len(str(value).encode("ascii"))
+    raise TypeError(f"unsupported packet scalar: {type(value).__name__}")
+
+
+def _legacy_string_key_bytes(value) -> int:
+    """The pre-round-7 metric: useful only to prove the scalar bypass stays closed."""
+    if isinstance(value, str):
+        return len(value.encode("utf-8"))
+    if isinstance(value, dict):
+        return sum(
+            len(str(key).encode("utf-8")) + _legacy_string_key_bytes(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return sum(_legacy_string_key_bytes(item) for item in value)
+    return 0
+
+
+def _set_self_consistent_bytes(payload: dict) -> int:
+    """Solve the small decimal-length fixed point for the public `bytes` field."""
+    payload["bytes"] = 0
+    for _ in range(16):
+        measured = _public_packet_bytes(payload)
+        if payload["bytes"] == measured:
+            return measured
+        payload["bytes"] = measured
+    raise AssertionError("resume bytes declaration did not converge")
+
+
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux PID namespaces are required")
 class BoundedProcessTests(unittest.TestCase):
     def run_python(self, code: str, *, limit: int = 1024, timeout: float = 5.0):
@@ -224,12 +268,19 @@ elif command == 'resume':
         'canonicalFallback': True, 'fallbackReason': 'execution ledger corrupt',
         'truncated': False, 'truncatedMarker': None, 'readNext': [],
     }
-    def string_bytes(value):
+    def packet_bytes(value):
         if isinstance(value, str): return len(value.encode('utf-8'))
-        if isinstance(value, dict): return sum(len(str(key).encode('utf-8')) + string_bytes(item) for key, item in value.items())
-        if isinstance(value, list): return sum(string_bytes(item) for item in value)
-        return 0
-    data['bytes'] = string_bytes(data)
+        if isinstance(value, dict): return sum(len(str(key).encode('utf-8')) + packet_bytes(item) for key, item in value.items())
+        if isinstance(value, list): return sum(packet_bytes(item) for item in value)
+        if value is None: return 4
+        if isinstance(value, bool): return 4 if value else 5
+        if isinstance(value, int): return len(str(value))
+        raise TypeError()
+    data['bytes'] = 0
+    for _ in range(16):
+        measured = packet_bytes(data)
+        if data['bytes'] == measured: break
+        data['bytes'] = measured
 elif command == 'reconcile':
     data = {'checks': [
         {'name': 'ledger', 'status': 'error'},
@@ -267,6 +318,7 @@ class EnvelopeTests(unittest.TestCase):
         read_next: list[str] | None = None,
         omit: str | None = None,
         schema_version: str = "1.1",
+        ledger_status: str = "missing",
     ):
         content = {
             "handoff": None,
@@ -284,9 +336,10 @@ class EnvelopeTests(unittest.TestCase):
             "filesRead": ["MissionCenter/brief.md", "MissionCenter/working-set.md"],
             "content": content,
             "handoff": None,
-            "ledgerStatus": "missing",
+            "ledgerStatus": ledger_status,
             "ledgerError": None,
             "context": {"includedBytes": {"brief": len(brief.encode("utf-8"))}},
+            "bytes": 0,
             "maxBytes": max_bytes,
             "canonicalFallback": False,
             "fallbackReason": None,
@@ -294,22 +347,10 @@ class EnvelopeTests(unittest.TestCase):
             "truncatedMarker": None,
             "readNext": [] if read_next is None else read_next,
         }
-
-        def string_bytes(value):
-            if isinstance(value, str):
-                return len(value.encode("utf-8"))
-            if isinstance(value, dict):
-                return sum(
-                    len(str(key).encode("utf-8")) + string_bytes(item)
-                    for key, item in value.items()
-                )
-            if isinstance(value, list):
-                return sum(string_bytes(item) for item in value)
-            return 0
-
-        payload["bytes"] = (
-            string_bytes(payload) if declared_bytes is None else declared_bytes
-        )
+        if declared_bytes is None:
+            _set_self_consistent_bytes(payload)
+        else:
+            payload["bytes"] = declared_bytes
         if omit is not None:
             payload.pop(omit, None)
         return {"exitCode": exit_code, "envelope": {"data": payload}}
@@ -345,20 +386,25 @@ class EnvelopeTests(unittest.TestCase):
     def test_resume_contract_counts_mapping_keys_in_shared_budget(self):
         result = self.resume_result()
         payload = result["envelope"]["data"]
-        huge_key = "k" * 20_000
-        payload["context"]["includedBytes"] = {huge_key: 0}
-
-        def values_only(value):
-            if isinstance(value, str):
-                return len(value.encode("utf-8"))
-            if isinstance(value, dict):
-                return sum(values_only(item) for item in value.values())
-            if isinstance(value, list):
-                return sum(values_only(item) for item in value)
-            return 0
-
-        payload["bytes"] = values_only(payload)
+        payload["context"]["includedBytes"] = {"k" * 20_000: 0}
+        _set_self_consistent_bytes(payload)
         self.assertFalse(resume_contract_valid(result))
+
+    def test_resume_contract_counts_nested_integer_metadata(self):
+        result = self.resume_result()
+        payload = result["envelope"]["data"]
+        numbers = [int("9" * 101) for _ in range(1000)]
+        payload["handoff"] = {"numbers": numbers}
+        # Reproduce the old bypass declaration: strings/keys are counted, the
+        # 101,000 integer digits are not. The hardened validator must reject it.
+        payload["bytes"] = _legacy_string_key_bytes(payload)
+        self.assertLess(payload["bytes"], payload["maxBytes"])
+        self.assertFalse(resume_contract_valid(result))
+
+    def test_resume_contract_rejects_unsupported_ledger_status(self):
+        self.assertFalse(
+            resume_contract_valid(self.resume_result(ledger_status="banana"))
+        )
 
     def test_resume_contract_requires_supported_schema_version(self):
         self.assertFalse(
