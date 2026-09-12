@@ -10,6 +10,7 @@ use std::{
 static WORKSPACE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const FIXTURE_DATE: &str = "2026-09-12";
 const RESUME_MAX_BYTES: usize = 16 * 1024;
+const RESUME_MAX_VALUE_NODES: usize = 10_000;
 const TASK_HEADER: &str = concat!(
     "# Tasks\n\n",
     "| ID | Title | Type | Parent | Priority | Status | Owner | Depends on | ",
@@ -93,12 +94,112 @@ fn check_status<'a>(payload: &'a Value, name: &str) -> Option<&'a str> {
         .as_str()
 }
 
-fn content_bytes(content: &serde_json::Map<String, Value>) -> usize {
-    content
-        .values()
-        .filter_map(Value::as_str)
-        .map(|text| text.len())
-        .sum()
+fn public_string_bytes(value: &Value, nodes: &mut usize) -> Option<usize> {
+    *nodes = nodes.checked_add(1)?;
+    if *nodes > RESUME_MAX_VALUE_NODES {
+        return None;
+    }
+    match value {
+        Value::String(text) => Some(text.len()),
+        Value::Array(items) => {
+            let mut total = 0usize;
+            for item in items {
+                total = total.checked_add(public_string_bytes(item, nodes)?)?;
+            }
+            Some(total)
+        }
+        Value::Object(object) => {
+            let mut total = 0usize;
+            for (key, item) in object {
+                *nodes = nodes.checked_add(1)?;
+                if *nodes > RESUME_MAX_VALUE_NODES {
+                    return None;
+                }
+                total = total.checked_add(key.len())?;
+                total = total.checked_add(public_string_bytes(item, nodes)?)?;
+            }
+            Some(total)
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) => Some(0),
+    }
+}
+
+fn assert_resume_public_contract(payload: &Value) {
+    let data = payload["data"].as_object().expect("resume data object");
+    assert_eq!(data["schemaVersion"], "1.1", "resume data schema must be explicit");
+    assert_eq!(data["route"], "resume");
+    for field in [
+        "sourceFresh",
+        "dateFresh",
+        "canonicalFallback",
+        "truncated",
+    ] {
+        assert!(data[field].is_boolean(), "{field} must be boolean");
+    }
+    for field in ["staleReasons", "filesRead", "readNext"] {
+        assert!(
+            data[field]
+                .as_array()
+                .is_some_and(|items| items.iter().all(Value::is_string)),
+            "{field} must be a string array"
+        );
+    }
+    for field in ["ledgerError", "fallbackReason", "truncatedMarker"] {
+        assert!(
+            data[field].is_null() || data[field].is_string(),
+            "{field} must be nullable string"
+        );
+    }
+    assert!(data["ledgerStatus"].is_string(), "ledgerStatus must be string");
+    assert!(
+        data["handoff"].is_null() || data["handoff"].is_object(),
+        "handoff must be nullable object"
+    );
+
+    let context = data["context"].as_object().expect("resume context object");
+    let included = context["includedBytes"]
+        .as_object()
+        .expect("includedBytes object");
+    assert!(
+        included.values().all(|value| value.as_u64().is_some()),
+        "includedBytes must contain non-negative integers"
+    );
+
+    let content = data["content"].as_object().expect("content object");
+    for field in [
+        "handoff",
+        "brief",
+        "workingSet",
+        "activeCriticalLessons",
+        "snapshot",
+    ] {
+        assert!(content.contains_key(field), "missing content field {field}");
+        assert!(
+            content[field].is_null() || content[field].is_string(),
+            "content.{field} must be nullable string"
+        );
+    }
+    assert!(
+        content["brief"].as_str().is_some_and(|value| !value.is_empty()),
+        "brief must contain actual text"
+    );
+    assert!(
+        content["workingSet"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty()),
+        "workingSet must contain actual text"
+    );
+
+    let mut nodes = 0usize;
+    let actual = public_string_bytes(&payload["data"], &mut nodes)
+        .expect("resume packet must remain within public node bounds");
+    let declared = data["bytes"].as_u64().expect("declared bytes") as usize;
+    let maximum = data["maxBytes"].as_u64().expect("declared maxBytes") as usize;
+    assert_eq!(
+        declared, actual,
+        "declared bytes must include every public JSON key/string value"
+    );
+    assert!(actual <= maximum && maximum <= RESUME_MAX_BYTES);
 }
 
 #[test]
@@ -124,37 +225,49 @@ fn resume_returns_actual_context_with_one_shared_utf8_budget() {
     let tasks_before = fs::read(mission.join("tasks.md")).expect("read tasks");
     let (output, payload) = run(&root, &["resume", "--date", FIXTURE_DATE]);
     assert!(output.status.success(), "resume failed: {payload}");
+    assert_resume_public_contract(&payload);
 
     let data = payload["data"].as_object().expect("resume data object");
-    let content = data["content"].as_object().expect("content object");
-    for field in ["brief", "workingSet", "activeCriticalLessons", "snapshot"] {
-        assert!(content.contains_key(field), "missing content field {field}");
-    }
     assert!(
-        content["brief"].as_str().is_some_and(|value| !value.is_empty()),
-        "brief must contain actual text"
-    );
-    assert!(
-        content["workingSet"]
-            .as_str()
-            .is_some_and(|value| !value.is_empty()),
-        "workingSet must contain actual text"
-    );
-    assert!(data["readNext"].is_array(), "readNext must be explicit");
-
-    let actual = content_bytes(content);
-    let declared = data["bytes"].as_u64().expect("declared bytes") as usize;
-    let maximum = data["maxBytes"].as_u64().expect("declared maxBytes") as usize;
-    assert_eq!(declared, actual, "declared bytes must match UTF-8 content");
-    assert!(actual <= maximum && maximum <= RESUME_MAX_BYTES);
-    assert!(
-        data["truncated"].as_bool() == Some(true) || !data["readNext"].as_array().unwrap().is_empty(),
+        data["truncated"].as_bool() == Some(true)
+            || !data["readNext"].as_array().expect("readNext array").is_empty(),
         "overflow must be visible"
     );
     assert_eq!(
         fs::read(mission.join("tasks.md")).expect("read tasks after resume"),
         tasks_before,
         "resume must remain read-only"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn resume_fails_closed_on_corrupt_ledger_without_calling_it_ready() {
+    let root = workspace();
+    initialize(&root, "resume-corrupt-init");
+    let mission = root.join("MissionCenter");
+    fs::write(
+        mission.join("tasks.md"),
+        format!("{TASK_HEADER}{}", task_row("MC-052", "In Progress")),
+    )
+    .expect("write tasks");
+    sync(&root, "resume-corrupt-sync");
+    fs::write(mission.join("execution-ledger.jsonl"), "{not-json}\n").expect("write ledger");
+    let tasks_before = fs::read(mission.join("tasks.md")).expect("read tasks");
+
+    let (output, payload) = run(&root, &["resume", "--date", FIXTURE_DATE]);
+    assert!(output.status.success(), "safe corrupt-ledger resume should return a packet: {payload}");
+    assert_resume_public_contract(&payload);
+    let data = payload["data"].as_object().expect("resume data object");
+    assert_eq!(data["ledgerStatus"], "corrupt");
+    assert!(data["ledgerError"].is_string(), "corruption must be explicit");
+    assert!(data["handoff"].is_null(), "corrupt ledger cannot yield trusted handoff");
+    assert_eq!(data["canonicalFallback"], true);
+    assert!(data["fallbackReason"].is_string());
+    assert_eq!(
+        fs::read(mission.join("tasks.md")).expect("read tasks after corrupt resume"),
+        tasks_before,
+        "resume must remain read-only when ledger is corrupt"
     );
     let _ = fs::remove_dir_all(root);
 }
@@ -210,10 +323,7 @@ fn doctor_passport_error_is_order_independent() {
 
     let first = task_row("MC-001", "Done");
     let second = task_row("MC-002", "Done");
-    for rows in [
-        format!("{first}{second}"),
-        format!("{second}{first}"),
-    ] {
+    for rows in [format!("{first}{second}"), format!("{second}{first}")] {
         fs::write(mission.join("tasks.md"), format!("{TASK_HEADER}{rows}"))
             .expect("write ordered tasks");
         let (output, payload) = run(&root, &["doctor"]);
