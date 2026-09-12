@@ -58,52 +58,82 @@ fn escape_derived_cell(value: &str) -> String {
         .replace(['\r', '\n'], " ")
 }
 
+const WORKING_SET_LIMIT: usize = 6;
+
+fn admit_working_task<'a>(
+    selected: &mut Vec<&'a Task>,
+    seen: &mut HashSet<&'a str>,
+    task: &'a Task,
+) {
+    if selected.len() < WORKING_SET_LIMIT
+        && !matches!(task.status, TaskStatus::Done | TaskStatus::Backlog)
+        && seen.insert(task.id.as_str())
+    {
+        selected.push(task);
+    }
+}
+
 fn working_set_tasks(tasks: &[Task]) -> Vec<&Task> {
-    let unfinished: Vec<&Task> = tasks
+    let mut selected = Vec::with_capacity(WORKING_SET_LIMIT);
+    let mut seen = HashSet::with_capacity(WORKING_SET_LIMIT);
+
+    // There is no caller-selected task in this API. Preserve the first active
+    // canonical task as an anchor rather than allowing unrelated blockers to
+    // consume every slot. This changes only the derived view, never task order.
+    let anchor = tasks
         .iter()
-        .filter(|task| task.status != TaskStatus::Done)
-        .collect();
-    let mut selected = Vec::new();
-    let mut seen = HashSet::new();
-    for status in [
-        TaskStatus::Blocked,
-        TaskStatus::InProgress,
-        TaskStatus::Review,
-    ] {
-        for task in unfinished.iter().filter(|task| task.status == status) {
-            if seen.insert(task.id.as_str()) {
-                selected.push(*task);
-            }
-            if selected.len() >= 6 {
+        .find(|task| task.status == TaskStatus::InProgress);
+    if let Some(task) = anchor {
+        admit_working_task(&mut selected, &mut seen, task);
+    }
+
+    // Urgent approved work must not be hidden behind old, lower-priority rows.
+    for task in tasks
+        .iter()
+        .filter(|task| task.priority.trim().eq_ignore_ascii_case("P0"))
+    {
+        admit_working_task(&mut selected, &mut seen, task);
+        if selected.len() == WORKING_SET_LIMIT {
+            return selected;
+        }
+    }
+
+    // Direct dependencies of the anchor are relevant context. Backlog tasks
+    // remain candidates only and require explicit promotion before execution.
+    if let Some(task) = anchor {
+        let dependencies: HashSet<&str> = task
+            .dependencies
+            .iter()
+            .map(|dependency| dependency.trim())
+            .collect();
+        for dependency in tasks
+            .iter()
+            .filter(|item| dependencies.contains(item.id.as_str()))
+        {
+            admit_working_task(&mut selected, &mut seen, dependency);
+            if selected.len() == WORKING_SET_LIMIT {
                 return selected;
             }
         }
     }
-    for task in unfinished.iter().filter(|task| {
-        task.priority.eq_ignore_ascii_case("P0") && task.status != TaskStatus::Backlog
-    }) {
-        if seen.insert(task.id.as_str()) {
-            selected.push(*task);
-        }
-        if selected.len() >= 6 {
-            return selected;
+
+    for status in [TaskStatus::InProgress, TaskStatus::Review, TaskStatus::Blocked] {
+        for task in tasks.iter().filter(|task| task.status == status) {
+            admit_working_task(&mut selected, &mut seen, task);
+            if selected.len() == WORKING_SET_LIMIT {
+                return selected;
+            }
         }
     }
-    let mut ready: Vec<&Task> = unfinished
+
+    let mut ready: Vec<&Task> = tasks
         .iter()
         .filter(|task| task.status == TaskStatus::Ready)
-        .copied()
         .collect();
-    ready.sort_by(|left, right| {
-        task_priority_key(left)
-            .cmp(&task_priority_key(right))
-            .then_with(|| left.id.cmp(&right.id))
-    });
+    ready.sort_by(|left, right| task_priority_key(left).cmp(&task_priority_key(right)));
     for task in ready {
-        if seen.insert(task.id.as_str()) {
-            selected.push(task);
-        }
-        if selected.len() >= 6 {
+        admit_working_task(&mut selected, &mut seen, task);
+        if selected.len() == WORKING_SET_LIMIT {
             break;
         }
     }
