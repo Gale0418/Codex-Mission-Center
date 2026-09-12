@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
 sys.path.insert(0, str(TOOLS))
@@ -179,6 +180,16 @@ class BoundedProcessTests(unittest.TestCase):
             with self.subTest(limit=invalid), self.assertRaises(ValueError):
                 self.run_python("pass", limit=invalid)  # type: ignore[arg-type]
 
+    def test_setup_popen_failure_closes_both_readiness_descriptors(self):
+        fd_root = Path("/proc/self/fd")
+        before = len(list(fd_root.iterdir()))
+        with patch("bounded_process.subprocess.Popen", side_effect=OSError("injected Popen failure")):
+            for _ in range(20):
+                with self.assertRaisesRegex(OSError, "injected Popen failure"):
+                    self.run_python("pass")
+        after = len(list(fd_root.iterdir()))
+        self.assertEqual(after, before)
+
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux bounded runner is required")
 class HarnessMutationTests(unittest.TestCase):
@@ -215,7 +226,7 @@ elif command == 'resume':
     }
     def string_bytes(value):
         if isinstance(value, str): return len(value.encode('utf-8'))
-        if isinstance(value, dict): return sum(string_bytes(item) for item in value.values())
+        if isinstance(value, dict): return sum(len(str(key).encode('utf-8')) + string_bytes(item) for key, item in value.items())
         if isinstance(value, list): return sum(string_bytes(item) for item in value)
         return 0
     data['bytes'] = string_bytes(data)
@@ -255,6 +266,7 @@ class EnvelopeTests(unittest.TestCase):
         declared_bytes: int | None = None,
         read_next: list[str] | None = None,
         omit: str | None = None,
+        schema_version: str = "1.1",
     ):
         content = {
             "handoff": None,
@@ -264,7 +276,7 @@ class EnvelopeTests(unittest.TestCase):
             "snapshot": None,
         }
         payload = {
-            "schemaVersion": "1.1",
+            "schemaVersion": schema_version,
             "route": "resume",
             "sourceFresh": True,
             "dateFresh": True,
@@ -287,7 +299,10 @@ class EnvelopeTests(unittest.TestCase):
             if isinstance(value, str):
                 return len(value.encode("utf-8"))
             if isinstance(value, dict):
-                return sum(string_bytes(item) for item in value.values())
+                return sum(
+                    len(str(key).encode("utf-8")) + string_bytes(item)
+                    for key, item in value.items()
+                )
             if isinstance(value, list):
                 return sum(string_bytes(item) for item in value)
             return 0
@@ -325,6 +340,32 @@ class EnvelopeTests(unittest.TestCase):
     def test_resume_contract_rejects_oversized_routing_metadata(self):
         self.assertFalse(
             resume_contract_valid(self.resume_result(read_next=["x" * 16385]))
+        )
+
+    def test_resume_contract_counts_mapping_keys_in_shared_budget(self):
+        result = self.resume_result()
+        payload = result["envelope"]["data"]
+        huge_key = "k" * 20_000
+        payload["context"]["includedBytes"] = {huge_key: 0}
+
+        def values_only(value):
+            if isinstance(value, str):
+                return len(value.encode("utf-8"))
+            if isinstance(value, dict):
+                return sum(values_only(item) for item in value.values())
+            if isinstance(value, list):
+                return sum(values_only(item) for item in value)
+            return 0
+
+        payload["bytes"] = values_only(payload)
+        self.assertFalse(resume_contract_valid(result))
+
+    def test_resume_contract_requires_supported_schema_version(self):
+        self.assertFalse(
+            resume_contract_valid(self.resume_result(schema_version="not-a-version"))
+        )
+        self.assertFalse(
+            resume_contract_valid(self.resume_result(schema_version="1.0"))
         )
 
     def test_resume_contract_rejects_every_missing_public_field(self):
