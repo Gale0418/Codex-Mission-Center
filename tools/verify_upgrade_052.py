@@ -27,6 +27,7 @@ from bounded_process import run_bounded
 
 TIMEOUT_SECONDS = 30
 MAX_OUTPUT_BYTES = 1024 * 1024
+RESUME_MAX_BYTES = 16 * 1024
 FIXTURE_DATE = "2026-09-12"
 TASK_HEADER = (
     "# Tasks\n\n"
@@ -76,6 +77,43 @@ def check_status(result: dict[str, Any], name: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def resume_contract_valid(result: dict[str, Any]) -> bool:
+    """Validate the documented successful, shared-budget resume packet."""
+    if result.get("exitCode") != 0:
+        return False
+    payload = data_of(result)
+    content = payload.get("content")
+    required = {"brief", "workingSet", "activeCriticalLessons", "snapshot"}
+    if not isinstance(content, dict) or not required.issubset(content):
+        return False
+    if not isinstance(content.get("brief"), str) or not content["brief"]:
+        return False
+    if not isinstance(content.get("workingSet"), str) or not content["workingSet"]:
+        return False
+    if not isinstance(payload.get("readNext"), list) or not all(
+        isinstance(item, str) for item in payload["readNext"]
+    ):
+        return False
+
+    actual_bytes = 0
+    for value in content.values():
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            return False
+        actual_bytes += len(value.encode("utf-8"))
+
+    used_bytes = payload.get("bytes")
+    max_bytes = payload.get("maxBytes")
+    if (isinstance(used_bytes, bool) or not isinstance(used_bytes, int)
+            or isinstance(max_bytes, bool) or not isinstance(max_bytes, int)):
+        return False
+    return (
+        used_bytes == actual_bytes
+        and 0 <= used_bytes <= max_bytes <= RESUME_MAX_BYTES
+    )
+
+
 def sync(binary: Path, root: Path, operation: str) -> None:
     result = invoke(
         binary, root, "sync", "--operation-id", operation,
@@ -113,18 +151,9 @@ def collect(binary: Path) -> dict[str, Any]:
             working_set, "The active MC-007 remains represented in the bounded working set.",
         )
         resumed = invoke(binary, root, "resume", "--date", FIXTURE_DATE)
-        payload = data_of(resumed)
-        content = payload.get("content")
-        required = {"brief", "workingSet", "activeCriticalLessons", "snapshot"}
-        # These are the documented front-door field names. Renaming the public
-        # contract requires an explicit test/doc migration, not a silent skip.
         record(
-            "resume_delivers_documented_context", isinstance(content, dict)
-            and required.issubset(content)
-            and isinstance(content.get("brief"), str) and bool(content["brief"])
-            and isinstance(content.get("workingSet"), str) and bool(content["workingSet"])
-            and isinstance(payload.get("readNext"), list),
-            resumed, "resume returns actual bounded content and the documented recovery fields.",
+            "resume_delivers_documented_context", resume_contract_valid(resumed),
+            resumed, "resume exits successfully and returns actual content within the shared 16 KiB budget.",
         )
         task_before = tasks_path.read_bytes()
         (mission / "execution-ledger.jsonl").write_text("{not-json}\n", encoding="utf-8")
