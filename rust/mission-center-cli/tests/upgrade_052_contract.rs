@@ -122,7 +122,13 @@ fn public_packet_bytes(value: &Value, nodes: &mut usize) -> Option<usize> {
         }
         Value::Null => Some(4),
         Value::Bool(value) => Some(if *value { 4 } else { 5 }),
-        Value::Number(number) => Some(number.to_string().len()),
+        Value::Number(number) => {
+            if number.is_i64() || number.is_u64() {
+                Some(number.to_string().len())
+            } else {
+                None
+            }
+        }
     }
 }
 
@@ -197,7 +203,7 @@ fn assert_resume_public_contract(payload: &Value) {
 
     let mut nodes = 0usize;
     let actual = public_packet_bytes(&payload["data"], &mut nodes)
-        .expect("resume packet must remain within public node bounds");
+        .expect("resume packet must contain only bounded supported public scalar types");
     let declared = data["bytes"].as_u64().expect("declared bytes") as usize;
     let maximum = data["maxBytes"].as_u64().expect("declared maxBytes") as usize;
     assert_eq!(
@@ -205,6 +211,17 @@ fn assert_resume_public_contract(payload: &Value) {
         "declared bytes must include every public JSON key/string/scalar representation"
     );
     assert!(actual <= maximum && maximum <= RESUME_MAX_BYTES);
+}
+
+#[test]
+fn resume_budget_metric_rejects_floating_point_metadata() {
+    let packet = serde_json::json!({
+        "schemaVersion": "1.1",
+        "route": "resume",
+        "handoff": {"ratio": 1.5}
+    });
+    let mut nodes = 0usize;
+    assert_eq!(public_packet_bytes(&packet, &mut nodes), None);
 }
 
 #[test]
