@@ -4,6 +4,8 @@
 This is a development test harness, NOT a Python runtime fallback. It executes
 only the explicitly supplied local binary against disposable workspaces. It
 never runs CI, connects to a model/provider, or writes the caller's workspace.
+Process execution requires POSIX (Linux/macOS); Windows fails closed with exit 2.
+This bounds captured output/lifetime, not arbitrary child filesystem operations.
 Exit 0 means all probes passed; exit 1 means an assertion failed; exit 2 means
 setup, execution, timeout, JSON decoding, or report writing failed. A baseline
 failure is deliberately NOT converted into a successful upgrade verification.
@@ -20,6 +22,8 @@ import subprocess
 import sys
 import tempfile
 from typing import Any
+
+from bounded_process import run_bounded
 
 TIMEOUT_SECONDS = 30
 MAX_OUTPUT_BYTES = 1024 * 1024
@@ -40,27 +44,17 @@ def task_row(task_id: str, status: str, priority: str = "P1") -> str:
 
 
 def invoke(binary: Path, root: Path, *args: str) -> dict[str, Any]:
-    # File-backed output avoids retaining arbitrary child output in RAM. The
-    # trusted local candidate is still constrained by a wall-clock timeout.
-    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
-        result = subprocess.run(
-            [str(binary), *args, "--root", str(root)],
-            stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
-            timeout=TIMEOUT_SECONDS, check=False,
-        )
-        stdout.seek(0)
-        stderr.seek(0)
-        output = stdout.read(MAX_OUTPUT_BYTES + 1)
-        errors = stderr.read(MAX_OUTPUT_BYTES + 1)
-    if len(output) > MAX_OUTPUT_BYTES or len(errors) > MAX_OUTPUT_BYTES:
-        raise RuntimeError("candidate output exceeded the probe's bounded read limit")
+    exit_code, output, errors = run_bounded(
+        [str(binary), *args, "--root", str(root)],
+        timeout=TIMEOUT_SECONDS, max_output_bytes=MAX_OUTPUT_BYTES,
+    )
     payload = json.loads(output.decode("utf-8"))
     if not isinstance(payload, dict):
         raise RuntimeError("CLI envelope must be a JSON object")
     # Only disposable fixture paths can appear here; avoid publishing them.
     serialized = json.dumps(payload, ensure_ascii=False).replace(str(root), "<fixture>")
     return {
-        "command": list(args), "exitCode": result.returncode,
+        "command": list(args), "exitCode": exit_code,
         "envelope": json.loads(serialized),
         "stderr": errors.decode("utf-8", errors="replace").replace(str(root), "<fixture>"),
     }
@@ -71,14 +65,15 @@ def data_of(result: dict[str, Any]) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def check_status(result: dict[str, Any], name: str) -> Any:
+def check_status(result: dict[str, Any], name: str) -> str | None:
     checks = data_of(result).get("checks", [])
     if not isinstance(checks, list):
         return None
-    return next(
+    value = next(
         (check.get("status") for check in checks
          if isinstance(check, dict) and check.get("name") == name), None,
     )
+    return value if isinstance(value, str) else None
 
 
 def sync(binary: Path, root: Path, operation: str) -> None:
@@ -119,12 +114,16 @@ def collect(binary: Path) -> dict[str, Any]:
         )
         resumed = invoke(binary, root, "resume", "--date", FIXTURE_DATE)
         payload = data_of(resumed)
-        required = {"brief", "workingSet", "activeCriticalLessons", "snapshot", "readNext"}
+        content = payload.get("content")
+        required = {"brief", "workingSet", "activeCriticalLessons", "snapshot"}
         # These are the documented front-door field names. Renaming the public
         # contract requires an explicit test/doc migration, not a silent skip.
         record(
-            "resume_delivers_documented_context", required.issubset(payload)
-            and bool(payload.get("brief")) and bool(payload.get("workingSet")),
+            "resume_delivers_documented_context", isinstance(content, dict)
+            and required.issubset(content)
+            and isinstance(content.get("brief"), str) and bool(content["brief"])
+            and isinstance(content.get("workingSet"), str) and bool(content["workingSet"])
+            and isinstance(payload.get("readNext"), list),
             resumed, "resume returns actual bounded content and the documented recovery fields.",
         )
         task_before = tasks_path.read_bytes()
@@ -191,7 +190,7 @@ def main() -> int:
             args.report.write_text(text, encoding="utf-8")
         print(text, end="")
         return 0 if report["passed"] == report["total"] else 1
-    except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
+    except (OSError, RuntimeError, ValueError, RecursionError, subprocess.TimeoutExpired) as error:
         print(json.dumps({"status": "probe_setup_error", "error": str(error)}, ensure_ascii=False), file=sys.stderr)
         return 2
 
