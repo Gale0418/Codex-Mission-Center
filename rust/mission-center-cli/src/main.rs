@@ -9,12 +9,16 @@ use mission_center_runtime::{
     RuntimeState, SourceStatus, StdioTransport, probe_loopback_health, replay_jsonl_with_allowlist,
     stdio_command, validate_health_payload,
 };
-use mission_center_workspace::{DAILY_LOG_MAX_BYTES, MissionWorkspace, SyncOptions};
+use mission_center_workspace::{
+    DAILY_LOG_MAX_BYTES, MissionWorkspace, SyncOptions, read_bounded_file, read_bounded_utf8,
+};
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
+#[cfg(windows)]
+use std::os::windows::fs::MetadataExt;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use std::{
@@ -33,6 +37,12 @@ const SCHEMA: &str = "1.0";
 const MAX_OUTPUT_BYTES: usize = 512 * 1024;
 const MAX_JSON_INPUT_BYTES: usize = 8 * 1024 * 1024;
 const CLI_ENVELOPE_SCHEMA: &str = include_str!("../schemas/cli-envelope.schema.json");
+const RESUME_MAX_BYTES: usize = 16 * 1024;
+const EVIDENCE_MAX_BYTES: u64 = 64 * 1024;
+const RESUME_TRUNCATED_MARKER: &str = "[TRUNCATED]";
+const MAX_EVIDENCE_FILES: usize = 256;
+const MAX_EVIDENCE_TOTAL_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_EVIDENCE_ERRORS: usize = 32;
 
 // These are deliberately compile-time inclusions.  HUD serving must remain
 // independent of the caller's cwd and of mutable output files, especially on
@@ -1602,6 +1612,385 @@ fn organized_date(text: &str) -> Option<String> {
         })
     })
 }
+
+fn bounded_utf8_prefix(value: &str, max_bytes: usize) -> String {
+    if value.len() <= max_bytes {
+        return value.to_owned();
+    }
+    let mut end = max_bytes.min(value.len());
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value[..end].to_owned()
+}
+
+fn bounded_utf8_truncated(value: &str, max_bytes: usize) -> String {
+    if value.len() <= max_bytes {
+        return value.to_owned();
+    }
+    if max_bytes <= RESUME_TRUNCATED_MARKER.len() {
+        return RESUME_TRUNCATED_MARKER[..max_bytes].to_owned();
+    }
+    let prefix = bounded_utf8_prefix(value, max_bytes - RESUME_TRUNCATED_MARKER.len());
+    format!("{prefix}{RESUME_TRUNCATED_MARKER}")
+}
+
+fn active_lessons(value: &str) -> String {
+    let Some(start) = ["## Active Lessons", "## 主動教訓"]
+        .iter()
+        .filter_map(|marker| value.find(marker))
+        .min()
+    else {
+        return String::new();
+    };
+    let tail = &value[start..];
+    let end = [
+        "## Resolved Index",
+        "## Resolved Lessons",
+        "## 已解決索引",
+        "## 已解決教訓",
+    ]
+    .iter()
+    .filter_map(|marker| tail.find(marker))
+    .min()
+    .unwrap_or(tail.len());
+    tail[..end].trim_end().to_owned()
+}
+
+fn public_value_bytes(value: &Value, nodes: &mut usize) -> Option<usize> {
+    *nodes = nodes.checked_add(1)?;
+    if *nodes > 10_000 {
+        return None;
+    }
+    match value {
+        Value::String(text) => Some(text.len()),
+        Value::Array(values) => values.iter().try_fold(0usize, |sum, item| {
+            sum.checked_add(public_value_bytes(item, nodes)?)
+        }),
+        Value::Object(values) => values.iter().try_fold(0usize, |sum, (key, item)| {
+            *nodes = nodes.checked_add(1)?;
+            if *nodes > 10_000 {
+                return None;
+            }
+            sum.checked_add(key.len())?
+                .checked_add(public_value_bytes(item, nodes)?)
+        }),
+        Value::Null => Some(4),
+        Value::Bool(value) => Some(if *value { 4 } else { 5 }),
+        Value::Number(value) if value.is_i64() || value.is_u64() => Some(value.to_string().len()),
+        Value::Number(_) => None,
+    }
+}
+
+fn read_optional_context(
+    ws: &MissionWorkspace,
+    locator: &str,
+    limit: u64,
+    files_read: &mut Vec<String>,
+    read_next: &mut Vec<String>,
+) -> Option<String> {
+    match ws.read_artifact_text(locator, limit) {
+        Ok(text) => {
+            files_read.push(format!("MissionCenter/{locator}"));
+            Some(text)
+        }
+        Err(mission_center_workspace::WorkspaceError::NotFound { .. }) => {
+            read_next.push(locator.to_owned());
+            None
+        }
+        Err(_) => {
+            read_next.push(locator.to_owned());
+            None
+        }
+    }
+}
+
+fn json_string_array(values: &[String]) -> Value {
+    Value::Array(values.iter().cloned().map(Value::String).collect())
+}
+
+fn resume_packet(ws: &MissionWorkspace, _tasks: &[Task], date: &str) -> Result<Value, String> {
+    let mission = ws.mission_dir();
+    let mut files_read = Vec::new();
+    let mut read_next = Vec::new();
+    let mut stale_reasons = Vec::new();
+    let fingerprint = ws.fingerprint().map_err(|error| error.to_string())?;
+    let task_source = fs::read(ws.tasks_path()).map_err(|error| error.to_string())?;
+    let task_fp = mission_center_core::workspace_fingerprint(&[("tasks.md", Some(&task_source))]);
+    let required = [
+        "brief.md",
+        "working-set.md",
+        "guardrails.md",
+        "daily-log.md",
+        "critical-lessons.md",
+    ];
+    let missing: Vec<String> = required
+        .iter()
+        .filter(|name| !ws.artifact_exists(name).unwrap_or(false))
+        .map(|name| (*name).to_owned())
+        .collect();
+    let brief = read_optional_context(ws, "brief.md", 64 * 1024, &mut files_read, &mut read_next);
+    let working_set = read_optional_context(
+        ws,
+        "working-set.md",
+        64 * 1024,
+        &mut files_read,
+        &mut read_next,
+    );
+    let lessons = read_optional_context(
+        ws,
+        "critical-lessons.md",
+        64 * 1024,
+        &mut files_read,
+        &mut read_next,
+    );
+    let daily = read_optional_context(
+        ws,
+        "daily-log.md",
+        DAILY_LOG_MAX_BYTES,
+        &mut files_read,
+        &mut read_next,
+    );
+    let source_fresh = missing.is_empty()
+        && marker_fingerprint(brief.as_deref().unwrap_or_default()) == Some(fingerprint.as_str())
+        && marker_fingerprint(working_set.as_deref().unwrap_or_default()) == Some(task_fp.as_str());
+    let date_fresh = organized_date(daily.as_deref().unwrap_or_default()).as_deref() == Some(date);
+    if !missing.is_empty() {
+        stale_reasons.push("missing_required_files".to_owned());
+    }
+    if !source_fresh && missing.is_empty() {
+        stale_reasons.push("source_fingerprint_mismatch".to_owned());
+    }
+    if !date_fresh {
+        stale_reasons.push("organized_date_mismatch".to_owned());
+    }
+
+    let mut ledger_status = "missing";
+    let mut ledger_error = None;
+    let mut handoff = None;
+    if ws
+        .artifact_exists("execution-ledger.jsonl")
+        .map_err(|e| e.to_string())?
+    {
+        match ws.validate_execution_ledger() {
+            Ok(()) => {
+                ledger_status = "ready";
+                match ws.handoff_json(None) {
+                    Ok(raw) => match serde_json::from_str(&raw) {
+                        Ok(value) => handoff = Some(value),
+                        Err(error) => {
+                            ledger_status = "corrupt";
+                            ledger_error = Some(format!("invalid handoff JSON: {error}"));
+                            read_next.push("execution-ledger.jsonl".to_owned());
+                            read_next.push("handoff".to_owned());
+                        }
+                    },
+                    Err(mission_center_workspace::WorkspaceError::TooLarge { .. }) => {
+                        read_next.push("handoff".to_owned());
+                    }
+                    Err(error) => {
+                        ledger_status = "corrupt";
+                        ledger_error = Some(error.to_string());
+                        read_next.push("execution-ledger.jsonl".to_owned());
+                        read_next.push("handoff".to_owned());
+                    }
+                }
+            }
+            Err(error) => {
+                ledger_status = "corrupt";
+                ledger_error = Some(error.to_string());
+                read_next.push("execution-ledger.jsonl".to_owned());
+                read_next.push("handoff".to_owned());
+            }
+        }
+    }
+    let mut snapshot_invalid = false;
+    let snapshot = match read_bounded_utf8(&mission.join("snapshot.md"), 64 * 1024) {
+        Ok(text)
+            if text.lines().any(|line| {
+                let value = line.trim().to_ascii_lowercase();
+                value == "- state: active" || value == "state: active"
+            }) =>
+        {
+            files_read.push("MissionCenter/snapshot.md".to_owned());
+            Some(text)
+        }
+        Ok(_) => None,
+        Err(mission_center_workspace::WorkspaceError::NotFound { .. }) => None,
+        Err(error) => {
+            snapshot_invalid = true;
+            stale_reasons.push("snapshot_unreadable".to_owned());
+            read_next.push("snapshot.md".to_owned());
+            let _ = error;
+            None
+        }
+    };
+    let complete = snapshot.is_none()
+        && !snapshot_invalid
+        && !_tasks.is_empty()
+        && _tasks.iter().all(|task| task.status == TaskStatus::Done);
+
+    let mut sections = vec![
+        ("handoff", handoff.as_ref().map(Value::to_string)),
+        ("brief", brief),
+        ("workingSet", working_set),
+        (
+            "activeCriticalLessons",
+            lessons.map(|value| active_lessons(&value)),
+        ),
+        ("snapshot", snapshot),
+    ];
+    let handoff_object = handoff.clone();
+    let mut truncated = false;
+    let mut truncated_names = Vec::new();
+    let make = |sections: &[(&str, Option<String>)],
+                handoff_value: Option<Value>,
+                truncated: bool,
+                truncated_names: &[String]| {
+        let content = sections
+            .iter()
+            .map(|(name, value)| {
+                (
+                    (*name).to_owned(),
+                    value
+                        .as_deref()
+                        .map(|value| Value::String(value.to_owned()))
+                        .unwrap_or(Value::Null),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>();
+        let included = sections
+            .iter()
+            .map(|(name, value)| {
+                (
+                    (*name).to_owned(),
+                    Value::from(value.as_ref().map_or(0usize, String::len) as u64),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>();
+        let fallback =
+            !source_fresh || !date_fresh || ledger_status == "corrupt" || snapshot_invalid;
+        let mut object = serde_json::Map::new();
+        object.insert("schemaVersion".to_owned(), Value::String("1.1".to_owned()));
+        object.insert("route".to_owned(), Value::String("resume".to_owned()));
+        object.insert("sourceFresh".to_owned(), Value::Bool(source_fresh));
+        object.insert("dateFresh".to_owned(), Value::Bool(date_fresh));
+        object.insert("staleReasons".to_owned(), json_string_array(&stale_reasons));
+        object.insert("filesRead".to_owned(), json_string_array(&files_read));
+        object.insert("content".to_owned(), Value::Object(content));
+        object.insert("handoff".to_owned(), handoff_value.unwrap_or(Value::Null));
+        object.insert(
+            "ledgerStatus".to_owned(),
+            Value::String(ledger_status.to_owned()),
+        );
+        object.insert(
+            "ledgerError".to_owned(),
+            ledger_error
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        );
+        object.insert(
+            "context".to_owned(),
+            json!({"includedBytes": Value::Object(included)}),
+        );
+        object.insert("bytes".to_owned(), Value::from(0u64));
+        object.insert("maxBytes".to_owned(), Value::from(RESUME_MAX_BYTES as u64));
+        object.insert("canonicalFallback".to_owned(), Value::Bool(fallback));
+        object.insert(
+            "fallbackReason".to_owned(),
+            if fallback {
+                Value::String(
+                    if ledger_status == "corrupt" {
+                        "execution ledger corrupt"
+                    } else {
+                        "derived view stale"
+                    }
+                    .to_owned(),
+                )
+            } else {
+                Value::Null
+            },
+        );
+        object.insert("truncated".to_owned(), Value::Bool(truncated));
+        object.insert(
+            "truncatedMarker".to_owned(),
+            if truncated {
+                Value::String(RESUME_TRUNCATED_MARKER.to_owned())
+            } else {
+                Value::Null
+            },
+        );
+        let mut next = read_next.clone();
+        for name in truncated_names {
+            if !next.contains(name) {
+                next.push(name.clone());
+            }
+        }
+        object.insert("readNext".to_owned(), json_string_array(&next));
+        object.insert(
+            "legacyRouting".to_owned(),
+            json!({
+                "route": if complete { "complete" } else { "select_task" },
+                "actionableHandoff": false,
+            }),
+        );
+        let mut value = Value::Object(object);
+        for _ in 0..4 {
+            let mut nodes = 0;
+            let bytes = public_value_bytes(&value, &mut nodes).unwrap_or(usize::MAX);
+            if let Value::Object(map) = &mut value {
+                if map.get("bytes").and_then(Value::as_u64) == Some(bytes as u64) {
+                    break;
+                }
+                map.insert("bytes".to_owned(), Value::from(bytes as u64));
+            }
+        }
+        value
+    };
+    let mut packet = make(
+        &sections,
+        handoff_object.clone(),
+        truncated,
+        &truncated_names,
+    );
+    for index in (0..sections.len()).rev() {
+        while public_value_bytes(&packet, &mut 0).unwrap_or(usize::MAX) > RESUME_MAX_BYTES {
+            let current = sections[index].1.as_deref().unwrap_or_default();
+            if current.is_empty() {
+                break;
+            }
+            let mut nodes = 0;
+            let current_bytes = public_value_bytes(&packet, &mut nodes).unwrap_or(usize::MAX);
+            let excess = current_bytes.saturating_sub(RESUME_MAX_BYTES).max(1);
+            let target = current.len().saturating_sub(excess + 64);
+            sections[index].1 = Some(bounded_utf8_truncated(current, target));
+            truncated = true;
+            if !truncated_names.iter().any(|name| name == sections[index].0) {
+                truncated_names.push(sections[index].0.to_owned());
+            }
+            packet = make(
+                &sections,
+                handoff_object.clone(),
+                truncated,
+                &truncated_names,
+            );
+            if sections[index].1.as_deref().is_some_and(str::is_empty) {
+                break;
+            }
+        }
+    }
+    if public_value_bytes(&packet, &mut 0).unwrap_or(usize::MAX) > RESUME_MAX_BYTES {
+        packet = make(&sections, None, truncated, &truncated_names);
+    }
+    let mut nodes = 0;
+    let bytes = public_value_bytes(&packet, &mut nodes)
+        .ok_or_else(|| "resume packet exceeds bounded node budget".to_owned())?;
+    if bytes > RESUME_MAX_BYTES {
+        return Err("resume packet metadata exceeds 16 KiB".to_owned());
+    }
+    Ok(packet)
+}
 fn ids_json(ids: &[String]) -> String {
     format!(
         "[{}]",
@@ -1610,6 +1999,872 @@ fn ids_json(ids: &[String]) -> String {
             .collect::<Vec<_>>()
             .join(",")
     )
+}
+
+fn reconcile_status_rank(status: &str) -> u8 {
+    match status {
+        "pass" => 0,
+        "unknown" => 1,
+        "stale" => 2,
+        "conflict" => 3,
+        "corrupt" => 4,
+        _ => 4,
+    }
+}
+
+fn evidence_path(root: &Path, locator: &str) -> Option<PathBuf> {
+    Some(root.join(normalize_locator(locator)?))
+}
+
+#[cfg(windows)]
+fn metadata_is_reparse(metadata: &fs::Metadata) -> bool {
+    metadata.file_attributes() & 0x400 != 0
+}
+
+#[cfg(not(windows))]
+fn metadata_is_reparse(_metadata: &fs::Metadata) -> bool {
+    false
+}
+
+fn normalize_locator(locator: &str) -> Option<String> {
+    if locator.is_empty()
+        || locator.len() > 1024
+        || locator.contains("://")
+        || locator.starts_with('/')
+        || locator.as_bytes().get(1) == Some(&b':')
+    {
+        return None;
+    }
+    let normalized = locator.replace('\\', "/");
+    let parts = normalized.split('/').collect::<Vec<_>>();
+    if parts.is_empty()
+        || parts
+            .iter()
+            .any(|part| part.is_empty() || *part == "." || *part == "..")
+    {
+        return None;
+    }
+    Some(parts.join("/"))
+}
+
+fn schema_identifier(
+    value: Option<&Value>,
+    kind: &str,
+    errors: &mut Vec<String>,
+) -> Option<String> {
+    if value
+        .and_then(Value::as_str)
+        .is_some_and(|text| text != text.trim())
+    {
+        errors.push(format!("{kind} has invalid surrounding whitespace"));
+    }
+    let text = evidence_text(value, kind, errors)?;
+    let valid = match kind {
+        "envelopeId" | "supersedes" => {
+            text.chars().count() <= 128
+                && text.chars().enumerate().all(|(index, ch)| {
+                    ch.is_ascii_alphanumeric() && index == 0
+                        || index > 0
+                            && (ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+                })
+        }
+        "taskId" => text.rsplit_once('-').is_some_and(|(prefix, suffix)| {
+            !prefix.is_empty()
+                && prefix.chars().enumerate().all(|(index, ch)| {
+                    ch.is_ascii_alphabetic() && index == 0
+                        || index > 0 && (ch.is_ascii_alphanumeric() || ch == '_')
+                })
+                && !suffix.is_empty()
+                && suffix.bytes().all(|byte| byte.is_ascii_digit())
+        }),
+        "checkId" => {
+            text.chars().count() <= 128
+                && text.chars().enumerate().all(|(index, ch)| {
+                    ch.is_ascii_alphanumeric() && index == 0
+                        || index > 0
+                            && (ch.is_ascii_alphanumeric() || matches!(ch, '.' | ':' | '/' | '-'))
+                })
+        }
+        _ => false,
+    };
+    if !valid {
+        errors.push(format!("{kind} has invalid format"));
+    }
+    Some(text)
+}
+
+fn valid_iso8601_timezone(value: Option<&Value>, errors: &mut Vec<String>) -> bool {
+    let Some(text) = strict_evidence_text(value, "recordedAt", errors) else {
+        return false;
+    };
+    let date_time = text.len() >= 20
+        && text.as_bytes().get(4) == Some(&b'-')
+        && text.as_bytes().get(7) == Some(&b'-')
+        && text.as_bytes().get(10) == Some(&b'T')
+        && text.as_bytes().get(13) == Some(&b':')
+        && text.as_bytes().get(16) == Some(&b':');
+    let date_time_digits = [(0, 4), (5, 7), (8, 10), (11, 13), (14, 16), (17, 19)]
+        .iter()
+        .all(|(start, end)| {
+            text.as_bytes()
+                .get(*start..*end)
+                .is_some_and(|part| part.iter().all(u8::is_ascii_digit))
+        });
+    let date_time_ranges = if date_time_digits {
+        let bytes = text.as_bytes();
+        let number = |start: usize, end: usize| {
+            bytes[start..end]
+                .iter()
+                .fold(0u32, |value, byte| value * 10 + u32::from(byte - b'0'))
+        };
+        let year = number(0, 4);
+        let month = number(5, 7);
+        let day = number(8, 10);
+        let hour = number(11, 13);
+        let minute = number(14, 16);
+        let second = number(17, 19);
+        let days_in_month = match month {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 if year % 400 == 0 || (year % 4 == 0 && year % 100 != 0) => 29,
+            2 => 28,
+            _ => 0,
+        };
+        (1..=12).contains(&month)
+            && (1..=days_in_month).contains(&day)
+            && hour <= 23
+            && minute <= 59
+            && second <= 60
+    } else {
+        false
+    };
+    let timezone_start = if text.as_bytes().get(19) == Some(&b'.') {
+        let end = text[20..]
+            .bytes()
+            .position(|byte| matches!(byte, b'Z' | b'+' | b'-'))
+            .map(|offset| offset + 20)
+            .unwrap_or(0);
+        let fraction = text.get(20..end).unwrap_or_default();
+        if fraction.is_empty() || !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
+            0
+        } else {
+            end
+        }
+    } else {
+        19
+    };
+    let timezone = timezone_start > 0
+        && (text.get(timezone_start..) == Some("Z")
+            || text.get(timezone_start..).is_some_and(|suffix| {
+                suffix.len() == 6
+                    && matches!(suffix.as_bytes().first(), Some(b'+' | b'-'))
+                    && suffix.as_bytes().get(3) == Some(&b':')
+                    && suffix[1..]
+                        .bytes()
+                        .enumerate()
+                        .all(|(index, byte)| index == 2 || byte.is_ascii_digit())
+                    && suffix
+                        .get(1..3)
+                        .and_then(|hours| hours.parse::<u32>().ok())
+                        .is_some_and(|hours| hours <= 23)
+                    && suffix
+                        .get(4..6)
+                        .and_then(|minutes| minutes.parse::<u32>().ok())
+                        .is_some_and(|minutes| minutes <= 59)
+            }));
+    if !date_time || !date_time_digits || !date_time_ranges || !timezone {
+        errors.push("recordedAt must be an ISO-8601 date-time with timezone".to_owned());
+    }
+    date_time && date_time_digits && date_time_ranges && timezone
+}
+
+fn task_id_in_text(text: &str, task_id: &str) -> bool {
+    let mut offset = 0;
+    while let Some(relative) = text[offset..].find(task_id) {
+        let start = offset + relative;
+        let end = start + task_id.len();
+        let before = text[..start].chars().next_back();
+        let after = text[end..].chars().next();
+        if !before.is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+            && !after.is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+        {
+            return true;
+        }
+        offset = end;
+        if offset >= text.len() {
+            break;
+        }
+    }
+    false
+}
+
+fn task_ids_in_text(text: &str, tasks: &[Task]) -> HashSet<String> {
+    tasks
+        .iter()
+        .filter(|task| task_id_in_text(text, &task.id))
+        .map(|task| task.id.clone())
+        .collect()
+}
+
+fn progress_section<'a>(text: &'a str, start: &str, end: &str) -> &'a str {
+    let Some(start_index) = text.find(start) else {
+        return "";
+    };
+    let body = &text[start_index + start.len()..];
+    body.find(end).map_or(body, |end_index| &body[..end_index])
+}
+
+fn closeout_field<'a>(text: &'a str, labels: &[&str]) -> Option<&'a str> {
+    text.lines().find_map(|line| {
+        let line = line.trim_start();
+        labels.iter().find_map(|label| {
+            line.strip_prefix(&format!("- {label}:"))
+                .or_else(|| line.strip_prefix(&format!("- {label}：")))
+                .map(str::trim)
+        })
+    })
+}
+
+fn evidence_text(value: Option<&Value>, field: &str, errors: &mut Vec<String>) -> Option<String> {
+    strict_evidence_text(value, field, errors)
+}
+
+fn strict_evidence_text(
+    value: Option<&Value>,
+    field: &str,
+    errors: &mut Vec<String>,
+) -> Option<String> {
+    let text = value.and_then(Value::as_str).filter(|v| !v.is_empty());
+    if text.is_none() {
+        errors.push(format!("{field} must be a non-empty string"));
+    } else if text.is_some_and(|v| v.len() > 1024) {
+        errors.push(format!("{field} exceeds 1024 bytes"));
+    }
+    if text.is_some_and(|v| v != v.trim()) {
+        errors.push(format!("{field} has invalid surrounding whitespace"));
+    }
+    text.map(ToOwned::to_owned)
+}
+
+fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
+    let directory = root.join("output/mission-center-evidence");
+    let unknown = || {
+        (
+            "unknown",
+            "evidence envelope directory is absent or empty".to_owned(),
+        )
+    };
+    let metadata = match fs::symlink_metadata(&directory) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return unknown(),
+        Err(error) => {
+            return (
+                "corrupt",
+                format!("cannot inspect evidence directory: {error}"),
+            );
+        }
+    };
+    if metadata.file_type().is_symlink() || metadata_is_reparse(&metadata) || !metadata.is_dir() {
+        return (
+            "corrupt",
+            "evidence directory is not a safe directory".to_owned(),
+        );
+    }
+    let entries = match fs::read_dir(&directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return unknown(),
+        Err(error) => {
+            return (
+                "corrupt",
+                format!("cannot enumerate evidence directory: {error}"),
+            );
+        }
+    };
+    let mut paths = Vec::new();
+    let mut total_bytes = 0u64;
+    let mut entry_count = 0usize;
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                return (
+                    "corrupt",
+                    format!("cannot enumerate evidence entry: {error}"),
+                );
+            }
+        };
+        entry_count += 1;
+        if entry_count > MAX_EVIDENCE_FILES {
+            return (
+                "corrupt",
+                format!("evidence directory exceeds {MAX_EVIDENCE_FILES} entries"),
+            );
+        }
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) => return ("corrupt", format!("cannot inspect evidence entry: {error}")),
+        };
+        let entry_metadata = match fs::symlink_metadata(entry.path()) {
+            Ok(metadata) => metadata,
+            Err(error) => return ("corrupt", format!("cannot inspect evidence entry: {error}")),
+        };
+        if file_type.is_symlink() || metadata_is_reparse(&entry_metadata) {
+            return (
+                "corrupt",
+                "evidence directory contains a symlink/reparse entry".to_owned(),
+            );
+        }
+        if file_type.is_file() {
+            let size = match entry.metadata() {
+                Ok(metadata) => metadata.len(),
+                Err(error) => return ("corrupt", format!("cannot stat evidence entry: {error}")),
+            };
+            total_bytes = match total_bytes.checked_add(size) {
+                Some(total) if total <= MAX_EVIDENCE_TOTAL_BYTES => total,
+                _ => {
+                    return (
+                        "corrupt",
+                        format!("evidence directory exceeds {MAX_EVIDENCE_TOTAL_BYTES} bytes"),
+                    );
+                }
+            };
+            if entry.path().extension().is_some_and(|ext| ext == "json") {
+                paths.push(entry.path());
+            }
+        }
+    }
+    if paths.is_empty() {
+        return unknown();
+    }
+    let task_ids: HashSet<String> = tasks.iter().map(|task| task.id.clone()).collect();
+    let mut records = Vec::new();
+    let mut statuses = Vec::new();
+    let mut errors = Vec::new();
+    for path in paths {
+        let name = path
+            .file_name()
+            .and_then(|v| v.to_str())
+            .unwrap_or("evidence.json");
+        let bytes = match read_bounded_file(&path, EVIDENCE_MAX_BYTES) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                statuses.push("corrupt");
+                errors.push(format!("{name}: {error}"));
+                continue;
+            }
+        };
+        let payload: Value = match serde_json::from_slice(&bytes) {
+            Ok(value) => value,
+            Err(error) => {
+                statuses.push("corrupt");
+                errors.push(format!("{name}: invalid JSON: {error}"));
+                continue;
+            }
+        };
+        let Some(object) = payload.as_object() else {
+            statuses.push("corrupt");
+            errors.push(format!("{name}: envelope must be an object"));
+            continue;
+        };
+        let allowed = [
+            "schemaVersion",
+            "artifactType",
+            "envelopeId",
+            "taskId",
+            "checkId",
+            "scope",
+            "scopeDigest",
+            "result",
+            "status",
+            "artifactLocators",
+            "recordedAt",
+            "sourceRevision",
+            "supersedes",
+        ];
+        let required = [
+            "schemaVersion",
+            "artifactType",
+            "envelopeId",
+            "taskId",
+            "checkId",
+            "scope",
+            "scopeDigest",
+            "result",
+            "status",
+            "artifactLocators",
+            "recordedAt",
+        ];
+        let mut local = Vec::new();
+        for key in object.keys() {
+            if !allowed.contains(&key.as_str()) {
+                local.push(format!("unknown field: {key}"));
+            }
+        }
+        for field in required {
+            if !object.contains_key(field) {
+                local.push(format!("missing {field}"));
+            }
+        }
+        if object.get("schemaVersion").and_then(Value::as_str) != Some("1.0") {
+            local.push("schemaVersion must be 1.0".to_owned());
+        }
+        if object.get("artifactType").and_then(Value::as_str) != Some("evidence-envelope") {
+            local.push("artifactType must be evidence-envelope".to_owned());
+        }
+        let envelope_id = schema_identifier(object.get("envelopeId"), "envelopeId", &mut local);
+        let task_id = schema_identifier(object.get("taskId"), "taskId", &mut local);
+        let check_id = schema_identifier(object.get("checkId"), "checkId", &mut local);
+        let digest = evidence_text(object.get("scopeDigest"), "scopeDigest", &mut local);
+        let _recorded_at = valid_iso8601_timezone(object.get("recordedAt"), &mut local);
+        let supersedes = if object.contains_key("supersedes") {
+            schema_identifier(object.get("supersedes"), "supersedes", &mut local)
+        } else {
+            None
+        };
+        if object.contains_key("sourceRevision") {
+            let _ = evidence_text(object.get("sourceRevision"), "sourceRevision", &mut local);
+        }
+        let result = object.get("result").and_then(Value::as_str);
+        let status = object.get("status").and_then(Value::as_str);
+        if !matches!(result, Some("pass" | "fail" | "unknown")) {
+            local.push("invalid result".to_owned());
+        }
+        if !matches!(status, Some("current" | "superseded")) {
+            local.push("invalid status".to_owned());
+        }
+        if !digest.as_ref().is_some_and(|value| {
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        }) {
+            local.push("invalid scopeDigest".to_owned());
+        }
+        let scope = object.get("scope").and_then(Value::as_array);
+        let artifacts = object.get("artifactLocators").and_then(Value::as_array);
+        let mut scope_files = Vec::new();
+        if scope.is_none_or(|v| v.is_empty() || v.len() > 64) {
+            local.push("scope must be a non-empty list".to_owned());
+        }
+        if let Some(values) = scope {
+            let mut seen_scope = HashSet::new();
+            for value in values {
+                let Some(raw_locator) = value.as_str().filter(|v| !v.is_empty()) else {
+                    local.push("invalid scope locator".to_owned());
+                    continue;
+                };
+                let Some(locator) = normalize_locator(raw_locator) else {
+                    local.push(format!("unsafe scope locator: {raw_locator}"));
+                    continue;
+                };
+                let Some(path) = evidence_path(root, &locator) else {
+                    local.push(format!("unsafe scope locator: {raw_locator}"));
+                    continue;
+                };
+                if !seen_scope.insert(locator.to_owned()) {
+                    local.push(format!("duplicate scope locator: {locator}"));
+                    continue;
+                }
+                match read_bounded_file(&path, EVIDENCE_MAX_BYTES) {
+                    Ok(bytes) => scope_files.push((locator.to_owned(), bytes)),
+                    Err(error) => local.push(format!("scope {locator}: {error}")),
+                }
+            }
+        }
+        if artifacts.is_none_or(|v| v.is_empty() || v.len() > 64) {
+            local.push("artifactLocators must be a non-empty list".to_owned());
+        }
+        if let Some(values) = artifacts {
+            let mut seen_artifacts = HashSet::new();
+            for value in values {
+                let Some(raw_locator) = value.as_str().filter(|v| !v.is_empty()) else {
+                    local.push("invalid artifact locator".to_owned());
+                    continue;
+                };
+                let Some(locator) = normalize_locator(raw_locator) else {
+                    local.push(format!("unsafe artifact locator: {raw_locator}"));
+                    continue;
+                };
+                let Some(path) = evidence_path(root, &locator) else {
+                    local.push(format!("unsafe artifact locator: {raw_locator}"));
+                    continue;
+                };
+                if !seen_artifacts.insert(locator.to_owned()) {
+                    local.push(format!("duplicate artifact locator: {locator}"));
+                    continue;
+                }
+                if let Err(error) = read_bounded_file(&path, EVIDENCE_MAX_BYTES) {
+                    local.push(format!("artifact {locator}: {error}"));
+                }
+            }
+        }
+        let scope_refs: Vec<(&str, &[u8])> = scope_files
+            .iter()
+            .map(|(locator, bytes)| (locator.as_str(), bytes.as_slice()))
+            .collect();
+        if local.is_empty()
+            && status != Some("superseded")
+            && digest.as_deref()
+                != Some(mission_center_publish::scope_digest_files(&scope_refs).as_str())
+        {
+            statuses.push("stale");
+            errors.push(format!("{name}: scopeDigest does not match scope"));
+        } else if !local.is_empty() {
+            statuses.push("corrupt");
+            errors.push(format!("{name}: {}", local.join("; ")));
+        }
+        records.push((
+            envelope_id,
+            task_id,
+            check_id,
+            status.map(ToOwned::to_owned),
+            result.map(ToOwned::to_owned),
+            supersedes,
+        ));
+    }
+    let mut current_keys = HashSet::new();
+    let mut ids = HashSet::new();
+    for (id, task, check, status, result, supersedes) in &records {
+        if let Some(id) = id
+            && !ids.insert(id.clone())
+        {
+            statuses.push("conflict");
+            errors.push(format!("duplicate envelopeId: {id}"));
+        }
+        if let (Some(task), Some(check)) = (task, check) {
+            if !task_ids.contains(task) {
+                statuses.push("conflict");
+                errors.push(format!("envelope taskId is absent from tasks.md: {task}"));
+            }
+            if status.as_deref() == Some("current") {
+                if !current_keys.insert((task.clone(), check.clone())) {
+                    statuses.push("conflict");
+                    errors.push(format!(
+                        "multiple current envelopes for task/check: {task}/{check}"
+                    ));
+                }
+                if result.as_deref() == Some("fail") {
+                    statuses.push("conflict");
+                    errors.push(format!("current evidence result is fail: {task}/{check}"));
+                }
+                if result.as_deref() == Some("unknown") {
+                    statuses.push("unknown");
+                }
+            }
+        }
+        if let Some(target) = supersedes {
+            let target_record = records
+                .iter()
+                .find(|(id, _, _, _, _, _)| id.as_deref() == Some(target));
+            let valid_target =
+                target_record.is_some_and(|(_, target_task, target_check, target_status, _, _)| {
+                    target_status.as_deref() == Some("superseded")
+                        && target_task == task
+                        && target_check == check
+                });
+            if !valid_target {
+                statuses.push("conflict");
+                errors.push(format!(
+                    "supersedes unknown, mismatched, or non-superseded envelope: {target}"
+                ));
+            }
+        }
+    }
+    for (id, _, _, status, _, _) in &records {
+        if status.as_deref() == Some("superseded")
+            && !records
+                .iter()
+                .any(|(_, _, _, candidate_status, _, supersedes)| {
+                    candidate_status.as_deref() == Some("current")
+                        && supersedes.as_deref() == id.as_deref()
+                })
+        {
+            statuses.push("conflict");
+            if let Some(id) = id {
+                errors.push(format!(
+                    "superseded envelope has no current replacement: {id}"
+                ));
+            }
+        }
+    }
+    let covered: HashSet<String> = records
+        .iter()
+        .filter_map(|(_, task, _, status, _, _)| {
+            (status.as_deref() == Some("current"))
+                .then(|| task.clone())
+                .flatten()
+        })
+        .collect();
+    for task in tasks {
+        if !covered.contains(&task.id) {
+            statuses.push("unknown");
+            errors.push(format!(
+                "task has no current evidence envelope: {}",
+                task.id
+            ));
+        }
+    }
+    if statuses.is_empty() {
+        return (
+            "pass",
+            format!("{} evidence envelope(s) are valid", records.len()),
+        );
+    }
+    let status = statuses
+        .into_iter()
+        .max_by_key(|value| reconcile_status_rank(value))
+        .unwrap_or("corrupt");
+    let message = errors
+        .iter()
+        .take(MAX_EVIDENCE_ERRORS)
+        .map(|error| bounded_utf8_prefix(error, 512))
+        .collect::<Vec<_>>()
+        .join("; ");
+    (status, message)
+}
+
+fn reconcile_workspace_checks(
+    ws: &MissionWorkspace,
+    tasks: &[Task],
+    date: &str,
+) -> Result<Value, String> {
+    let mut checks = Vec::<Value>::new();
+    let ledger = if !ws
+        .artifact_exists("execution-ledger.jsonl")
+        .map_err(|e| e.to_string())?
+    {
+        ("unknown", "execution ledger is absent".to_owned())
+    } else {
+        match ws.validate_execution_ledger() {
+            Ok(()) => ("pass", "execution ledger is valid".to_owned()),
+            Err(error) => ("corrupt", error.to_string()),
+        }
+    };
+    checks.push(json!({"name":"ledger","status":ledger.0,"message":ledger.1}));
+    let mission = ws.mission_dir();
+    let progress = match read_bounded_utf8(&mission.join("progress.md"), 64 * 1024) {
+        Ok(text)
+            if (text.contains("- Active tasks:")
+                || text.contains("- 進行中任務:")
+                || text.contains("- 進行中任務："))
+                && (text.contains("- Blocked by:")
+                    || text.contains("- 阻塞原因:")
+                    || text.contains("- 阻塞原因：")) =>
+        {
+            let (percent, mode, active, blocked) = ws.progress_expectations(tasks);
+            let active_label = if text.contains("- Active tasks:") {
+                "- Active tasks:"
+            } else if text.contains("- 進行中任務:") {
+                "- 進行中任務:"
+            } else {
+                "- 進行中任務："
+            };
+            let blocked_label = if text.contains("- Blocked by:") {
+                "- Blocked by:"
+            } else if text.contains("- 阻塞原因:") {
+                "- 阻塞原因:"
+            } else {
+                "- 阻塞原因："
+            };
+            let next_label = if text.contains("- Next update:") {
+                "- Next update:"
+            } else if text.contains("- 下次更新:") {
+                "- 下次更新:"
+            } else {
+                "- 下次更新："
+            };
+            let active_section = progress_section(&text, active_label, blocked_label);
+            let blocked_section = progress_section(&text, blocked_label, next_label);
+            let expected_active: HashSet<String> = active
+                .iter()
+                .filter_map(|value| value.split_whitespace().next().map(ToOwned::to_owned))
+                .collect();
+            let expected_blocked: HashSet<String> = blocked
+                .iter()
+                .filter_map(|value| value.split_whitespace().next().map(ToOwned::to_owned))
+                .collect();
+            let actual_active = task_ids_in_text(active_section, tasks);
+            let actual_blocked = task_ids_in_text(blocked_section, tasks);
+            let progress_sets_match =
+                actual_active == expected_active && actual_blocked == expected_blocked;
+            let blocked_not_active = actual_active.is_disjoint(&actual_blocked)
+                && tasks
+                    .iter()
+                    .filter(|task| task.status == TaskStatus::Blocked)
+                    .all(|task| !actual_active.contains(&task.id));
+            let status_ok = text.lines().any(|line| {
+                let line = line.trim_start();
+                line.strip_prefix("- Current status:")
+                    .or_else(|| line.strip_prefix("- 目前狀態:"))
+                    .or_else(|| line.strip_prefix("- 目前狀態："))
+                    .is_some_and(|value| value.trim() == mode)
+            });
+            let percent_ok = text.lines().any(|line| {
+                let line = line.trim_start();
+                (line.starts_with("- Progress bar:")
+                    || line.starts_with("- 進度條:")
+                    || line.starts_with("- 進度條："))
+                    && line.contains(&format!("] {percent}%"))
+            });
+            if progress_sets_match && blocked_not_active && status_ok && percent_ok {
+                (
+                    "pass",
+                    if text.contains("<!-- mission-center-managed-summary v=1 -->") {
+                        "managed progress summary matches canonical tasks"
+                    } else {
+                        "legacy localized progress summary matches canonical tasks"
+                    }
+                    .to_owned(),
+                )
+            } else {
+                (
+                    "conflict",
+                    "progress summary does not match canonical tasks".to_owned(),
+                )
+            }
+        }
+        Ok(text) if text.contains("<!-- mission-center-managed-summary") => (
+            "corrupt",
+            "progress summary is missing required fields".to_owned(),
+        ),
+        Ok(_) => (
+            "unknown",
+            "legacy progress summary has no managed marker".to_owned(),
+        ),
+        Err(mission_center_workspace::WorkspaceError::NotFound { .. }) => {
+            ("unknown", "progress.md is absent".to_owned())
+        }
+        Err(error) => ("corrupt", error.to_string()),
+    };
+    checks.push(json!({"name":"progress","status":progress.0,"message":progress.1}));
+    let closeout = match read_bounded_utf8(&mission.join("closeout.md"), 64 * 1024) {
+        Ok(text) => {
+            let completed = closeout_field(&text, &["Completed", "已完成"]);
+            let unfinished = closeout_field(&text, &["Unfinished", "未完成"]);
+            if completed.is_none() || unfinished.is_none() {
+                (
+                    "unknown",
+                    "closeout.md is missing Completed or Unfinished".to_owned(),
+                )
+            } else {
+                let completed = completed.unwrap_or("");
+                let unfinished = unfinished.unwrap_or("");
+                let completed_ids: Vec<&Task> = tasks
+                    .iter()
+                    .filter(|task| task_id_in_text(completed, &task.id))
+                    .collect();
+                let unfinished_ids: Vec<&Task> = tasks
+                    .iter()
+                    .filter(|task| task_id_in_text(unfinished, &task.id))
+                    .collect();
+                let completed_not_done: Vec<&str> = completed_ids
+                    .iter()
+                    .filter(|task| task.status != TaskStatus::Done)
+                    .map(|task| task.id.as_str())
+                    .collect();
+                let unfinished_done: Vec<&str> = unfinished_ids
+                    .iter()
+                    .filter(|task| task.status == TaskStatus::Done)
+                    .map(|task| task.id.as_str())
+                    .collect();
+                let overlap: Vec<&str> = completed_ids
+                    .iter()
+                    .filter(|task| unfinished_ids.iter().any(|other| other.id == task.id))
+                    .map(|task| task.id.as_str())
+                    .collect();
+                if !completed_not_done.is_empty()
+                    || !unfinished_done.is_empty()
+                    || !overlap.is_empty()
+                {
+                    (
+                        "conflict",
+                        format!(
+                            "closeout task contradiction: completed_not_done={completed_not_done:?}; unfinished_done={unfinished_done:?}; overlap={overlap:?}"
+                        ),
+                    )
+                } else if let Some(source) = closeout_field(&text, &["Source fingerprint"]) {
+                    let expected = ws
+                        .canonical_snapshot_fingerprint()
+                        .map_err(|e| e.to_string())?;
+                    if source != expected {
+                        ("stale", "closeout source fingerprint is stale".to_owned())
+                    } else {
+                        ("pass", "closeout is current".to_owned())
+                    }
+                } else {
+                    (
+                        "pass",
+                        "closeout has no source fingerprint; legacy evidence accepted".to_owned(),
+                    )
+                }
+            }
+        }
+        Err(mission_center_workspace::WorkspaceError::NotFound { .. }) => {
+            ("unknown", "closeout.md is absent".to_owned())
+        }
+        Err(error) => ("corrupt", error.to_string()),
+    };
+    checks.push(json!({"name":"closeout","status":closeout.0,"message":closeout.1}));
+    let fingerprint = ws.fingerprint().map_err(|e| e.to_string())?;
+    let task_bytes = fs::read(ws.tasks_path()).map_err(|e| e.to_string())?;
+    let task_fp = mission_center_core::workspace_fingerprint(&[("tasks.md", Some(&task_bytes))]);
+    let mut derived_status = "pass";
+    let mut derived_messages = Vec::new();
+    for (name, expected) in [
+        ("brief.md", fingerprint),
+        ("working-set.md", task_fp.clone()),
+        ("focus.md", task_fp),
+    ] {
+        let result = match read_bounded_utf8(&mission.join(name), 64 * 1024) {
+            Ok(text) if marker_fingerprint(&text) == Some(expected.as_str()) => {
+                ("pass", "derived view fingerprint is current".to_owned())
+            }
+            Ok(text) if marker_fingerprint(&text).is_some() => (
+                "stale",
+                "derived view source fingerprint is stale".to_owned(),
+            ),
+            Ok(_) => (
+                "unknown",
+                "legacy derived view has no managed fingerprint".to_owned(),
+            ),
+            Err(mission_center_workspace::WorkspaceError::NotFound { .. }) => {
+                ("unknown", "derived view is absent".to_owned())
+            }
+            Err(error) => ("corrupt", error.to_string()),
+        };
+        if reconcile_status_rank(result.0) > reconcile_status_rank(derived_status) {
+            derived_status = result.0;
+        }
+        derived_messages.push(format!("{name}: {}", result.1));
+    }
+    checks.push(json!({
+        "name":"derived_source",
+        "status":derived_status,
+        "message":derived_messages.join("; ")
+    }));
+    let date_status = match read_bounded_utf8(&mission.join("daily-log.md"), DAILY_LOG_MAX_BYTES) {
+        Ok(text) => {
+            organized_date(&text).map_or(
+                "stale",
+                |value| {
+                    if value == date { "pass" } else { "stale" }
+                },
+            )
+        }
+        Err(mission_center_workspace::WorkspaceError::NotFound { .. }) => "unknown",
+        Err(_) => "corrupt",
+    };
+    checks.push(
+        json!({"name":"derived_date","status":date_status,"message":"daily organization date"}),
+    );
+    let evidence = inspect_evidence(ws.root(), tasks);
+    checks.push(json!({"name":"evidence_envelope","status":evidence.0,"message":evidence.1}));
+    let overall = checks
+        .iter()
+        .filter_map(|check| check["status"].as_str())
+        .max_by_key(|status| reconcile_status_rank(status))
+        .unwrap_or("unknown");
+    Ok(json!({"status":overall,"readOnly":true,"checks":checks}))
 }
 fn working_set(tasks: &[Task]) -> Vec<String> {
     mission_center_workspace::working_set_ids(tasks)
@@ -3530,44 +4785,12 @@ fn run(command: &str, root: PathBuf, args: &[String]) -> Result<String, String> 
             ))
         }
         "resume" => {
-            let status_text = run("status", ws.root().to_path_buf(), args)?;
-            let source_fresh = status_text.contains("\"sourceFresh\":true");
-            let date_fresh = status_text.contains("\"dateFresh\":true");
-            let stale_reasons = if source_fresh && date_fresh {
-                "[]"
-            } else {
-                "[\"derived view stale\"]"
-            };
-            let complete = !ws.snapshot_active().map_err(|e| e.to_string())?
-                && !tasks.is_empty()
-                && tasks.iter().all(|task| task.status == TaskStatus::Done);
-            let route = if complete { "complete" } else { "select_task" };
-            let ledger_status = if ws
-                .artifact_exists("execution-ledger.jsonl")
-                .map_err(|e| e.to_string())?
-            {
-                "ready"
-            } else {
-                "missing"
-            };
-            let fallback = !source_fresh || !date_fresh;
-            Ok(envelope(
-                command,
-                "ok",
-                &format!(
-                    "{{\"route\":\"{route}\",\"sourceFresh\":{},\"dateFresh\":{},\"staleReasons\":{},\"ledgerStatus\":\"{}\",\"canonicalFallback\":{},\"fallbackReason\":{},\"actionableHandoff\":false}}",
-                    source_fresh,
-                    date_fresh,
-                    stale_reasons,
-                    ledger_status,
-                    fallback,
-                    if fallback {
-                        "\"derived view stale\""
-                    } else {
-                        "null"
-                    }
-                ),
-            ))
+            let date = date_arg(args).unwrap_or_else(today_local);
+            if !valid_date(&date) {
+                return Err("--date must use YYYY-MM-DD".to_owned());
+            }
+            let packet = resume_packet(&ws, &tasks, &date)?;
+            Ok(value_envelope(command, "ok", packet))
         }
         "doctor" => {
             validate_tasks(&tasks).map_err(|e| e.to_string())?;
@@ -3584,7 +4807,9 @@ fn run(command: &str, root: PathBuf, args: &[String]) -> Result<String, String> 
             for task in done_tasks {
                 match ws.completion_passport_check(task) {
                     Ok(None) => {
-                        passport_status = "unknown";
+                        if passport_status != "error" {
+                            passport_status = "unknown";
+                        }
                         passport_detail.push(format!(
                             "{} has no completion passport (legacy warning)",
                             task.id
@@ -3640,85 +4865,13 @@ fn run(command: &str, root: PathBuf, args: &[String]) -> Result<String, String> 
             }
         }
         "reconcile" => {
-            let status_text = run("status", ws.root().to_path_buf(), args)?;
-            let source = if ["brief.md", "working-set.md", "focus.md"]
-                .iter()
-                .all(|name| ws.artifact_exists(name).unwrap_or(false))
-            {
-                if status_text.contains("\"sourceFresh\":true") {
-                    "pass"
-                } else {
-                    "stale"
-                }
-            } else {
-                "unknown"
-            };
-            let date_status = if status_text.contains("\"dateFresh\":true") {
-                "pass"
-            } else {
-                "stale"
-            };
-            let checks = [
-                (
-                    "ledger",
-                    if ws
-                        .artifact_exists("execution-ledger.jsonl")
-                        .unwrap_or(false)
-                    {
-                        "pass"
-                    } else {
-                        "unknown"
-                    },
-                ),
-                (
-                    "progress",
-                    if ws.artifact_exists("progress.md").unwrap_or(false) {
-                        "pass"
-                    } else {
-                        "unknown"
-                    },
-                ),
-                (
-                    "closeout",
-                    if ws.artifact_exists("closeout.md").unwrap_or(false) {
-                        "pass"
-                    } else {
-                        "unknown"
-                    },
-                ),
-                ("derived_source", source),
-                ("derived_date", date_status),
-                (
-                    "evidence_envelope",
-                    if ws.root().join("output/mission-center-evidence").is_dir() {
-                        "pass"
-                    } else {
-                        "unknown"
-                    },
-                ),
-            ];
-            let priority = |value: &str| match value {
-                "pass" => 0,
-                "unknown" => 1,
-                "stale" => 2,
-                "conflict" => 3,
-                "corrupt" => 4,
-                _ => 4,
-            };
-            let overall = checks
-                .iter()
-                .map(|(_, value)| *value)
-                .max_by_key(|value| priority(value))
-                .unwrap_or("unknown");
-            let body = format!(
-                "{{\"status\":\"{overall}\",\"readOnly\":true,\"checks\":[{}]}}",
-                checks
-                    .iter()
-                    .map(|(name, value)| format!("{{\"name\":\"{name}\",\"status\":\"{value}\"}}"))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            );
-            Ok(envelope(command, overall, &body))
+            let date = date_arg(args).unwrap_or_else(today_local);
+            if !valid_date(&date) {
+                return Err("--date must use YYYY-MM-DD".to_owned());
+            }
+            let report = reconcile_workspace_checks(&ws, &tasks, &date)?;
+            let overall = report["status"].as_str().unwrap_or("unknown").to_owned();
+            Ok(value_envelope(command, &overall, report))
         }
         "verify" => Ok(envelope(
             command,

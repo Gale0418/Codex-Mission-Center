@@ -728,7 +728,7 @@ fn top_level_and_sync_help_are_discoverable_machine_envelopes() {
 }
 
 #[test]
-fn reconcile_stale_is_nonfatal_but_status_stale_is_fatal() {
+fn reconcile_unknown_is_nonfatal() {
     let root =
         workspace("| ID | Title | Status |\n| --- | --- | --- |\n| MC-1 | stale | Ready |\n");
     let output = Command::new(env!("CARGO_BIN_EXE_mission-center"))
@@ -736,8 +736,8 @@ fn reconcile_stale_is_nonfatal_but_status_stale_is_fatal() {
         .arg(&root)
         .output()
         .expect("run cli");
-    let text = String::from_utf8(output.stdout).expect("utf8");
-    assert!(text.contains("\"status\":\"stale\""));
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).expect("machine JSON");
+    assert_eq!(payload["data"]["status"], "unknown");
     assert!(output.status.success());
     let _ = fs::remove_dir_all(root);
 }

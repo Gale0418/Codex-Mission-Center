@@ -271,6 +271,15 @@ impl MissionWorkspace {
         ]))
     }
 
+    pub fn canonical_snapshot_fingerprint(&self) -> Result<String, WorkspaceError> {
+        let (_, tasks) = self.read_tasks()?;
+        Ok(self.canonical_snapshot_facts(&tasks)?.fingerprint)
+    }
+
+    pub fn progress_expectations(&self, tasks: &[Task]) -> (u32, String, Vec<String>, Vec<String>) {
+        compute_progress(tasks)
+    }
+
     fn canonical_snapshot_facts(&self, tasks: &[Task]) -> Result<SnapshotFacts, WorkspaceError> {
         let task_bytes =
             canonicalize_hash_bytes(&read_bounded(&self.tasks_path(), TASKS_MAX_BYTES)?);
@@ -2820,6 +2829,28 @@ impl MissionWorkspace {
             });
         }
         Ok(body)
+    }
+
+    /// Validate the optional execution ledger with the same parser used by
+    /// pulse append/handoff.  The ledger is evidence only; every pulse must
+    /// still bind to a canonical task in `tasks.md`.
+    pub fn validate_execution_ledger(&self) -> Result<(), WorkspaceError> {
+        let path = self.mission_dir().join("execution-ledger.jsonl");
+        let bytes = read_bounded(&path, 256 * 1024)?;
+        let records = parse_pulse_ledger(&bytes, &path)?;
+        let (_, tasks) = self.read_tasks()?;
+        for record in records {
+            if !tasks
+                .iter()
+                .any(|task| task.id.eq_ignore_ascii_case(&record.task_id))
+            {
+                return Err(WorkspaceError::ClaimRejected(format!(
+                    "execution pulse task is absent from canonical tasks.md: {}",
+                    record.task_id
+                )));
+            }
+        }
+        Ok(())
     }
 
     pub fn closeout(

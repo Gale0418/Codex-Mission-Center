@@ -134,14 +134,12 @@ fn public_packet_bytes(value: &Value, nodes: &mut usize) -> Option<usize> {
 
 fn assert_resume_public_contract(payload: &Value) {
     let data = payload["data"].as_object().expect("resume data object");
-    assert_eq!(data["schemaVersion"], "1.1", "resume data schema must be explicit");
+    assert_eq!(
+        data["schemaVersion"], "1.1",
+        "resume data schema must be explicit"
+    );
     assert_eq!(data["route"], "resume");
-    for field in [
-        "sourceFresh",
-        "dateFresh",
-        "canonicalFallback",
-        "truncated",
-    ] {
+    for field in ["sourceFresh", "dateFresh", "canonicalFallback", "truncated"] {
         assert!(data[field].is_boolean(), "{field} must be boolean");
     }
     for field in ["staleReasons", "filesRead", "readNext"] {
@@ -159,7 +157,10 @@ fn assert_resume_public_contract(payload: &Value) {
         );
     }
     assert!(
-        matches!(data["ledgerStatus"].as_str(), Some("missing" | "ready" | "corrupt")),
+        matches!(
+            data["ledgerStatus"].as_str(),
+            Some("missing" | "ready" | "corrupt")
+        ),
         "ledgerStatus must use the documented vocabulary"
     );
     assert!(
@@ -191,7 +192,9 @@ fn assert_resume_public_contract(payload: &Value) {
         );
     }
     assert!(
-        content["brief"].as_str().is_some_and(|value| !value.is_empty()),
+        content["brief"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty()),
         "brief must contain actual text"
     );
     assert!(
@@ -240,7 +243,10 @@ fn resume_returns_actual_context_with_one_shared_utf8_budget() {
     // packet to exercise the shared 16 KiB fuse at UTF-8 boundaries.
     fs::write(
         mission.join("critical-lessons.md"),
-        format!("# Critical Lessons\n\n## Active Lessons\n\n{}", "教訓".repeat(8_000)),
+        format!(
+            "# Critical Lessons\n\n## Active Lessons\n\n{}",
+            "教訓".repeat(8_000)
+        ),
     )
     .expect("write lessons");
 
@@ -252,15 +258,365 @@ fn resume_returns_actual_context_with_one_shared_utf8_budget() {
     let data = payload["data"].as_object().expect("resume data object");
     assert!(
         data["truncated"].as_bool() == Some(true)
-            || !data["readNext"].as_array().expect("readNext array").is_empty(),
+            || !data["readNext"]
+                .as_array()
+                .expect("readNext array")
+                .is_empty(),
         "overflow must be visible"
     );
+    if data["truncated"] == true {
+        assert_eq!(data["truncatedMarker"], "[TRUNCATED]");
+        let content = data["content"].as_object().expect("content");
+        let included = data["context"]["includedBytes"]
+            .as_object()
+            .expect("included bytes");
+        let truncated_sections = ["brief", "workingSet", "activeCriticalLessons", "snapshot"];
+        for section in truncated_sections {
+            if let Some(value) = content[section].as_str()
+                && value.ends_with("[TRUNCATED]")
+            {
+                assert_eq!(included[section], value.len());
+            }
+        }
+    }
     assert_eq!(
         fs::read(mission.join("tasks.md")).expect("read tasks after resume"),
         tasks_before,
         "resume must remain read-only"
     );
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn resume_only_includes_active_critical_lessons_and_marks_snapshot_errors() {
+    let root = workspace();
+    initialize(&root, "resume-lessons-init");
+    let mission = root.join("MissionCenter");
+    fs::write(
+        mission.join("critical-lessons.md"),
+        "# Critical Lessons\n\n## Active Lessons\n\nkeep this\n\n## Resolved Index\n\nDO NOT INCLUDE THIS\n",
+    )
+    .expect("write lessons");
+    sync(&root, "resume-lessons-sync");
+    fs::write(mission.join("snapshot.md"), [0xff, 0xfe]).expect("write invalid snapshot");
+    let (output, payload) = run(&root, &["resume", "--date", FIXTURE_DATE]);
+    assert!(output.status.success(), "resume failed: {payload}");
+    let data = payload["data"].as_object().expect("resume data");
+    let lessons = data["content"]["activeCriticalLessons"]
+        .as_str()
+        .expect("active lessons");
+    assert!(lessons.contains("keep this"));
+    assert!(!lessons.contains("DO NOT INCLUDE THIS"));
+    assert_eq!(data["canonicalFallback"], true);
+    assert!(
+        data["readNext"]
+            .as_array()
+            .expect("readNext")
+            .iter()
+            .any(|item| item == "snapshot.md")
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn reconcile_checks_progress_content_and_daily_date_states() {
+    let root = workspace();
+    initialize(&root, "reconcile-derived-init");
+    let mission = root.join("MissionCenter");
+    fs::write(
+        mission.join("tasks.md"),
+        format!("{TASK_HEADER}{}", task_row("MC-052", "In Progress")),
+    )
+    .expect("write tasks");
+    sync(&root, "reconcile-derived-sync");
+    fs::remove_file(mission.join("daily-log.md")).expect("remove daily log");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "derived_date"), Some("unknown"));
+    sync(&root, "reconcile-derived-sync-refresh");
+    let progress = fs::read_to_string(mission.join("progress.md")).expect("read progress");
+    fs::write(
+        mission.join("progress.md"),
+        progress.replace("MC-052", "MC-999"),
+    )
+    .expect("write stale progress");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "progress"), Some("conflict"));
+
+    fs::remove_file(mission.join("daily-log.md")).expect("remove daily log");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "derived_date"), Some("unknown"));
+    fs::write(mission.join("daily-log.md"), [0xff, 0xfe]).expect("write invalid daily log");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "derived_date"), Some("corrupt"));
+    fs::write(
+        mission.join("daily-log.md"),
+        "# Daily Log\n\n- Last organized: 1970-01-01\n",
+    )
+    .expect("write stale daily log");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "derived_date"), Some("stale"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn reconcile_rejects_mismatched_evidence_supersedes_and_bad_schema_fields() {
+    let root = workspace();
+    initialize(&root, "reconcile-evidence-init");
+    let mission = root.join("MissionCenter");
+    fs::write(
+        mission.join("tasks.md"),
+        format!("{TASK_HEADER}{}", task_row("MC-052", "In Progress")),
+    )
+    .expect("write tasks");
+    sync(&root, "reconcile-evidence-sync");
+    let evidence = root.join("output/mission-center-evidence");
+    fs::create_dir_all(&evidence).expect("create evidence");
+    let scope = "MissionCenter/tasks.md";
+    let task_bytes = fs::read(mission.join("tasks.md")).expect("read tasks");
+    let digest = mission_center_publish::scope_digest_files(&[(scope, task_bytes.as_slice())]);
+    let old = serde_json::json!({
+        "schemaVersion":"1.0","artifactType":"evidence-envelope",
+        "envelopeId":"old-1","taskId":"MC-999","checkId":"smoke",
+        "scope":[scope],"scopeDigest":digest.clone(),"result":"pass","status":"superseded",
+        "artifactLocators":[scope],"recordedAt":"2026-09-12T08:00:00Z"
+    });
+    let current = serde_json::json!({
+        "schemaVersion":"1.0","artifactType":"evidence-envelope",
+        "envelopeId":"current-1","taskId":"MC-052","checkId":"smoke",
+        "scope":[scope],"scopeDigest":digest.clone(),"result":"pass","status":"current",
+        "artifactLocators":[scope],"recordedAt":"2026-09-12T08:00:01Z","supersedes":"old-1"
+    });
+    fs::write(evidence.join("old.json"), old.to_string()).expect("write old envelope");
+    fs::write(evidence.join("current.json"), current.to_string()).expect("write current envelope");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(
+        check_status(&payload, "evidence_envelope"),
+        Some("conflict")
+    );
+    let mut non_string_supersedes = current;
+    non_string_supersedes["supersedes"] = serde_json::json!(17);
+    fs::remove_file(evidence.join("old.json")).expect("remove superseded envelope");
+    fs::write(
+        evidence.join("current.json"),
+        non_string_supersedes.to_string(),
+    )
+    .expect("write non-string supersedes envelope");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(
+        check_status(&payload, "evidence_envelope"),
+        Some("corrupt"),
+        "present non-string supersedes must fail closed"
+    );
+    let valid = serde_json::json!({
+        "schemaVersion":"1.0","artifactType":"evidence-envelope",
+        "envelopeId":"valid-1","taskId":"MC-052","checkId":"smoke",
+        "scope":[scope],"scopeDigest":digest.clone(),"result":"pass","status":"current",
+        "artifactLocators":[scope],"recordedAt":"2026-09-12T08:00:01Z"
+    });
+    fs::write(evidence.join("current.json"), valid.to_string()).expect("write valid envelope");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "evidence_envelope"), Some("pass"));
+    let mut whitespace_recorded_at = valid;
+    whitespace_recorded_at["recordedAt"] = serde_json::json!(" 2026-09-12T08:00:01Z");
+    fs::write(
+        evidence.join("current.json"),
+        whitespace_recorded_at.to_string(),
+    )
+    .expect("write whitespace recordedAt envelope");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "evidence_envelope"), Some("corrupt"));
+    let mut whitespace_digest = serde_json::json!({
+        "schemaVersion":"1.0","artifactType":"evidence-envelope",
+        "envelopeId":"valid-2","taskId":"MC-052","checkId":"smoke",
+        "scope":[scope],"scopeDigest":format!(" {digest} "),"result":"pass","status":"current",
+        "artifactLocators":[scope],"recordedAt":"2026-09-12T08:00:01Z"
+    });
+    whitespace_digest["scopeDigest"] = serde_json::json!(format!(" {digest} "));
+    fs::write(evidence.join("current.json"), whitespace_digest.to_string())
+        .expect("write whitespace scopeDigest envelope");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "evidence_envelope"), Some("corrupt"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn reconcile_rejects_blocked_task_in_active_progress_set() {
+    let root = workspace();
+    initialize(&root, "reconcile-progress-blocked-init");
+    let mission = root.join("MissionCenter");
+    fs::write(
+        mission.join("tasks.md"),
+        format!(
+            "{TASK_HEADER}{}{}",
+            task_row("MC-052", "In Progress"),
+            task_row("MC-053", "Blocked")
+        ),
+    )
+    .expect("write tasks");
+    sync(&root, "reconcile-progress-blocked-sync");
+    let progress = fs::read_to_string(mission.join("progress.md")).expect("read progress");
+    let poisoned = progress.replace(
+        "  - MC-052 Fixture MC-052 (In Progress)",
+        "  - MC-052 Fixture MC-052 (In Progress)\n  - MC-053 leaked into active",
+    );
+    fs::write(mission.join("progress.md"), poisoned).expect("write poisoned progress");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "progress"), Some("conflict"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn reconcile_overall_uses_monotonic_check_max_without_unknown_date_override() {
+    let root = workspace();
+    initialize(&root, "reconcile-overall-monotonic-init");
+    let mission = root.join("MissionCenter");
+    for name in [
+        "progress.md",
+        "closeout.md",
+        "brief.md",
+        "working-set.md",
+        "focus.md",
+        "daily-log.md",
+        "execution-ledger.jsonl",
+    ] {
+        let _ = fs::remove_file(mission.join(name));
+    }
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "derived_date"), Some("unknown"));
+    assert_ne!(payload["data"]["status"], "stale");
+    assert_eq!(payload["data"]["status"], "unknown");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn reconcile_fails_closed_on_evidence_directory_limits() {
+    let root = workspace();
+    initialize(&root, "reconcile-evidence-limit-init");
+    let mission = root.join("MissionCenter");
+    fs::write(
+        mission.join("tasks.md"),
+        format!("{TASK_HEADER}{}", task_row("MC-052", "In Progress")),
+    )
+    .expect("write tasks");
+    sync(&root, "reconcile-evidence-limit-sync");
+    let evidence = root.join("output/mission-center-evidence");
+    fs::create_dir_all(&evidence).expect("create evidence");
+    let scope = "MissionCenter/tasks.md";
+    let task_bytes = fs::read(mission.join("tasks.md")).expect("read tasks");
+    let digest = mission_center_publish::scope_digest_files(&[(scope, task_bytes.as_slice())]);
+    for index in 0..128 {
+        let check_id = format!("limit-{index}");
+        let old = serde_json::json!({
+            "schemaVersion":"1.0","artifactType":"evidence-envelope",
+            "envelopeId":format!("old-{index}"),"taskId":"MC-052","checkId":check_id,
+            "scope":[scope],"scopeDigest":digest.clone(),"result":"pass","status":"superseded",
+            "artifactLocators":[scope],"recordedAt":"2026-09-12T08:00:00Z"
+        });
+        let current = serde_json::json!({
+            "schemaVersion":"1.0","artifactType":"evidence-envelope",
+            "envelopeId":format!("current-{index}"),"taskId":"MC-052","checkId":format!("limit-{index}"),
+            "scope":[scope],"scopeDigest":digest.clone(),"result":"pass","status":"current",
+            "artifactLocators":[scope],"recordedAt":"2026-09-12T08:00:01Z",
+            "supersedes":format!("old-{index}")
+        });
+        fs::write(evidence.join(format!("old-{index}.json")), old.to_string())
+            .expect("write valid superseded envelope");
+        fs::write(
+            evidence.join(format!("current-{index}.json")),
+            current.to_string(),
+        )
+        .expect("write valid current envelope");
+    }
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(
+        check_status(&payload, "evidence_envelope"),
+        Some("pass"),
+        "256 schema-valid evidence files must be accepted"
+    );
+    fs::write(
+        evidence.join("overflow.json"),
+        serde_json::json!({
+            "schemaVersion":"1.0","artifactType":"evidence-envelope",
+            "envelopeId":"overflow","taskId":"MC-052","checkId":"overflow",
+            "scope":[scope],"scopeDigest":digest,"result":"pass","status":"current",
+            "artifactLocators":[scope],"recordedAt":"2026-09-12T08:00:02Z"
+        })
+        .to_string(),
+    )
+    .expect("write overflow envelope");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "evidence_envelope"), Some("corrupt"));
+    let message = payload["data"]["checks"]
+        .as_array()
+        .and_then(|checks| {
+            checks
+                .iter()
+                .find(|check| check["name"] == "evidence_envelope")
+        })
+        .and_then(|check| check["message"].as_str())
+        .expect("evidence limit message");
+    assert!(message.contains("exceeds 256 entries"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn reconcile_accepts_legacy_localized_closeout_and_checks_task_contradictions() {
+    let root = workspace();
+    initialize(&root, "reconcile-legacy-closeout-init");
+    let mission = root.join("MissionCenter");
+    fs::write(
+        mission.join("tasks.md"),
+        format!(
+            "{TASK_HEADER}{}{}",
+            task_row("MC-052", "Done"),
+            task_row("MC-053", "Ready")
+        ),
+    )
+    .expect("write tasks");
+    sync(&root, "reconcile-legacy-closeout-sync");
+    let legacy = "# 收尾\n\n- 摘要: 舊版 fixture\n- 已完成: MC-052X, MC-052\n- 未完成: MC-053\n";
+    fs::write(mission.join("closeout.md"), legacy).expect("write legacy closeout");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "closeout"), Some("pass"));
+
+    fs::write(
+        mission.join("closeout.md"),
+        "# 收尾\n\n- 摘要: 缺少未完成欄位\n- 已完成: MC-052\n",
+    )
+    .expect("write incomplete closeout");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "closeout"), Some("unknown"));
+
+    fs::write(
+        mission.join("closeout.md"),
+        "# 收尾\n\n- 摘要: 矛盾\n- 已完成: MC-052\n- 未完成: MC-052, MC-053\n",
+    )
+    .expect("write contradictory closeout");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "closeout"), Some("conflict"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn reconcile_rejects_evidence_directory_symlink() {
+    use std::os::unix::fs::symlink;
+
+    let root = workspace();
+    initialize(&root, "reconcile-evidence-symlink-init");
+    let output = root.join("output");
+    fs::create_dir_all(&output).expect("create output");
+    let target = workspace();
+    fs::create_dir_all(target.join("evidence")).expect("create target");
+    symlink(
+        target.join("evidence"),
+        output.join("mission-center-evidence"),
+    )
+    .expect("create evidence symlink");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "evidence_envelope"), Some("corrupt"));
+    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_dir_all(target);
 }
 
 #[test]
@@ -278,12 +634,21 @@ fn resume_fails_closed_on_corrupt_ledger_without_calling_it_ready() {
     let tasks_before = fs::read(mission.join("tasks.md")).expect("read tasks");
 
     let (output, payload) = run(&root, &["resume", "--date", FIXTURE_DATE]);
-    assert!(output.status.success(), "safe corrupt-ledger resume should return a packet: {payload}");
+    assert!(
+        output.status.success(),
+        "safe corrupt-ledger resume should return a packet: {payload}"
+    );
     assert_resume_public_contract(&payload);
     let data = payload["data"].as_object().expect("resume data object");
     assert_eq!(data["ledgerStatus"], "corrupt");
-    assert!(data["ledgerError"].is_string(), "corruption must be explicit");
-    assert!(data["handoff"].is_null(), "corrupt ledger cannot yield trusted handoff");
+    assert!(
+        data["ledgerError"].is_string(),
+        "corruption must be explicit"
+    );
+    assert!(
+        data["handoff"].is_null(),
+        "corrupt ledger cannot yield trusted handoff"
+    );
     assert_eq!(data["canonicalFallback"], true);
     assert!(data["fallbackReason"].is_string());
     assert_eq!(

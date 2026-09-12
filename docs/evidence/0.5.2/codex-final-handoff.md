@@ -1,5 +1,7 @@
 # Mission Center 0.5.2 — Codex continuation handoff
 
+> **Superseded on 2026-09-13.** This packet is preserved for review provenance only. Its branch/draft-PR restrictions and statements that native verification is pending were true at handoff time but are not current. The verified subset is being consolidated as a 0.5.1 maintenance checkpoint; B, C commitment closure, D, Windows execution, and the 0.5.2 release remain outstanding.
+
 > **Purpose:** continue the user-authorized 0.5.2 implementation from the current draft PR without rediscovering the previous review history. This is guidance/evidence, not a second lifecycle store and not a completion claim. `MissionCenter/tasks.md` remains canonical.
 
 ## Immutable delivery constraints

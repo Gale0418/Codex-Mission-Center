@@ -1,5 +1,7 @@
 # Codex implementation handoff — Mission Center 0.5.2
 
+> **Superseded on 2026-09-13.** This is a historical branch handoff. Phase A and the bounded working-set repair were completed and locally verified as a 0.5.1 maintenance checkpoint. The branch-only and do-not-merge constraints below were replaced by the operator's request to consolidate verified work into `main` and remove the temporary branches. Phases B, C commitment closure, and D remain deferred; this document is not a 0.5.2 release claim.
+
 This document is an executable handoff for the remaining 0.5.2 work. It is not a release claim.
 
 ## Immutable delivery constraints

@@ -1,4 +1,6 @@
-# Independent review rounds and verification: 0.5.2 partial checkpoint
+# Independent review rounds and verification: 0.5.1 maintenance checkpoint
+
+> **Current note (2026-09-13):** the earlier rounds below are historical. Native Phase A and the bounded working-set repair are now implemented and locally verified. The full B/C/D scope and stable 0.5.2 release remain deferred.
 
 This is an implementation/audit checkpoint, **not a complete or approved 0.5.2 release**. The A/B/C/D scope and known P1 baseline defects remain tracked in [the upgrade report](../../upgrade-0.5.2.md). No GitHub Actions/CI is authorized; every pushed commit carries `[skip ci]`.
 
@@ -65,4 +67,19 @@ Request a fresh independent review of the latest commit using:
 
 > 不要相信前一輪結論，重新從正確性、回歸風險、效能、安全、資源使用與可維護性挑毛病，按照Mission Center標出待修優先度，只有真的沒有值得修的 P2 以上問題才准通過。
 
-A clean review of this partial diff does **not** close the known P1 baseline issues or certify the unfinished A/B/C/D upgrade. Native compilation, formatting, clippy, Rust integration/differential tests and complete implementation remain required. Keep the PR draft and main unchanged.
+A clean review of this partial diff does **not** certify the unfinished B/C/D scope or a stable 0.5.2 release.
+
+## Local consolidation review, 2026-09-13
+
+The native Phase A implementation and working-set repair were reviewed in an isolated integration worktree. Two strict independent rounds found and drove repairs for false-complete recovery states, evidence schema/supersession validation, byte/count/symlink bounds, localized closeout parity, monotonic severity, strict timestamps, and exact progress reconciliation.
+
+The exact source then passed. On this macOS host the Rust differential harness required a temporary PATH-only `python` symlink to the installed Python 3.11 interpreter because no `python` command is otherwise exposed:
+
+- `PATH=<temporary-python3.11-alias>:$PATH cargo test --workspace --all-targets --all-features --offline`: 175 tests.
+- `cargo clippy --workspace --all-targets --all-features --offline -- -D warnings`.
+- `cargo fmt --all -- --check` and `git diff --check`.
+- Python 3.11 full suite: 499 tests, 20 platform/dependency skips on macOS.
+
+CodeRabbit raised two minor test-quality findings. Both were fixed: the evidence-directory limit test now proves the valid 256-entry and rejected 257-entry boundaries, and the CLI test asserts the parsed overall status rather than searching the whole JSON text.
+
+Per the operator's updated stop rule, the independent loop may stop after one round reports no P0/P1. P2 advisories, if any, remain visible but do not force another round.

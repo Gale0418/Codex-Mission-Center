@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import platform
 import sys
 import tempfile
 import unittest
@@ -35,7 +36,15 @@ def _resume_packet(files_read: list[str]) -> dict:
         "handoff": None,
         "ledgerStatus": "missing",
         "ledgerError": None,
-        "context": {"includedBytes": {"brief": 5, "workingSet": 4}},
+        "context": {
+            "includedBytes": {
+                "handoff": 0,
+                "brief": 5,
+                "workingSet": 4,
+                "activeCriticalLessons": 0,
+                "snapshot": 0,
+            }
+        },
         "bytes": 0,
         "maxBytes": 16384,
         "canonicalFallback": False,
@@ -44,7 +53,16 @@ def _resume_packet(files_read: list[str]) -> dict:
         "truncatedMarker": None,
         "readNext": [],
     }
-    return {"exitCode": 0, "envelope": {"data": data}, "stderr": ""}
+    return {
+        "exitCode": 0,
+        "envelope": {
+            "schemaVersion": "1.0",
+            "command": "resume",
+            "status": "ok",
+            "data": data,
+        },
+        "stderr": "",
+    }
 
 
 def _set_declared_bytes(result: dict) -> None:
@@ -60,6 +78,7 @@ def _set_declared_bytes(result: dict) -> None:
 
 
 class ResumeReportRedactionTests(unittest.TestCase):
+    @unittest.skipUnless(platform.system() == "Linux", "Linux PID namespaces are required")
     def test_invoke_preserves_raw_fixture_path_for_validation(self):
         with tempfile.TemporaryDirectory(prefix="mc-052-raw-invoke-") as temporary:
             root = Path(temporary)

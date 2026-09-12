@@ -117,7 +117,11 @@ fn working_set_tasks(tasks: &[Task]) -> Vec<&Task> {
         }
     }
 
-    for status in [TaskStatus::InProgress, TaskStatus::Review, TaskStatus::Blocked] {
+    for status in [
+        TaskStatus::InProgress,
+        TaskStatus::Review,
+        TaskStatus::Blocked,
+    ] {
         for task in tasks.iter().filter(|task| task.status == status) {
             admit_working_task(&mut selected, &mut seen, task);
             if selected.len() == WORKING_SET_LIMIT {

@@ -1,5 +1,7 @@
 # Codex execution packet — Mission Center 0.5.2
 
+> **Superseded on 2026-09-13.** Retained as historical implementation guidance. Its branch-only constraints and listed Phase A defects no longer describe the current source. Phase A and the bounded working-set repair were implemented and locally verified as a 0.5.1 maintenance checkpoint; B, C commitment closure, D, Windows execution, and a stable 0.5.2 release remain unverified or deferred.
+
 > **This file is implementation guidance, not a second task/lifecycle store and not a completion claim.** `MissionCenter/tasks.md` remains the only task lifecycle truth.
 
 ## Remote state and immutable constraints

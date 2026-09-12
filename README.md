@@ -292,5 +292,3 @@ The release checklist also covers bootstrap, doctor, publish dry-run, publish ve
 Mission Center is independently written and maintained. It is inspired by the workflow concepts of Linear and Superpowers, but it does not include their app integrations, trademarks, code, documentation, icons, or branding.
 
 Released under the [MIT License](LICENSE).
-
-ABC
