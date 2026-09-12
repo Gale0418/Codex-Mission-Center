@@ -1,7 +1,6 @@
 """Adversarial local probes for the test runner itself (no CI/provider calls)."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -15,13 +14,56 @@ from bounded_process import run_bounded  # noqa: E402
 from verify_upgrade_052 import check_status, collect, resume_contract_valid  # noqa: E402
 
 
-@unittest.skipUnless(sys.platform.startswith("linux"), "Linux subreaper containment is required")
+def _proc_state(pid: int) -> str | None:
+    try:
+        raw = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    end = raw.rfind(")")
+    return raw[end + 2 :].split()[0] if end >= 0 else None
+
+
+def _terminated(pid: int) -> bool:
+    return _proc_state(pid) in {None, "Z", "X"}
+
+
+def _child_code(pid_file: Path) -> str:
+    return (
+        "from pathlib import Path; import time; "
+        "status=Path('/proc/self/status').read_text(); "
+        "host=next(line.split()[1] for line in status.splitlines() if line.startswith('NSpid:')); "
+        f"Path({str(pid_file)!r}).write_text(host); time.sleep(60)"
+    )
+
+
+def _wait_for_file(path: Path) -> str:
+    return (
+        f"deadline=time.monotonic()+2; path=pathlib.Path({str(path)!r}); "
+        "\nwhile not path.exists() and time.monotonic()<deadline: time.sleep(0.01)\n"
+        "\nif not path.exists(): raise SystemExit(9)\n"
+    )
+
+
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux PID namespaces are required")
 class BoundedProcessTests(unittest.TestCase):
     def run_python(self, code: str, *, limit: int = 1024, timeout: float = 5.0):
-        return run_bounded([sys.executable, "-c", code], timeout=timeout, max_output_bytes=limit)
+        return run_bounded(
+            [sys.executable, "-c", code],
+            timeout=timeout,
+            max_output_bytes=limit,
+        )
+
+    def assert_terminated(self, pid: int, message: str) -> None:
+        deadline = time.monotonic() + 2.0
+        while not _terminated(pid) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(_terminated(pid), message)
 
     def test_exact_per_stream_limit_is_allowed(self):
-        rc, out, err = self.run_python("import os; os.write(1,b'x'*16); os.write(2,b'y'*16)", limit=16)
+        rc, out, err = self.run_python(
+            "import os; os.write(1,b'x'*16); os.write(2,b'y'*16)",
+            limit=16,
+        )
         self.assertEqual((rc, out, err), (0, b"x" * 16, b"y" * 16))
 
     def test_zero_limit_allows_silent_process(self):
@@ -37,10 +79,16 @@ class BoundedProcessTests(unittest.TestCase):
 
     def test_both_streams_cannot_deadlock(self):
         with self.assertRaisesRegex(RuntimeError, "exceeded"):
-            self.run_python("import os\nwhile True:\n os.write(1,b'x'*128)\n os.write(2,b'y'*128)", limit=256)
+            self.run_python(
+                "import os\nwhile True:\n os.write(1,b'x'*128)\n os.write(2,b'y'*128)",
+                limit=256,
+            )
 
     def test_nonzero_exit_is_not_hidden(self):
-        self.assertEqual(self.run_python("import sys; print('evidence'); sys.exit(7)"), (7, b"evidence\n", b""))
+        self.assertEqual(
+            self.run_python("import sys; print('evidence'); sys.exit(7)"),
+            (7, b"evidence\n", b""),
+        )
 
     def test_timeout_kills_silent_child(self):
         start = time.monotonic()
@@ -48,84 +96,88 @@ class BoundedProcessTests(unittest.TestCase):
             self.run_python("import time; time.sleep(10)", timeout=0.2)
         self.assertLess(time.monotonic() - start, 3.0)
 
-    def test_descendant_holding_a_pipe_cannot_evade_timeout(self):
-        start = time.monotonic()
-        code = "import subprocess,sys; subprocess.Popen([sys.executable,'-c','import time; time.sleep(10)']); print('parent done')"
-        with self.assertRaises(subprocess.TimeoutExpired):
-            self.run_python(code, timeout=0.2)
-        self.assertLess(time.monotonic() - start, 3.0)
+    def test_descendant_holding_a_pipe_is_eagerly_contained(self):
+        with tempfile.TemporaryDirectory(prefix="mc-bounded-pipe-") as temporary:
+            pid_file = Path(temporary) / "child.pid"
+            child = _child_code(pid_file)
+            code = (
+                "import pathlib,subprocess,sys,time; "
+                f"subprocess.Popen([sys.executable,'-c',{child!r}]); "
+                + _wait_for_file(pid_file)
+                + "print('parent done')"
+            )
+            start = time.monotonic()
+            rc, out, err = self.run_python(code, timeout=3.0)
+            self.assertEqual((rc, out, err), (0, b"parent done\n", b""))
+            self.assertLess(time.monotonic() - start, 3.0)
+            self.assert_terminated(
+                int(pid_file.read_text(encoding="utf-8")),
+                "inherited-pipe descendant survived eager namespace teardown",
+            )
 
     def test_descendant_that_creates_a_new_session_is_reaped(self):
         with tempfile.TemporaryDirectory(prefix="mc-bounded-setsid-") as temporary:
             pid_file = Path(temporary) / "escaped.pid"
-            child = "import time; time.sleep(60)"
+            child = _child_code(pid_file)
             code = (
-                "import pathlib,subprocess,sys; "
-                f"p=subprocess.Popen([sys.executable,'-c',{child!r}],start_new_session=True); "
-                f"pathlib.Path({str(pid_file)!r}).write_text(str(p.pid)); "
-                "print('parent done')"
+                "import pathlib,subprocess,sys,time; "
+                f"subprocess.Popen([sys.executable,'-c',{child!r}],start_new_session=True); "
+                + _wait_for_file(pid_file)
+                + "print('parent done')"
             )
-            rc, out, err = self.run_python(code, timeout=2.0)
+            rc, out, err = self.run_python(code, timeout=3.0)
             self.assertEqual((rc, out, err), (0, b"parent done\n", b""))
-            escaped_pid = int(pid_file.read_text(encoding="utf-8"))
-            deadline = time.monotonic() + 2.0
-            while Path(f"/proc/{escaped_pid}").exists() and time.monotonic() < deadline:
-                time.sleep(0.01)
-            self.assertFalse(
-                Path(f"/proc/{escaped_pid}").exists(),
-                "setsid descendant escaped the bounded supervisor",
+            self.assert_terminated(
+                int(pid_file.read_text(encoding="utf-8")),
+                "setsid descendant escaped PID-namespace teardown",
             )
 
     def test_timeout_reaps_descendant_that_creates_a_new_session(self):
         with tempfile.TemporaryDirectory(prefix="mc-bounded-setsid-timeout-") as temporary:
             pid_file = Path(temporary) / "escaped.pid"
-            child = "import time; time.sleep(60)"
+            child = _child_code(pid_file)
             code = (
                 "import pathlib,subprocess,sys,time; "
-                f"p=subprocess.Popen([sys.executable,'-c',{child!r}],start_new_session=True); "
-                f"pathlib.Path({str(pid_file)!r}).write_text(str(p.pid)); "
-                "time.sleep(60)"
+                f"subprocess.Popen([sys.executable,'-c',{child!r}],start_new_session=True); "
+                + _wait_for_file(pid_file)
+                + "time.sleep(60)"
             )
             with self.assertRaises(subprocess.TimeoutExpired):
-                self.run_python(code, timeout=2.0)
-            escaped_pid = int(pid_file.read_text(encoding="utf-8"))
-            deadline = time.monotonic() + 2.0
-            while Path(f"/proc/{escaped_pid}").exists() and time.monotonic() < deadline:
-                time.sleep(0.01)
-            self.assertFalse(
-                Path(f"/proc/{escaped_pid}").exists(),
-                "setsid descendant survived the timeout cleanup",
+                self.run_python(code, timeout=3.0)
+            self.assert_terminated(
+                int(pid_file.read_text(encoding="utf-8")),
+                "setsid descendant survived timeout namespace teardown",
             )
 
-    def test_supervisor_sigkill_still_reaps_tracked_setsid_descendants(self):
-        with tempfile.TemporaryDirectory(prefix="mc-bounded-supervisor-death-") as temporary:
-            pid_file = Path(temporary) / "pids"
-            child = "import time; time.sleep(60)"
+    def test_candidate_cannot_escape_by_sigkilling_namespace_init(self):
+        with tempfile.TemporaryDirectory(prefix="mc-bounded-init-signal-") as temporary:
+            pid_file = Path(temporary) / "escaped.pid"
+            child = _child_code(pid_file)
             code = (
                 "import os,pathlib,signal,subprocess,sys,time; "
-                f"p=subprocess.Popen([sys.executable,'-c',{child!r}],start_new_session=True); "
-                f"pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())+' '+str(p.pid)); "
-                "time.sleep(0.5); os.kill(os.getppid(), signal.SIGKILL); time.sleep(60)"
+                f"subprocess.Popen([sys.executable,'-c',{child!r}],start_new_session=True); "
+                + _wait_for_file(pid_file)
+                + "\ntry:\n os.kill(1, signal.SIGKILL)\n"
+                "except PermissionError:\n print('protected')\n"
+                "else:\n print('unexpected')\n"
             )
-            with self.assertRaises(subprocess.TimeoutExpired):
-                self.run_python(code, timeout=1.5)
-            candidate_pid, escaped_pid = map(int, pid_file.read_text(encoding="utf-8").split())
-            for pid in (candidate_pid, escaped_pid):
-                deadline = time.monotonic() + 2.0
-                while Path(f"/proc/{pid}").exists() and time.monotonic() < deadline:
-                    time.sleep(0.01)
-                self.assertFalse(
-                    Path(f"/proc/{pid}").exists(),
-                    f"tracked descendant {pid} survived supervisor death",
-                )
+            rc, out, err = self.run_python(code, timeout=3.0)
+            self.assertEqual(rc, 0, err.decode("utf-8", errors="replace"))
+            # Linux may reject this signal or report success while namespace
+            # init semantics suppress it. Either way the descendant must not escape.
+            self.assertIn(out, {b"protected\n", b"unexpected\n"})
+            self.assert_terminated(
+                int(pid_file.read_text(encoding="utf-8")),
+                "setsid descendant survived namespace-init signal test",
+            )
 
     def test_invalid_limits_fail_before_execution(self):
-        for invalid in (float("inf"), float("nan"), 0, -1):
+        for invalid in (float("inf"), float("nan"), 0, -1, True, "1"):
             with self.subTest(timeout=invalid), self.assertRaises(ValueError):
-                self.run_python("pass", timeout=invalid)
+                self.run_python("pass", timeout=invalid)  # type: ignore[arg-type]
         for invalid in (-1, True, 1.5):
             with self.subTest(limit=invalid), self.assertRaises(ValueError):
-                self.run_python("pass", limit=invalid)
+                self.run_python("pass", limit=invalid)  # type: ignore[arg-type]
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux bounded runner is required")
@@ -138,7 +190,6 @@ class HarnessMutationTests(unittest.TestCase):
 import json
 from pathlib import Path
 import sys
-
 args = sys.argv[1:]
 command = args[0]
 root = Path(args[args.index('--root') + 1])
@@ -154,10 +205,20 @@ elif command == 'resume':
     path = mission / 'tasks.md'
     path.write_text(path.read_text(encoding='utf-8') + '# mutated by resume\\n', encoding='utf-8')
     content = {'handoff': None, 'brief': 'brief', 'workingSet': 'work', 'activeCriticalLessons': '', 'snapshot': None}
-    routing = {'route': 'resume', 'ledgerStatus': 'corrupt', 'readNext': [], 'filesRead': [], 'staleReasons': []}
-    used = sum(len(value.encode('utf-8')) for value in content.values() if isinstance(value, str))
-    used += sum(len(value.encode('utf-8')) for value in routing.values() if isinstance(value, str))
-    data = {'content': content, **routing, 'bytes': used, 'maxBytes': 16384}
+    data = {
+        'schemaVersion': '1.1', 'route': 'resume', 'sourceFresh': True, 'dateFresh': True,
+        'staleReasons': [], 'filesRead': [], 'content': content, 'handoff': None,
+        'ledgerStatus': 'corrupt', 'ledgerError': 'bad ledger',
+        'context': {'includedBytes': {}}, 'maxBytes': 16384,
+        'canonicalFallback': True, 'fallbackReason': 'execution ledger corrupt',
+        'truncated': False, 'truncatedMarker': None, 'readNext': [],
+    }
+    def string_bytes(value):
+        if isinstance(value, str): return len(value.encode('utf-8'))
+        if isinstance(value, dict): return sum(string_bytes(item) for item in value.values())
+        if isinstance(value, list): return sum(string_bytes(item) for item in value)
+        return 0
+    data['bytes'] = string_bytes(data)
 elif command == 'reconcile':
     data = {'checks': [
         {'name': 'ledger', 'status': 'error'},
@@ -176,7 +237,8 @@ raise SystemExit(exit_code)
             binary.chmod(0o700)
             report = collect(binary)
             probe = next(
-                item for item in report["probes"]
+                item
+                for item in report["probes"]
                 if item["name"] == "read_only_commands_preserve_canonical_tasks"
             )
             self.assertFalse(probe["passed"])
@@ -192,6 +254,7 @@ class EnvelopeTests(unittest.TestCase):
         max_bytes: int = 16384,
         declared_bytes: int | None = None,
         read_next: list[str] | None = None,
+        omit: str | None = None,
     ):
         content = {
             "handoff": None,
@@ -201,40 +264,55 @@ class EnvelopeTests(unittest.TestCase):
             "snapshot": None,
         }
         payload = {
+            "schemaVersion": "1.1",
             "route": "resume",
+            "sourceFresh": True,
+            "dateFresh": True,
+            "staleReasons": [],
+            "filesRead": ["MissionCenter/brief.md", "MissionCenter/working-set.md"],
+            "content": content,
+            "handoff": None,
             "ledgerStatus": "missing",
             "ledgerError": None,
+            "context": {"includedBytes": {"brief": len(brief.encode("utf-8"))}},
+            "maxBytes": max_bytes,
+            "canonicalFallback": False,
             "fallbackReason": None,
+            "truncated": False,
             "truncatedMarker": None,
             "readNext": [] if read_next is None else read_next,
-            "filesRead": ["MissionCenter/brief.md", "MissionCenter/working-set.md"],
-            "staleReasons": [],
-            "content": content,
         }
-        actual = sum(
-            len(value.encode("utf-8"))
-            for value in content.values()
-            if isinstance(value, str)
+
+        def string_bytes(value):
+            if isinstance(value, str):
+                return len(value.encode("utf-8"))
+            if isinstance(value, dict):
+                return sum(string_bytes(item) for item in value.values())
+            if isinstance(value, list):
+                return sum(string_bytes(item) for item in value)
+            return 0
+
+        payload["bytes"] = (
+            string_bytes(payload) if declared_bytes is None else declared_bytes
         )
-        actual += sum(
-            len(payload[name].encode("utf-8"))
-            for name in ("route", "ledgerStatus")
-        )
-        actual += sum(
-            len(item.encode("utf-8"))
-            for name in ("readNext", "filesRead", "staleReasons")
-            for item in payload[name]
-        )
-        payload["bytes"] = actual if declared_bytes is None else declared_bytes
-        payload["maxBytes"] = max_bytes
+        if omit is not None:
+            payload.pop(omit, None)
         return {"exitCode": exit_code, "envelope": {"data": payload}}
 
     def test_malformed_status_is_not_treated_as_verified(self):
-        result = {"envelope": {"data": {"checks": [{"name": "ledger", "status": ["pass"]}]}}}
+        result = {
+            "envelope": {
+                "data": {"checks": [{"name": "ledger", "status": ["pass"]}]}
+            }
+        }
         self.assertIsNone(check_status(result, "ledger"))
 
     def test_resume_contract_accepts_exact_success_packet(self):
-        self.assertTrue(resume_contract_valid(self.resume_result(brief="繁體內容", working="工作集")))
+        self.assertTrue(
+            resume_contract_valid(
+                self.resume_result(brief="繁體內容", working="工作集")
+            )
+        )
 
     def test_resume_contract_rejects_nonzero_exit_even_with_content(self):
         self.assertFalse(resume_contract_valid(self.resume_result(exit_code=7)))
@@ -248,6 +326,33 @@ class EnvelopeTests(unittest.TestCase):
         self.assertFalse(
             resume_contract_valid(self.resume_result(read_next=["x" * 16385]))
         )
+
+    def test_resume_contract_rejects_every_missing_public_field(self):
+        fields = (
+            "schemaVersion",
+            "route",
+            "sourceFresh",
+            "dateFresh",
+            "staleReasons",
+            "filesRead",
+            "content",
+            "handoff",
+            "ledgerStatus",
+            "ledgerError",
+            "context",
+            "bytes",
+            "maxBytes",
+            "canonicalFallback",
+            "fallbackReason",
+            "truncated",
+            "truncatedMarker",
+            "readNext",
+        )
+        for field in fields:
+            with self.subTest(field=field):
+                self.assertFalse(
+                    resume_contract_valid(self.resume_result(omit=field))
+                )
 
 
 if __name__ == "__main__":
