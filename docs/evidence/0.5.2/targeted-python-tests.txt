@@ -1,0 +1,43 @@
+Local verification record; not a complete 0.5.2 release certificate.
+Environment: Linux, Python 3.13.5. GitHub Actions/CI was not executed.
+Source checkpoint containing the tested modules: 73d3ddbd0b6895edc08d3beff08c85531801d87b.
+Command: python -m unittest discover -s tests -p 'test_*_052.py' -v
+Exit code: 0
+
+Captured unittest output:
+
+test_both_streams_cannot_deadlock (test_bounded_process_052.BoundedProcessTests.test_both_streams_cannot_deadlock) ... ok
+test_descendant_holding_a_pipe_cannot_evade_timeout (test_bounded_process_052.BoundedProcessTests.test_descendant_holding_a_pipe_cannot_evade_timeout) ... ok
+test_exact_per_stream_limit_is_allowed (test_bounded_process_052.BoundedProcessTests.test_exact_per_stream_limit_is_allowed) ... ok
+test_invalid_limits_fail_before_execution (test_bounded_process_052.BoundedProcessTests.test_invalid_limits_fail_before_execution) ... ok
+test_nonzero_exit_is_not_hidden (test_bounded_process_052.BoundedProcessTests.test_nonzero_exit_is_not_hidden) ... ok
+test_stderr_overflow_is_stopped (test_bounded_process_052.BoundedProcessTests.test_stderr_overflow_is_stopped) ... ok
+test_stdout_overflow_is_stopped (test_bounded_process_052.BoundedProcessTests.test_stdout_overflow_is_stopped) ... ok
+test_timeout_kills_silent_child (test_bounded_process_052.BoundedProcessTests.test_timeout_kills_silent_child) ... ok
+test_zero_limit_allows_silent_process (test_bounded_process_052.BoundedProcessTests.test_zero_limit_allows_silent_process) ... ok
+test_malformed_status_is_not_treated_as_verified (test_bounded_process_052.EnvelopeTests.test_malformed_status_is_not_treated_as_verified) ... ok
+test_active_anchor_survives_six_blockers_without_mutation (test_working_set_052.WorkingSetPolicyTests.test_active_anchor_survives_six_blockers_without_mutation) ... ok
+test_anchor_and_urgent_work_survive_blockers (test_working_set_052.WorkingSetPolicyTests.test_anchor_and_urgent_work_survive_blockers) ... ok
+test_direct_dependency_precedes_unrelated_blockers (test_working_set_052.WorkingSetPolicyTests.test_direct_dependency_precedes_unrelated_blockers) ... ok
+test_historical_helpers_are_preserved (test_working_set_052.WorkingSetPolicyTests.test_historical_helpers_are_preserved) ... ok
+test_large_urgent_set_stays_bounded_with_anchor (test_working_set_052.WorkingSetPolicyTests.test_large_urgent_set_stays_bounded_with_anchor) ... ok
+test_no_done_or_backlog_promotion (test_working_set_052.WorkingSetPolicyTests.test_no_done_or_backlog_promotion) ... ok
+test_overlapping_categories_are_deduplicated (test_working_set_052.WorkingSetPolicyTests.test_overlapping_categories_are_deduplicated) ... ok
+test_ready_ties_and_empty_input (test_working_set_052.WorkingSetPolicyTests.test_ready_ties_and_empty_input) ... ok
+test_small_zero_and_oversize_limits (test_working_set_052.WorkingSetPolicyTests.test_small_zero_and_oversize_limits) ... ok
+test_status_normalization_and_invalid_rows (test_working_set_052.WorkingSetPolicyTests.test_status_normalization_and_invalid_rows) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 4.176s
+
+OK
+
+Additional command:
+python -m py_compile tools/bounded_process.py tools/verify_upgrade_052.py skills/mission-center/scripts/common/working_set.py skills/mission-center/scripts/mission_maintenance.py
+Exit code: 0. This is syntax compilation, not a full dependency/import test.
+
+Baseline recheck:
+python tools/verify_upgrade_052.py --binary <verified-existing-0.5.1-linux-binary> --report baseline.json
+Exit code: 1; 1/7 passed, 6 failed. Output equals baseline-probes.json. The existing binary SHA-256 is recorded there. This is NOT a test of the new Rust source.
+
+NOT PERFORMED: new Rust compilation, cargo fmt/clippy, native unit/integration/differential suites, whole-project test suite, macOS/Windows verification, full A/B/C/D upgrade acceptance.

@@ -18,6 +18,11 @@ from pathlib import Path
 from typing import Any
 
 from common.markdown_table import parse_table_blocks, parse_table_rows
+from common.working_set import (
+    dependency_ids as _dependency_ids,
+    priority_key as _priority_key,
+    select_working_set as extract_working_set_tasks,
+)
 from security_scanner import SECRET_PATTERN
 from sync_mission_center import TEXT, _find_summary_value
 from visual_state import normalize_tasks
@@ -970,49 +975,8 @@ def run_handoff(workspace: Path, task_id: str | None = None, max_bytes: int = HA
     return _handoff_packet(records, task_id, bounded, latest_task)
 
 
-def _priority_key(task: dict[str, str]) -> tuple[int, str]:
-    priority = task.get("Priority", "").strip().upper()
-    value = int(priority[1:]) if re.fullmatch(r"P\d+", priority) else 99
-    return value, task.get("ID", "").strip()
-
-
-def _dependency_ids(task: dict[str, str]) -> set[str]:
-    """Extract task IDs from a compact Depends on cell without a second parser."""
-    return set(re.findall(r"\b[A-Za-z][A-Za-z0-9_]*-\d+\b", task.get("Depends on", "")))
-
-
 def _dependencies_satisfied(task: dict[str, str], done_ids: set[str]) -> bool:
     return _dependency_ids(task).issubset(done_ids)
-
-
-def extract_working_set_tasks(tasks: list[dict[str, str]], limit: int = 6) -> list[dict[str, str]]:
-    """Select the bounded derived view; tasks.md remains lifecycle truth."""
-    unfinished = [t for t in tasks if t.get("Status", "").strip().casefold() != DONE_STATUS]
-    done_ids = {
-        t.get("ID", "").strip()
-        for t in tasks
-        if t.get("Status", "").strip().casefold() == DONE_STATUS
-    }
-    status = lambda task: task.get("Status", "").strip().casefold()
-    p0 = [t for t in unfinished if t.get("Priority", "").strip().casefold() == "p0" and status(t) != "backlog"]
-    categories = (
-        [t for t in unfinished if status(t) == "blocked"],
-        [t for t in unfinished if status(t) == "in progress"],
-        [t for t in unfinished if status(t) == "review"],
-        p0,
-        sorted((t for t in unfinished if status(t) == "ready"), key=_priority_key),
-    )
-    selected: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for category in categories:
-        for task in category:
-            task_id = task.get("ID", "").strip()
-            if task_id and task_id not in seen:
-                seen.add(task_id)
-                selected.append(task)
-                if len(selected) >= limit:
-                    return selected
-    return selected
 
 
 def extract_next_candidates(tasks: list[dict[str, str]], limit: int = 2) -> list[dict[str, str]]:

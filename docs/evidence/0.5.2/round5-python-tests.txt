@@ -1,0 +1,51 @@
+Mission Center 0.5.2 — review round 5 focused local evidence
+Date: 2026-09-12
+Environment: Linux sandbox, Python 3.13.5
+CI/Actions: not run
+Rust toolchain: unavailable in this sandbox
+
+Scope
+-----
+Focused verification of the three P2 repairs reported against review commit
+44a5bbcfef76a4069081a0911a20bfbc6451be14:
+
+1. test module syntax restored;
+2. tracked setsid descendants are cleaned after unexpected supervisor death;
+3. resume acceptance budget includes bounded routing strings as well as content.
+
+Commands and observed results
+-----------------------------
+
+python3 -m py_compile \
+  tools/bounded_process.py \
+  tools/verify_upgrade_052.py \
+  tests/test_bounded_process_052.py
+
+Observed: exit 0.
+
+PYTHONPATH=tools python3 -m unittest -v tests.test_bounded_process_052
+
+Observed: exit 0; 18 tests passed in 30.058 seconds.
+The executed cases included stdout/stderr limits, silent zero-output execution,
+explicit timeout cleanup, descendants holding pipes, setsid descendants,
+unexpected supervisor SIGKILL with tracked candidate/setsid-child cleanup,
+canonical-task mutation detection, malformed check status, nonzero resume exit,
+false/oversized byte declarations, and oversized readNext routing metadata.
+
+Evidence limits
+---------------
+The local files were a manually reconstructed copy of the touched Python logic
+because this ChatGPT sandbox can write GitHub through the connector but cannot
+clone or fetch raw repository bytes over DNS. Therefore this is useful focused
+behavioral evidence, not a claim of byte-for-byte remote checkout verification.
+The pushed GitHub files must be rerun by the independent reviewer/Codex or a
+normal local checkout. No Rust source was compiled, no full Python suite was
+run, and no release/pass claim follows from this record.
+
+Related pushed commits
+----------------------
+09cb50fc281accadeb8affb9139bef926a4a0e9b  syntax repair
+5f982c85074dda2dc0f57f0da00bba3906354cb0  shared routing budget probe
+2f726d1d7dac457f5b0fd1bb4a33be9bb0326e0a  supervisor-exit cleanup
+758a5236082facf1d649e8bf917a2c1e0eb8e30f  focused regressions
+a4b602157d29e583ee25d97b10999a272a32b990  supervisor identity/zombie hardening
