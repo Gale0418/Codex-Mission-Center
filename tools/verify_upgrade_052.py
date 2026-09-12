@@ -4,7 +4,7 @@
 This is a development test harness, NOT a Python runtime fallback. It executes
 only the explicitly supplied local binary against disposable workspaces. It
 never runs CI, connects to a model/provider, or writes the caller's workspace.
-Process execution requires POSIX (Linux/macOS); Windows fails closed with exit 2.
+Process execution requires Linux subreaper + /proc containment; other platforms fail closed with exit 2.
 This bounds captured output/lifetime, not arbitrary child filesystem operations.
 Exit 0 means all probes passed; exit 1 means an assertion failed; exit 2 means
 setup, execution, timeout, JSON decoding, or report writing failed. A baseline
@@ -150,12 +150,12 @@ def collect(binary: Path) -> dict[str, Any]:
             "active_task_survives_six_unrelated_blockers", "MC-007" in working_set,
             working_set, "The active MC-007 remains represented in the bounded working set.",
         )
+        task_before = tasks_path.read_bytes()
         resumed = invoke(binary, root, "resume", "--date", FIXTURE_DATE)
         record(
             "resume_delivers_documented_context", resume_contract_valid(resumed),
             resumed, "resume exits successfully and returns actual content within the shared 16 KiB budget.",
         )
-        task_before = tasks_path.read_bytes()
         (mission / "execution-ledger.jsonl").write_text("{not-json}\n", encoding="utf-8")
         (root / "output" / "mission-center-evidence").mkdir(parents=True)
         reconciled = invoke(binary, root, "reconcile", "--date", FIXTURE_DATE)
