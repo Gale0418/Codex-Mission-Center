@@ -1,17 +1,24 @@
 """Bounded Linux child runner for explicit local development probes.
 
-This bounds captured output, wall-clock lifetime, and the complete descendant
-process tree.  It is still not a filesystem/network security sandbox.  Linux
-is required because the supervisor uses ``PR_SET_CHILD_SUBREAPER`` plus
-``/proc`` identities to contain descendants that create a new session.  Other
-platforms fail closed until an equivalent native containment primitive exists.
+The candidate runs below a dedicated Linux PID namespace init.  Namespace-init
+semantics make descendant containment atomic: when the supervisor exits, the
+kernel terminates every process in that PID namespace, including descendants
+that called ``setsid``.  ``unshare --kill-child`` also tears the namespace down
+if its outer helper is killed.  Captured stdout/stderr and wall-clock lifetime
+are bounded, but this remains development tooling rather than a filesystem,
+network, CPU, memory, or process-count security sandbox.
+
+Linux, util-linux ``unshare``, unprivileged user namespaces, and PID namespaces
+are required.  Unsupported hosts fail closed instead of silently weakening the
+containment contract.
 """
 from __future__ import annotations
 
-import ctypes
 import math
 import os
 from pathlib import Path
+import select
+import shutil
 import signal
 import subprocess
 import sys
@@ -22,156 +29,45 @@ from typing import Sequence
 _SUPERVISOR_FLAG = "--mission-center-bounded-supervise"
 _SUPERVISOR_ERROR_EXIT = 125
 _SUPERVISOR_ERROR_MARKER = b"__MC_BOUNDED_SUPERVISOR_ERROR__:"
-_PR_SET_CHILD_SUBREAPER = 36
+_READY_ENV = "MC_BOUNDED_READY_FD"
+_READY_BYTE = b"R"
 _CLEANUP_SECONDS = 2.0
+_SETUP_GRACE_SECONDS = 5.0
 
 
 class OutputLimitError(RuntimeError):
     """The candidate exceeded a stream's capture allowance."""
 
 
-def _linux_required() -> None:
-    if not sys.platform.startswith("linux") or not Path("/proc/self/stat").is_file():
-        raise RuntimeError(
-            "bounded probes require Linux subreaper and /proc process-tree containment; "
-            "this platform is unverified"
-        )
+def _unshare_path() -> str:
+    if not sys.platform.startswith("linux"):
+        raise RuntimeError("bounded probes require Linux PID namespaces")
+    executable = shutil.which("unshare")
+    if executable is None:
+        raise RuntimeError("bounded probes require util-linux unshare")
+    return executable
 
 
-def _proc_snapshot() -> dict[int, tuple[int, str]]:
-    """Return pid -> (ppid, starttime) from one best-effort /proc snapshot."""
-    snapshot: dict[int, tuple[int, str]] = {}
+def _notify_ready() -> None:
+    raw = os.environ.pop(_READY_ENV, None)
+    if raw is None:
+        raise RuntimeError("supervisor readiness descriptor is missing")
     try:
-        entries = os.scandir("/proc")
-    except OSError:
-        return snapshot
-    with entries:
-        for entry in entries:
-            if not entry.name.isdigit():
-                continue
-            try:
-                raw = Path(entry.path, "stat").read_text(encoding="utf-8")
-                end = raw.rfind(")")
-                fields = raw[end + 2 :].split()
-                # The suffix starts at field 3 (state). PPID is field 4 and
-                # starttime is field 22, therefore indexes 1 and 19.
-                if end < 0 or len(fields) <= 19:
-                    continue
-                snapshot[int(entry.name)] = (int(fields[1]), fields[19])
-            except (OSError, UnicodeDecodeError, ValueError):
-                continue
-    return snapshot
-
-
-def _descendants(roots: set[int], snapshot: dict[int, tuple[int, str]]) -> set[int]:
-    children: dict[int, list[int]] = {}
-    for pid, (ppid, _starttime) in snapshot.items():
-        children.setdefault(ppid, []).append(pid)
-    found: set[int] = set()
-    stack = list(roots)
-    while stack:
-        parent = stack.pop()
-        for child in children.get(parent, ()):  # pragma: no branch - compact traversal
-            if child not in found and child not in roots:
-                found.add(child)
-                stack.append(child)
-    return found
-
-
-def _remember_descendants(root_pid: int, tracked: dict[int, str]) -> None:
-    snapshot = _proc_snapshot()
-    for pid in _descendants({root_pid}, snapshot):
-        tracked.setdefault(pid, snapshot[pid][1])
-
-
-def _identity_alive(pid: int, starttime: str) -> bool:
-    current = _proc_snapshot().get(pid)
-    return current is not None and current[1] == starttime
-
-
-def _kill_identity(pid: int, starttime: str) -> None:
-    current = _proc_snapshot().get(pid)
-    if current is None or current[1] != starttime:
-        return
+        descriptor = int(raw)
+    except ValueError as error:
+        raise RuntimeError("supervisor readiness descriptor is invalid") from error
     try:
-        os.kill(pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-
-
-def _terminate_tracked_identities(tracked: dict[int, str]) -> bool:
-    """Kill observed identities, including descendants reparented after helper death."""
-    deadline = time.monotonic() + _CLEANUP_SECONDS
-    while True:
-        live = [
-            (pid, starttime)
-            for pid, starttime in tracked.items()
-            if _identity_alive(pid, starttime)
-        ]
-        if not live:
-            return True
-        for pid, starttime in reversed(live):
-            _kill_identity(pid, starttime)
-        if time.monotonic() >= deadline:
-            return not any(
-                _identity_alive(pid, starttime)
-                for pid, starttime in tracked.items()
-            )
-        time.sleep(0.01)
-
-
-def _reap_children() -> None:
-    while True:
-        try:
-            pid, _status = os.waitpid(-1, os.WNOHANG)
-        except ChildProcessError:
-            return
-        if pid == 0:
-            return
-
-
-def _set_child_subreaper() -> None:
-    libc = ctypes.CDLL(None, use_errno=True)
-    prctl = libc.prctl
-    prctl.argtypes = [
-        ctypes.c_int,
-        ctypes.c_ulong,
-        ctypes.c_ulong,
-        ctypes.c_ulong,
-        ctypes.c_ulong,
-    ]
-    prctl.restype = ctypes.c_int
-    if prctl(_PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
-        error = ctypes.get_errno()
-        raise OSError(error, os.strerror(error))
-
-
-def _cleanup_supervised_tree(root_pid: int, tracked: dict[int, str]) -> bool:
-    """Kill and reap the complete supervised tree, including setsid escapees."""
-    deadline = time.monotonic() + _CLEANUP_SECONDS
-    while True:
-        _remember_descendants(root_pid, tracked)
-        live = [(pid, start) for pid, start in tracked.items() if _identity_alive(pid, start)]
-        for pid, start in reversed(live):
-            _kill_identity(pid, start)
-        _reap_children()
-        _remember_descendants(root_pid, tracked)
-        remaining = [
-            (pid, start) for pid, start in tracked.items() if _identity_alive(pid, start)
-        ]
-        if not remaining:
-            _reap_children()
-            return True
-        if time.monotonic() >= deadline:
-            return False
-        time.sleep(0.01)
+        if os.write(descriptor, _READY_BYTE) != len(_READY_BYTE):
+            raise RuntimeError("supervisor readiness handshake was incomplete")
+    finally:
+        os.close(descriptor)
 
 
 def _supervise(argv: list[str]) -> int:
-    """Linux subreaper entry point executed in an isolated helper process."""
+    """PID-namespace init: run one candidate and let kernel teardown contain descendants."""
     try:
-        _linux_required()
-        _set_child_subreaper()
+        if os.getpid() != 1:
+            raise RuntimeError("supervisor is not PID 1 in its containment namespace")
         if not argv:
             raise ValueError("an explicit executable is required")
 
@@ -183,39 +79,28 @@ def _supervise(argv: list[str]) -> int:
 
         signal.signal(signal.SIGTERM, request_stop)
         signal.signal(signal.SIGINT, request_stop)
+        _notify_ready()
         candidate = subprocess.Popen(
             argv,
             stdin=subprocess.DEVNULL,
-            # Inherit the supervisor's bounded pipes. Normal children remain
-            # in this session; a child that calls setsid is still contained by
-            # the subreaper and /proc identity tracking below.
             stdout=None,
             stderr=None,
             close_fds=True,
             start_new_session=False,
         )
-        tracked: dict[int, str] = {}
-        identity = _proc_snapshot().get(candidate.pid)
-        if identity is not None:
-            tracked[candidate.pid] = identity[1]
-
         return_code: int | None = None
         while return_code is None and not stop_requested:
-            _remember_descendants(os.getpid(), tracked)
             return_code = candidate.poll()
             if return_code is None:
                 time.sleep(0.01)
-
         if stop_requested:
-            return_code = 128 + signal.SIGTERM
-        if not _cleanup_supervised_tree(os.getpid(), tracked):
-            raise RuntimeError("supervised process-tree cleanup did not complete")
+            return 128 + signal.SIGTERM
         if return_code is None:
             return_code = candidate.poll()
         if return_code is None:
-            return_code = 128 + signal.SIGKILL
+            return 128 + signal.SIGKILL
         return return_code if return_code >= 0 else 128 + (-return_code)
-    except BaseException as error:  # supervisor must report bounded protocol failure
+    except BaseException as error:  # fixed bounded protocol failure
         message = f"{_SUPERVISOR_ERROR_MARKER.decode()}{type(error).__name__}: {error}\n"
         try:
             os.write(2, message.encode("utf-8", errors="replace")[:4096])
@@ -224,52 +109,66 @@ def _supervise(argv: list[str]) -> int:
         return _SUPERVISOR_ERROR_EXIT
 
 
-def _signal_supervisor(process: subprocess.Popen[bytes], tracked: dict[int, str]) -> None:
-    """Ask the subreaper to clean up, with an identity-checked hard fallback."""
-    _remember_descendants(process.pid, tracked)
-    if process.poll() is None:
-        try:
-            os.kill(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        deadline = time.monotonic() + _CLEANUP_SECONDS
-        while process.poll() is None and time.monotonic() < deadline:
-            _remember_descendants(process.pid, tracked)
-            time.sleep(0.01)
-        if process.poll() is None:
-            # The helper itself is wedged. Kill every observed descendant
-            # before reparenting can hide it, then its original process group.
-            descendants = {
-                pid: starttime
-                for pid, starttime in tracked.items()
-                if pid != process.pid
-            }
-            _terminate_tracked_identities(descendants)
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            try:
-                process.wait(timeout=_CLEANUP_SECONDS)
-            except subprocess.TimeoutExpired:
-                pass
-    # Never return merely because the supervisor has already exited. It may
-    # have been killed by its candidate while tracked descendants still hold
-    # pipes or continue running in another session. Exclude the helper itself:
-    # until wait() reaps it, an exited helper may remain as a harmless zombie.
-    descendants = {
-        pid: starttime
-        for pid, starttime in tracked.items()
-        if pid != process.pid
-    }
-    _terminate_tracked_identities(descendants)
+def _terminate_namespace(process: subprocess.Popen[bytes]) -> None:
+    """Terminate the outer unshare helper; --kill-child atomically kills namespace PID 1."""
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=_CLEANUP_SECONDS)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=_CLEANUP_SECONDS)
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("candidate namespace cleanup did not complete") from error
+
+
+def _wait_ready(
+    descriptor: int,
+    process: subprocess.Popen[bytes],
+    abort: threading.Event,
+    failures: list[Exception | None],
+    deadline: float,
+    timeout: float,
+) -> None:
+    """Require a private readiness byte before treating any exit as candidate output."""
+    setup_deadline = min(deadline, time.monotonic() + _SETUP_GRACE_SECONDS)
+    while True:
+        if abort.is_set():
+            failure = next((error for error in failures if error is not None), None)
+            raise RuntimeError(str(failure) if failure else "candidate pipe read failed") from failure
+        remaining = setup_deadline - time.monotonic()
+        if remaining <= 0:
+            if deadline <= setup_deadline:
+                raise subprocess.TimeoutExpired("candidate namespace setup", timeout)
+            raise RuntimeError("candidate namespace setup did not become ready")
+        readable, _, _ = select.select([descriptor], [], [], min(0.02, remaining))
+        if readable:
+            value = os.read(descriptor, 1)
+            if value == _READY_BYTE:
+                return
+            raise RuntimeError("candidate namespace setup failed before readiness")
+        if process.poll() is not None:
+            raise RuntimeError("candidate namespace setup failed before readiness")
 
 
 def run_bounded(
     argv: Sequence[str], *, timeout: float = 30.0, max_output_bytes: int = 1024 * 1024,
 ) -> tuple[int, bytes, bytes]:
-    """Capture each stream and contain the Linux descendant tree within bounds."""
-    _linux_required()
+    """Capture each stream and contain the complete Linux PID-namespace tree."""
+    unshare = _unshare_path()
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+        raise ValueError("timeout must be a finite positive number")
+    timeout = float(timeout)
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("timeout must be finite and positive")
     if isinstance(max_output_bytes, bool) or not isinstance(max_output_bytes, int) or max_output_bytes < 0:
@@ -283,20 +182,37 @@ def run_bounded(
     failures: list[Exception | None] = [None, None]
     done = [threading.Event(), threading.Event()]
     abort = threading.Event()
-    supervisor_argv = [sys.executable, str(Path(__file__).resolve()), _SUPERVISOR_FLAG, *argv]
-    process = subprocess.Popen(
-        supervisor_argv,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        bufsize=0,
-        start_new_session=True,
-    )
+    ready_read, ready_write = os.pipe()
+    os.set_inheritable(ready_write, True)
+    environment = os.environ.copy()
+    environment[_READY_ENV] = str(ready_write)
+    supervisor_argv = [
+        unshare,
+        "--user",
+        "--map-root-user",
+        "--pid",
+        "--fork",
+        "--kill-child=SIGKILL",
+        sys.executable,
+        str(Path(__file__).resolve()),
+        _SUPERVISOR_FLAG,
+        *argv,
+    ]
+    try:
+        process = subprocess.Popen(
+            supervisor_argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=0,
+            start_new_session=True,
+            close_fds=True,
+            pass_fds=(ready_write,),
+            env=environment,
+        )
+    finally:
+        os.close(ready_write)
     assert process.stdout is not None and process.stderr is not None
-    tracked: dict[int, str] = {}
-    supervisor_identity = _proc_snapshot().get(process.pid)
-    if supervisor_identity is not None:
-        tracked[process.pid] = supervisor_identity[1]
 
     def read_pipe(index: int, stream) -> None:
         try:
@@ -326,12 +242,13 @@ def run_bounded(
     ]
     deadline = time.monotonic() + timeout
     started: list[threading.Thread] = []
+    primary_error: BaseException | None = None
     try:
         for reader in readers:
             reader.start()
             started.append(reader)
+        _wait_ready(ready_read, process, abort, failures, deadline, timeout)
         while True:
-            _remember_descendants(process.pid, tracked)
             if abort.is_set():
                 failure = next((error for error in failures if error is not None), None)
                 raise RuntimeError(str(failure) if failure else "candidate pipe read failed") from failure
@@ -347,30 +264,25 @@ def run_bounded(
             if remaining <= 0:
                 raise subprocess.TimeoutExpired(list(argv), timeout)
             abort.wait(min(0.02, remaining))
+    except BaseException as error:
+        primary_error = error
+        raise
     finally:
-        _signal_supervisor(process, tracked)
+        os.close(ready_read)
+        cleanup_error: BaseException | None = None
         try:
-            process.wait(timeout=_CLEANUP_SECONDS)
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            process.wait(timeout=_CLEANUP_SECONDS)
+            _terminate_namespace(process)
+        except BaseException as error:
+            cleanup_error = error
         for reader in started:
             reader.join(timeout=_CLEANUP_SECONDS)
         for index, stream in enumerate((process.stdout, process.stderr)):
             if readers[index] not in started:
                 stream.close()
         if any(reader.is_alive() for reader in started):
-            raise RuntimeError("candidate pipe cleanup did not complete")
-        descendants = {
-            pid: starttime
-            for pid, starttime in tracked.items()
-            if pid != process.pid
-        }
-        if not _terminate_tracked_identities(descendants):
-            raise RuntimeError("candidate process-tree cleanup did not complete")
+            cleanup_error = cleanup_error or RuntimeError("candidate pipe cleanup did not complete")
+        if cleanup_error is not None:
+            raise cleanup_error
 
 
 def _main(argv: list[str]) -> int:
