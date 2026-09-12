@@ -31,6 +31,16 @@ def dependency_ids(task: dict[str, str]) -> set[str]:
     return set(re.findall(r"\b[A-Za-z][A-Za-z0-9_]*-\d+\b", task.get("Depends on", "")))
 
 
+def _selector_dependency_ids(task: dict[str, str]) -> set[str]:
+    """Match the canonical Rust header fallback and comma-separated ID parser."""
+    # mission-center-core accepts ``Dependencies`` only when ``Depends on`` is
+    # absent. Preserve that precedence instead of merging two competing cells.
+    raw = task.get("Depends on", task.get("Dependencies", ""))
+    if not isinstance(raw, str):
+        return set()
+    return {item.strip() for item in raw.split(",") if item.strip()}
+
+
 def select_working_set(
     tasks: list[dict[str, str]], limit: int = WORKING_SET_LIMIT,
 ) -> list[dict[str, str]]:
@@ -50,12 +60,7 @@ def select_working_set(
         return task.get("Status", "").strip().casefold()
 
     anchor = next((task for task in tasks if status(task) == "in progress"), None)
-    # The native canonical parser splits on commas and permits non-MC IDs.
-    # Keep the historical regex helper available for its existing callers,
-    # but do not let it silently drop an anchor dependency such as T1.
-    dependencies = {
-        item.strip() for item in anchor.get("Depends on", "").split(",") if item.strip()
-    } if anchor is not None else set()
+    dependencies = _selector_dependency_ids(anchor) if anchor is not None else set()
 
     def ready_in_order():
         # Sort only when earlier categories have not filled the bounded view.
