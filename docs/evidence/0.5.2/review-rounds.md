@@ -29,19 +29,39 @@ python -m unittest discover -s tests -p 'test_*_052.py' -v
 
 The changed existing `test_mission_maintenance.py` was reconstructed byte-for-byte from its original GitHub blob (original SHA `194bba12e82ede15970b99e720a51b726fdc7512`), then only the relevant test name and expected ordering were changed. The updated test file compiles syntactically. Its affected test method was also executed in isolation with the real selector and passed. **This isolated test is not the full 39-test module or its dependency integration; the reviewer must re-run that module after this fix.**
 
-Verified source blob identities:
+## Round 3
 
-| File | Git blob SHA |
-| --- | --- |
-| `skills/mission-center/scripts/common/working_set.py` | `fcc61ba85e958be2cc45e07f556cfedbcd97ccf6` |
-| `tests/test_working_set_052.py` | `613d20db8524b94380adc9568c0fdab1f36ff0a8` |
-| `tests/test_mission_maintenance.py` | `3e3a693b50aa75955113bce733b9112f036877c2` |
+Independent reviewer: `chatgpt-codex-connector[bot]`, review `5185992534`, source `1b82f4f684f76df376100d922f9af9f5fea726de`.
 
-All three identities were computed from the local bytes and matched the blobs uploaded to GitHub. No unexecuted Rust build, full-suite pass, cross-platform pass or independent approval is inferred from these Python tests.
+- [P2: canonical `Dependencies` header fallback](https://github.com/Gale0418/Codex-Mission-Center/pull/22#discussion_r3995768497): Python now follows the Rust parser's precedence—use `Depends on` when present, otherwise fall back to `Dependencies`—then parses complete comma-separated task IDs.
+- [P2: require successful resume exit](https://github.com/Gale0418/Codex-Mission-Center/pull/22#discussion_r3995768501): the black-box probe now rejects a nonzero `resume` exit even if a malformed candidate emits plausible content.
+- [P2: enforce the shared 16 KiB resume budget](https://github.com/Gale0418/Codex-Mission-Center/pull/22#discussion_r3995768502): the probe now verifies UTF-8 aggregate content bytes, exact declared `bytes`, and `0 <= bytes <= maxBytes <= 16384`.
+
+Fix commits:
+
+- `43650dfc295bddcda6120cdccca63624011558e2` — canonical dependency header fallback.
+- `8b97f34750ba95f81d6ba8004f544270870b1917` — successful-exit and byte-budget resume contract.
+- `7e2f18ad409847f812ba1bcd47d3a7140bdc4191` — selector regressions.
+- `85518edc5d4e7440ed903ab5d3f25cce98764872` — resume-probe regressions.
+
+## Actual local verification of the round-3 fixes
+
+Environment: Linux, Python 3.13.5.
+
+```sh
+python -m py_compile skills/mission-center/scripts/common/working_set.py \
+  tools/bounded_process.py tools/verify_upgrade_052.py \
+  tests/test_working_set_052.py tests/test_bounded_process_052.py
+python -m unittest discover -s tests -p 'test_*_052.py' -v
+```
+
+**28 tests passed, exit 0, in 3.549 seconds.** New cases cover the `Dependencies` alias, `Depends on` precedence, nonzero resume exit, UTF-8 accounting, false byte declarations, oversized content, and an overlarge `maxBytes`. Full output and executed-source SHA-256 values are in [round3-python-tests.txt](round3-python-tests.txt).
+
+These tests validate the Python compatibility policy and development harness only. They do **not** validate the Rust source, full repository suite, Windows, release artifacts, or a production operation.
 
 ## Required next review and release gate
 
-Request a fresh independent review of the new commit using:
+Request a fresh independent review of the latest commit using:
 
 > 不要相信前一輪結論，重新從正確性、回歸風險、效能、安全、資源使用與可維護性挑毛病，按照Mission Center標出待修優先度，只有真的沒有值得修的 P2 以上問題才准通過。
 
