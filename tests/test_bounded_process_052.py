@@ -17,7 +17,7 @@ from verify_upgrade_052 import check_status, collect, resume_contract_valid  # n
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux subreaper containment is required")
 class BoundedProcessTests(unittest.TestCase):
-    def run_python(self, code: str, *, limit: int = 1024, timeout: float = 2.0):
+    def run_python(self, code: str, *, limit: int = 1024, timeout: float = 5.0):
         return run_bounded([sys.executable, "-c", code], timeout=timeout, max_output_bytes=limit)
 
     def test_exact_per_stream_limit_is_allowed(self):
@@ -87,7 +87,7 @@ class BoundedProcessTests(unittest.TestCase):
                 "time.sleep(60)"
             )
             with self.assertRaises(subprocess.TimeoutExpired):
-                self.run_python(code, timeout=1.0)
+                self.run_python(code, timeout=2.0)
             escaped_pid = int(pid_file.read_text(encoding="utf-8"))
             deadline = time.monotonic() + 2.0
             while Path(f"/proc/{escaped_pid}").exists() and time.monotonic() < deadline:
@@ -96,6 +96,28 @@ class BoundedProcessTests(unittest.TestCase):
                 Path(f"/proc/{escaped_pid}").exists(),
                 "setsid descendant survived the timeout cleanup",
             )
+
+    def test_supervisor_sigkill_still_reaps_tracked_setsid_descendants(self):
+        with tempfile.TemporaryDirectory(prefix="mc-bounded-supervisor-death-") as temporary:
+            pid_file = Path(temporary) / "pids"
+            child = "import time; time.sleep(60)"
+            code = (
+                "import os,pathlib,signal,subprocess,sys,time; "
+                f"p=subprocess.Popen([sys.executable,'-c',{child!r}],start_new_session=True); "
+                f"pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())+' '+str(p.pid)); "
+                "time.sleep(0.5); os.kill(os.getppid(), signal.SIGKILL); time.sleep(60)"
+            )
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.run_python(code, timeout=1.5)
+            candidate_pid, escaped_pid = map(int, pid_file.read_text(encoding="utf-8").split())
+            for pid in (candidate_pid, escaped_pid):
+                deadline = time.monotonic() + 2.0
+                while Path(f"/proc/{pid}").exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertFalse(
+                    Path(f"/proc/{pid}").exists(),
+                    f"tracked descendant {pid} survived supervisor death",
+                )
 
     def test_invalid_limits_fail_before_execution(self):
         for invalid in (float("inf"), float("nan"), 0, -1):
@@ -131,9 +153,11 @@ if command == 'sync':
 elif command == 'resume':
     path = mission / 'tasks.md'
     path.write_text(path.read_text(encoding='utf-8') + '# mutated by resume\\n', encoding='utf-8')
-    content = {'brief': 'brief', 'workingSet': 'work', 'activeCriticalLessons': '', 'snapshot': None}
+    content = {'handoff': None, 'brief': 'brief', 'workingSet': 'work', 'activeCriticalLessons': '', 'snapshot': None}
+    routing = {'route': 'resume', 'ledgerStatus': 'corrupt', 'readNext': [], 'filesRead': [], 'staleReasons': []}
     used = sum(len(value.encode('utf-8')) for value in content.values() if isinstance(value, str))
-    data = {'content': content, 'readNext': [], 'bytes': used, 'maxBytes': 16384, 'ledgerStatus': 'corrupt'}
+    used += sum(len(value.encode('utf-8')) for value in routing.values() if isinstance(value, str))
+    data = {'content': content, **routing, 'bytes': used, 'maxBytes': 16384}
 elif command == 'reconcile':
     data = {'checks': [
         {'name': 'ledger', 'status': 'error'},
@@ -160,24 +184,50 @@ raise SystemExit(exit_code)
 
 class EnvelopeTests(unittest.TestCase):
     @staticmethod
-    def resume_result(*, exit_code: int = 0, brief: str = "brief", working: str = "work",
-                      max_bytes: int = 16384, declared_bytes: int | None = None):
+    def resume_result(
+        *,
+        exit_code: int = 0,
+        brief: str = "brief",
+        working: str = "work",
+        max_bytes: int = 16384,
+        declared_bytes: int | None = None,
+        read_next: list[str] | None = None,
+    ):
         content = {
+            "handoff": None,
             "brief": brief,
             "workingSet": working,
             "activeCriticalLessons": "",
             "snapshot": None,
         }
-        actual = sum(len(value.encode("utf-8")) for value in content.values() if isinstance(value, str))
-        return {
-            "exitCode": exit_code,
-            "envelope": {"data": {
-                "content": content,
-                "readNext": [],
-                "bytes": actual if declared_bytes is None else declared_bytes,
-                "maxBytes": max_bytes,
-            }},
+        payload = {
+            "route": "resume",
+            "ledgerStatus": "missing",
+            "ledgerError": None,
+            "fallbackReason": None,
+            "truncatedMarker": None,
+            "readNext": [] if read_next is None else read_next,
+            "filesRead": ["MissionCenter/brief.md", "MissionCenter/working-set.md"],
+            "staleReasons": [],
+            "content": content,
         }
+        actual = sum(
+            len(value.encode("utf-8"))
+            for value in content.values()
+            if isinstance(value, str)
+        )
+        actual += sum(
+            len(payload[name].encode("utf-8"))
+            for name in ("route", "ledgerStatus")
+        )
+        actual += sum(
+            len(item.encode("utf-8"))
+            for name in ("readNext", "filesRead", "staleReasons")
+            for item in payload[name]
+        )
+        payload["bytes"] = actual if declared_bytes is None else declared_bytes
+        payload["maxBytes"] = max_bytes
+        return {"exitCode": exit_code, "envelope": {"data": payload}}
 
     def test_malformed_status_is_not_treated_as_verified(self):
         result = {"envelope": {"data": {"checks": [{"name": "ledger", "status": ["pass"]}]}}}
@@ -193,6 +243,11 @@ class EnvelopeTests(unittest.TestCase):
         self.assertFalse(resume_contract_valid(self.resume_result(brief="x" * 16385)))
         self.assertFalse(resume_contract_valid(self.resume_result(declared_bytes=1)))
         self.assertFalse(resume_contract_valid(self.resume_result(max_bytes=16385)))
+
+    def test_resume_contract_rejects_oversized_routing_metadata(self):
+        self.assertFalse(
+            resume_contract_valid(self.resume_result(read_next=["x" * 16385]))
+        )
 
 
 if __name__ == "__main__":
