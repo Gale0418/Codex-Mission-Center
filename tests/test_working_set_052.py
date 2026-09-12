@@ -45,6 +45,16 @@ class WorkingSetPolicyTests(unittest.TestCase):
         anchor = {"ID": "T2", "Status": "In Progress", "Priority": "P1", "Dependencies": " T1 "}
         self.assertEqual(ids(self.blockers() + [dependency, anchor])[:2], ["T2", "T1"])
 
+    def test_empty_primary_dependency_cell_falls_back_to_alias(self):
+        dependency = {"ID": "T1", "Status": "Ready", "Priority": "P1"}
+        for primary in ("", "   "):
+            anchor = {
+                "ID": "T2", "Status": "In Progress", "Priority": "P1",
+                "Depends on": primary, "Dependencies": " T1 ",
+            }
+            with self.subTest(primary=primary):
+                self.assertEqual(ids(self.blockers() + [dependency, anchor])[:2], ["T2", "T1"])
+
     def test_depends_on_header_keeps_precedence_over_dependencies_alias(self):
         first = task("T1")
         second = task("T2")
