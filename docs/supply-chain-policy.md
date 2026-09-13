@@ -38,7 +38,7 @@ Rust workspace rules:
   Python, or falls back to an unlocked or online build; rustup's pinned
   toolchain bootstrap is the only toolchain acquisition step.
 - Release smoke is read-only: the compiled binary executes `runtime
-  capability` and stdin-only `publish verify --version 0.5.1` against the
+  capability` and stdin-only `publish verify --version 0.5.2` against the
   checked-in fixture; `jq` parses the complete versioned envelopes and checks
   exit status, command/route, version, and selected platform. The macOS arm64
   lane records `smoke=unknown` when `uname -m` is not `arm64`; a cross-target

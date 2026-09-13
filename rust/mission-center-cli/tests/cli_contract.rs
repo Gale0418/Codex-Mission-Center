@@ -30,6 +30,305 @@ fn workspace(tasks: &str) -> std::path::PathBuf {
     root
 }
 
+fn commitment_workspace(task_id: &str, verification: &str) -> std::path::PathBuf {
+    workspace(&format!(
+        "| ID | Title | Type | Parent | Priority | Status | Owner | Depends on | Next action | Verification | Estimate | Labels | Comments |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| {task_id} | Commitment | Task | | P1 | Ready | Codex | | Continue | {verification} | 1 | | |\n"
+    ))
+}
+
+fn scope_digest(locator: &str, bytes: &[u8]) -> String {
+    let mut input = b"mission-center-evidence-scope-v1\0".to_vec();
+    input.extend_from_slice(&(locator.len() as u32).to_be_bytes());
+    input.extend_from_slice(locator.as_bytes());
+    input.extend_from_slice(&(bytes.len() as u64).to_be_bytes());
+    input.extend_from_slice(bytes);
+    mission_center_core::sha256_digest(&input)
+}
+
+fn write_current_commitment_evidence(
+    root: &std::path::Path,
+    file_name: &str,
+    task_id: &str,
+    result: &str,
+    scope_bytes: &[u8],
+) {
+    let locator = "output/commitment-scope.txt";
+    fs::create_dir_all(root.join("output/mission-center-evidence")).expect("evidence dir");
+    fs::write(root.join(locator), scope_bytes).expect("scope");
+    fs::write(
+        root.join("output/mission-center-evidence").join(file_name),
+        serde_json::json!({
+            "schemaVersion":"1.0",
+            "artifactType":"evidence-envelope",
+            "envelopeId":file_name.trim_end_matches(".json"),
+            "taskId":task_id,
+            "checkId":"verification",
+            "scope":[locator],
+            "scopeDigest":scope_digest(locator, scope_bytes),
+            "result":result,
+            "status":"current",
+            "artifactLocators":[locator],
+            "recordedAt":"2026-09-13T08:00:00Z"
+        })
+        .to_string(),
+    )
+    .expect("evidence");
+}
+
+fn commitments(root: &std::path::Path) -> (std::process::Output, serde_json::Value) {
+    let output = Command::new(env!("CARGO_BIN_EXE_mission-center"))
+        .args(["commitments", "--root", root.to_str().expect("utf8 root")])
+        .output()
+        .expect("run commitments");
+    assert!(output.stderr.is_empty());
+    let payload = serde_json::from_slice(&output.stdout).expect("commitments JSON");
+    (output, payload)
+}
+
+fn commitment_state(payload: &serde_json::Value) -> &str {
+    payload["data"]["requirements"][0]["state"]
+        .as_str()
+        .expect("requirement state")
+}
+
+#[test]
+fn context_recall_and_preflight_are_bounded_source_backed_and_read_only() {
+    let root = workspace(
+        "| ID | Title | Status |\n| --- | --- | --- |\n| MC-CONTEXT | Context | Ready |\n",
+    );
+    let source = b"# Guardrails\n\n## Deploy\n\nNever retry an unknown external operation.\n";
+    let source_path = root.join("MissionCenter/guardrails.md");
+    fs::write(&source_path, source).expect("context source");
+    let before = fs::read(&source_path).expect("before source");
+    fs::write(
+        root.join("MissionCenter/context-manifest.json"),
+        serde_json::json!({
+            "schemaVersion":"1.0",
+            "artifactType":"context-manifest",
+            "manifestId":"cli-context",
+            "cards":[
+                {
+                    "id":"CTX-deploy",
+                    "context":"before-deploy",
+                    "reason":"preserve ambiguity",
+                    "scope":{"component":"release"},
+                    "source":{
+                        "locator":"MissionCenter/guardrails.md",
+                        "anchor":"## Deploy",
+                        "digest":mission_center_core::sha256_digest(source),
+                    },
+                    "validity":"active",
+                    "requiredVerification":["reconcile the original operation id"]
+                },
+                {
+                    "id":"CTX-resume",
+                    "context":"resume",
+                    "scope":{},
+                    "source":{
+                        "locator":"MissionCenter/guardrails.md",
+                        "anchor":"# Guardrails",
+                        "digest":mission_center_core::sha256_digest(source),
+                    },
+                    "validity":"active",
+                    "requiredVerification":[]
+                }
+            ]
+        })
+        .to_string(),
+    )
+    .expect("context manifest");
+    let binary = env!("CARGO_BIN_EXE_mission-center");
+    let validate = Command::new(binary)
+        .args(["context", "validate", "--root"])
+        .arg(&root)
+        .output()
+        .expect("validate context");
+    assert_eq!(
+        assert_machine_envelope(&validate, "context", 0)["data"]["valid"],
+        true
+    );
+    let recall = Command::new(binary)
+        .args(["context", "recall", "--root"])
+        .arg(&root)
+        .args([
+            "--context",
+            "before-deploy",
+            "--scope",
+            r#"{"component":"release"}"#,
+        ])
+        .output()
+        .expect("recall context");
+    let payload = assert_machine_envelope(&recall, "context", 0);
+    assert_eq!(payload["data"]["cards"][0]["status"], "covered");
+    assert!(payload["data"]["bytes"].as_u64().unwrap() <= 16 * 1024);
+    let preflight = Command::new(binary)
+        .args(["preflight", "--root"])
+        .arg(&root)
+        .args([
+            "--context",
+            "before-deploy",
+            "--scope",
+            r#"{"component":"release"}"#,
+        ])
+        .output()
+        .expect("preflight");
+    let payload = assert_machine_envelope(&preflight, "preflight", 0);
+    assert_eq!(payload["data"]["coverage"], "covered");
+    assert_eq!(payload["data"]["decision"], "advisory-only");
+    let resume = Command::new(binary)
+        .args(["resume", "--root"])
+        .arg(&root)
+        .output()
+        .expect("resume with context");
+    let payload = assert_machine_envelope(&resume, "resume", 0);
+    assert_eq!(payload["data"]["context"]["status"], "pass");
+    assert!(payload["data"]["content"]["contextCards"].is_string());
+    assert!(payload["data"]["bytes"].as_u64().unwrap() <= 16 * 1024);
+    assert_eq!(fs::read(&source_path).expect("after source"), before);
+    fs::write(&source_path, b"# Guardrails\n\nchanged after indexing\n").expect("drift source");
+    let stale = Command::new(binary)
+        .args(["context", "recall", "--root"])
+        .arg(&root)
+        .args([
+            "--context",
+            "before-deploy",
+            "--scope",
+            r#"{"component":"release"}"#,
+        ])
+        .output()
+        .expect("recall stale context");
+    let payload = assert_machine_envelope(&stale, "context", 1);
+    assert_eq!(payload["status"], "stale");
+    assert_eq!(payload["data"]["cards"][0]["status"], "stale");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn bare_context_defaults_to_recall_without_panicking() {
+    let root = workspace(
+        "| ID | Title | Status |\n| --- | --- | --- |\n| MC-CONTEXT | Context | Ready |\n",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_mission-center"))
+        .args(["context", "--root"])
+        .arg(&root)
+        .output()
+        .expect("run bare context");
+    let payload = assert_machine_envelope(&output, "context", 0);
+    assert_eq!(payload["status"], "unknown");
+    assert_eq!(payload["data"]["manifestPresent"], false);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn resume_degrades_corrupt_context_manifest_to_canonical_fallback() {
+    let root = workspace(
+        "| ID | Title | Status |\n| --- | --- | --- |\n| MC-CONTEXT | Context | Ready |\n",
+    );
+    fs::write(
+        root.join("MissionCenter/context-manifest.json"),
+        b"{not valid JSON",
+    )
+    .expect("corrupt context manifest");
+    let output = Command::new(env!("CARGO_BIN_EXE_mission-center"))
+        .args(["resume", "--root"])
+        .arg(&root)
+        .output()
+        .expect("resume with corrupt context");
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).expect("resume JSON");
+    assert_ne!(output.status.code(), Some(101), "resume must not panic");
+    assert_eq!(payload["data"]["context"]["status"], "corrupt");
+    assert_eq!(payload["data"]["canonicalFallback"], true);
+    assert!(
+        payload["data"]["staleReasons"]
+            .as_array()
+            .expect("stale reasons")
+            .iter()
+            .any(|reason| reason == "context_manifest_invalid")
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn external_operation_cli_preserves_unknown_and_requires_evidence_to_resolve() {
+    let root =
+        workspace("| ID | Title | Status |\n| --- | --- | --- |\n| MC-EXT | External | Ready |\n");
+    let binary = env!("CARGO_BIN_EXE_mission-center");
+    let digest = "a".repeat(64);
+    let receipt = "b".repeat(64);
+    let prepare = Command::new(binary)
+        .args(["external-operation", "prepare", "--root"])
+        .arg(&root)
+        .args([
+            "--operation-id",
+            "provider-op",
+            "--task-id",
+            "MC-EXT",
+            "--scope-digest",
+            &digest,
+            "--receipt-digest",
+            &receipt,
+            "--timestamp",
+            "2026-09-13T08:00:00Z",
+        ])
+        .output()
+        .expect("prepare external operation");
+    let payload = assert_machine_envelope(&prepare, "external-operation", 0);
+    assert_eq!(payload["data"]["record"]["status"], "pending");
+    assert_eq!(payload["data"]["exactlyOnce"], false);
+    let unknown = Command::new(binary)
+        .args(["external-operation", "reconcile", "--root"])
+        .arg(&root)
+        .args([
+            "--operation-id",
+            "provider-op",
+            "--task-id",
+            "MC-EXT",
+            "--scope-digest",
+            &digest,
+            "--receipt-digest",
+            &receipt,
+            "--status",
+            "unknown",
+            "--timestamp",
+            "2026-09-13T08:01:00Z",
+        ])
+        .output()
+        .expect("record unknown");
+    assert_eq!(
+        assert_machine_envelope(&unknown, "external-operation", 0)["data"]["record"]["status"],
+        "unknown"
+    );
+    let evidence = b"provider receipt confirmed";
+    fs::write(root.join("MissionCenter/provider-receipt.txt"), evidence).expect("evidence");
+    let evidence_digest = mission_center_core::sha256_digest(evidence);
+    let confirmed = Command::new(binary)
+        .args(["external-operation", "reconcile", "--root"])
+        .arg(&root)
+        .args([
+            "--operation-id",
+            "provider-op",
+            "--task-id",
+            "MC-EXT",
+            "--scope-digest",
+            &digest,
+            "--receipt-digest",
+            &receipt,
+            "--status",
+            "confirmed",
+            "--evidence-locator",
+            "provider-receipt.txt",
+            "--evidence-digest",
+            &evidence_digest,
+            "--timestamp",
+            "2026-09-13T08:02:00Z",
+        ])
+        .output()
+        .expect("confirm external operation");
+    let payload = assert_machine_envelope(&confirmed, "external-operation", 0);
+    assert_eq!(payload["data"]["record"]["status"], "confirmed");
+    let _ = fs::remove_dir_all(root);
+}
+
 fn assert_machine_envelope(
     output: &std::process::Output,
     command: &str,
@@ -1108,7 +1407,7 @@ fn publish_select_keeps_the_top_level_publish_command_token() {
             "publish",
             "select",
             "--version",
-            "0.5.1",
+            "0.5.2",
             "--platform",
             "windows-x86_64",
         ])
@@ -1138,7 +1437,7 @@ fn publish_and_install_stage_emit_verified_non_mutating_receipts() {
             "--operation-id",
             "cli-stage-publish",
             "--version",
-            "0.5.1",
+            "0.5.2",
             "--platform",
             "windows-x86_64",
         ],
@@ -1148,7 +1447,7 @@ fn publish_and_install_stage_emit_verified_non_mutating_receipts() {
             "--operation-id",
             "cli-stage-install",
             "--version",
-            "0.5.1",
+            "0.5.2",
             "--platform",
             "linux-x86_64",
         ],
@@ -1209,4 +1508,73 @@ fn policy_validation_envelope_escapes_quotes_and_newlines_on_stdout_only() {
     assert!(!remediation.is_empty() && remediation.len() <= 512);
     assert!(payload["data"]["errors"].as_array().is_some());
     assert!(String::from_utf8_lossy(&output.stdout).contains("\\n"));
+}
+
+#[test]
+fn commitments_are_read_only_and_classify_current_evidence() {
+    let cases = [
+        ("missing", None, "missing"),
+        ("pass", Some("pass"), "satisfied"),
+        ("fail", Some("fail"), "failed"),
+    ];
+    for (name, result, expected) in cases {
+        let root = commitment_workspace("MC-901", "run the opaque check");
+        let tasks_path = root.join("MissionCenter/tasks.md");
+        let before = fs::read(&tasks_path).expect("tasks before");
+        if let Some(result) = result {
+            write_current_commitment_evidence(
+                &root,
+                &format!("{name}.json"),
+                "MC-901",
+                result,
+                b"scope-v1",
+            );
+        }
+        let (output, payload) = commitments(&root);
+        assert_eq!(output.status.success(), expected != "failed", "{payload}");
+        assert_eq!(payload["command"], "commitments");
+        assert_eq!(payload["data"]["overallStatus"], expected);
+        assert_eq!(commitment_state(&payload), expected);
+        assert_eq!(
+            payload["data"]["requirements"][0]["requirementId"],
+            "MC-901"
+        );
+        assert_eq!(
+            payload["data"]["requirements"][0]["text"],
+            "run the opaque check"
+        );
+        assert_eq!(fs::read(&tasks_path).expect("tasks after"), before);
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[test]
+fn commitments_classify_stale_corrupt_and_duplicate_current_as_unknown_or_stale() {
+    let stale_root = commitment_workspace("MC-902", "opaque stale check");
+    write_current_commitment_evidence(&stale_root, "stale.json", "MC-902", "pass", b"before");
+    fs::write(stale_root.join("output/commitment-scope.txt"), b"after").expect("change scope");
+    let (_, stale_payload) = commitments(&stale_root);
+    assert_eq!(commitment_state(&stale_payload), "stale");
+    assert_eq!(stale_payload["data"]["overallStatus"], "stale");
+    let _ = fs::remove_dir_all(stale_root);
+
+    let corrupt_root = commitment_workspace("MC-903", "opaque corrupt check");
+    fs::create_dir_all(corrupt_root.join("output/mission-center-evidence")).expect("evidence dir");
+    fs::write(
+        corrupt_root.join("output/mission-center-evidence/corrupt.json"),
+        b"{not-json",
+    )
+    .expect("corrupt evidence");
+    let (_, corrupt_payload) = commitments(&corrupt_root);
+    assert_eq!(commitment_state(&corrupt_payload), "unknown");
+    assert_eq!(corrupt_payload["data"]["overallStatus"], "unknown");
+    let _ = fs::remove_dir_all(corrupt_root);
+
+    let duplicate_root = commitment_workspace("MC-904", "opaque duplicate check");
+    write_current_commitment_evidence(&duplicate_root, "one.json", "MC-904", "pass", b"same");
+    write_current_commitment_evidence(&duplicate_root, "two.json", "MC-904", "pass", b"same");
+    let (_, duplicate_payload) = commitments(&duplicate_root);
+    assert_eq!(commitment_state(&duplicate_payload), "unknown");
+    assert_eq!(duplicate_payload["data"]["overallStatus"], "unknown");
+    let _ = fs::remove_dir_all(duplicate_root);
 }

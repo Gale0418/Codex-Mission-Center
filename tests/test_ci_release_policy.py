@@ -180,8 +180,8 @@ class CiReleasePolicyTests(unittest.TestCase):
             'stable package blocked: preview release metadata remains in stable source',
             'stable package blocked: SPDX SBOM is missing or inconsistent',
             'docs/SBOM.spdx.json',
-            'docs/releases/0.5.1.md',
-            'docs/rust-maintainability-audit-0.5.1.md',
+            'docs/releases/0.5.2.md',
+            'docs/rust-maintainability-audit-0.5.2.md',
             'mission-center-python-oracle-boundary',
             'stable package blocked: Python oracle boundary manifest is missing or permits formal runtime',
             'sha256sum "$binary_path"',
@@ -234,11 +234,11 @@ class CiReleasePolicyTests(unittest.TestCase):
         if not bash or not jq:
             self.skipTest("bash and jq are required to execute the CI classifier contract")
         cases = (
-            ("refs/heads/preview", "0.5.1-rust.1", 0, "required=false"),
-            ("refs/heads/main", "0.5.1", 0, "required=true"),
-            ("refs/tags/v0.5.1", "0.5.1", 0, "required=true"),
-            ("refs/tags/v0.5.1", "0.5.1-rust.1", 1, ""),
-            ("refs/tags/v0.5.2", "0.5.1", 1, ""),
+            ("refs/heads/preview", "0.5.2-rust.1", 0, "required=false"),
+            ("refs/heads/main", "0.5.2", 0, "required=true"),
+            ("refs/tags/v0.5.2", "0.5.2", 0, "required=true"),
+            ("refs/tags/v0.5.2", "0.5.2-rust.1", 1, ""),
+            ("refs/tags/v0.5.3", "0.5.2", 1, ""),
         )
         for git_ref, plugin_version, expected_code, expected_output in cases:
             with self.subTest(git_ref=git_ref, plugin_version=plugin_version):
@@ -255,7 +255,7 @@ class CiReleasePolicyTests(unittest.TestCase):
                             **os.environ,
                             "PATH": str(Path(jq).parent) + os.pathsep + os.environ.get("PATH", ""),
                             "GITHUB_REF": git_ref,
-                            "RELEASE_VERSION": "0.5.1",
+                            "RELEASE_VERSION": "0.5.2",
                             "GITHUB_OUTPUT": output.as_posix(),
                             "GITHUB_STEP_SUMMARY": summary.as_posix(),
                         },

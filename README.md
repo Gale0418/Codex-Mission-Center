@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml/badge.svg)](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml)
 [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.5.1-F59E0B.svg)](.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-0.5.2-F59E0B.svg)](.codex-plugin/plugin.json)
 [![Rust](https://img.shields.io/badge/rust-1.98.1-DEA584.svg)](rust/rust-toolchain.toml)
 
 **Turn an unclear goal into a local, reviewable, evidence-backed task workspace for Codex.**
@@ -10,9 +10,9 @@
 Mission Center is an offline, file-based Codex plugin and skill for one project at a time. It clarifies intent, drafts a rolling plan for approval, preserves causal handoffs, and keeps verification close to the task data. It is not a hosted project-management service and is not a `pip` or `npm` package.
 
 <p align="center">
-  <img src="docs/assets/mission-center-fleet-command-deck.png" alt="Local Mission Center 0.5.1 file-snapshot HUD" width="100%">
+  <img src="docs/assets/mission-center-fleet-command-deck.png" alt="Local Mission Center 0.5.2 file-snapshot HUD" width="100%">
 </p>
-<p align="center"><em>Local file-snapshot HUD from Mission Center 0.5.1; it shows bounded repository evidence, not global live-sensor coverage.</em></p>
+<p align="center"><em>Local file-snapshot HUD from Mission Center 0.5.2; it shows bounded repository evidence, not global live-sensor coverage.</em></p>
 
 <p align="center">
   <img src="skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.webp" alt="Mission Center fleet crossing a bridge" width="100%">
@@ -60,7 +60,7 @@ flowchart LR
 
 Mission Center is deliberately narrow:
 
-> **Rust-only stable (0.5.1):** the formal Plugin front door is the
+> **Rust-only stable (0.5.2):** the formal Plugin front door is the
 > versioned `mission-center` Rust CLI and its four-platform frozen package.
 > The Python scripts shown below are compatibility/oracle tooling for
 > differential tests and migration diagnostics; they are not included in the
@@ -148,7 +148,7 @@ use a verified Rust package for formal installation.
 The Rust stable release can register an already verified marketplace tree without a
 Codex CLI or external browser: `mission-center install register apply
 --plugin-root <absolute-marketplace>/plugins/mission-center
---marketplace-root <absolute-marketplace> --operation-id <id> --version 0.5.1`.
+--marketplace-root <absolute-marketplace> --operation-id <id> --version 0.5.2`.
 The resulting receipt supports exact replay, `register rollback`, and
 `register reconcile`.
 
@@ -246,6 +246,20 @@ python skills/mission-center/scripts/mission_runtime.py --workspace . connect --
 
 Passive observation does not call a model. Connected agents still use their normal quota; explicitly enabled LLM classification or agent-driven trials must follow their manifest budget. If Runtime or `websockets` is unavailable, the static HUD remains usable.
 
+### Context, commitments, and external results
+
+0.5.2 adds explicit Rust-only read and reconciliation boundaries without a second task or memory database:
+
+```bash
+mission-center context validate --root .
+mission-center context recall --root . --context before-deploy --scope '{"component":"release"}'
+mission-center preflight --root . --context before-deploy --scope '{"component":"release"}'
+mission-center commitments --root .
+mission-center external-operation list --root .
+```
+
+The optional `MissionCenter/context-manifest.json` names only source-backed `MissionCenter/` files with anchors and SHA-256 digests. Recall and preflight are bounded and read-only; missing coverage is `unknown`, never approval. Commitment state is derived from canonical `Verification` cells and current evidence envelopes. External operations retain explicit `pending / confirmed / failed / unknown` results and never claim exactly-once provider side effects.
+
 ### Adaptive optimization and bounded evaluation
 
 Optimization is a route, not a promise of a numerical optimum. It needs measurable signals, hard constraints, a budget, and a stopping rule; otherwise Mission Center routes back to research or decision-making. Shadow evaluations are read-only fixture analyses and never auto-adopt a winner:
@@ -259,7 +273,7 @@ python skills/mission-center/scripts/mission_optimizer.py shadow \
   --manifest experiment.json --observations observations.json --workspace .
 ```
 
-Other bounded routes include Pulse/Handoff continuity, Steelman Evolution, Research Portfolio/Saturation, and privacy-safe Shift-Loss self-evaluation. Their artifacts are evidence for review, not automatic task changes or real-world benchmark claims.
+Other bounded routes include Pulse/Handoff continuity, Steelman Evolution, Research Portfolio/Saturation with source-backed findings exchange, and privacy-safe Shift-Loss self-evaluation. Their artifacts are evidence for review, not automatic task changes or real-world benchmark claims.
 
 ## What the evidence says
 

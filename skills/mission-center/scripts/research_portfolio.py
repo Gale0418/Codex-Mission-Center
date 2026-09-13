@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
 import math
 import sys
@@ -45,9 +46,15 @@ HYPOTHESIS_FIELDS = (
 )
 SOURCE_FIELDS = ("locator", "sourceType", "provenance", "trustStatus", "licenseStatus", "retrievedAt", "status")
 BASE_FIELDS = ("schemaVersion", "artifactType", "taskId", "initialHypothesisAllocation", "allocationKind", "hypotheses", "sourceLedger", "saturationSignals", "selectedAction")
-ALLOWED_FIELDS = set(BASE_FIELDS) | {"hardConstraintFailure", "budgetExhausted", "promotionStatus"}
+ALLOWED_FIELDS = set(BASE_FIELDS) | {"hardConstraintFailure", "budgetExhausted", "promotionStatus", "findings"}
 ALLOCATION_FIELDS = ("exploit", "adjacent_explore", "moonshot")
 CANONICAL_TASK_FIELDS = ("ID", "Title", "Priority", "Status", "Depends on", "Next action", "Verification")
+FINDING_FIELDS = (
+    "id", "kind", "sourceRefs", "provenance", "evidenceDigest", "expiresAt",
+    "supersedes", "counterexamples", "nextDistinguishingTest", "status",
+)
+FINDING_KINDS = {"hypothesis", "verified-fact"}
+FINDING_STATUSES = {"current", "superseded"}
 
 
 def _text(value: Any) -> bool:
@@ -198,15 +205,16 @@ def _local_locator_error(
 
 def _validate_source_ledger(
     entries: Any, errors: list[str], workspace: Path | None
-) -> tuple[set[str], set[str], set[str]]:
+) -> tuple[set[str], set[str], set[str], set[str]]:
     if not isinstance(entries, list):
         errors.append("sourceLedger must be a list")
-        return set(), set(), set()
+        return set(), set(), set(), set()
     if len(entries) > 32:
         errors.append("sourceLedger may contain at most 32 entries")
     locators: set[str] = set()
     untrusted: set[str] = set()
     unverifiable_local: set[str] = set()
+    trusted_local: set[str] = set()
     for index, source in enumerate(entries):
         if not isinstance(source, dict):
             errors.append(f"sourceLedger[{index}] must be an object")
@@ -245,6 +253,8 @@ def _validate_source_ledger(
                     errors.append(f"sourceLedger[{index}] trusted_local requires workspace verification")
                 if status == "promoted":
                     errors.append(f"sourceLedger[{index}] local provenance cannot be promoted without workspace verification")
+            elif locator_error is None and trust == "trusted_local":
+                trusted_local.add(locator)
         if source_type not in LOCAL_SOURCE_TYPES and trust != "untrusted_external_evidence":
             errors.append(f"sourceLedger[{index}] external content must be untrusted_external_evidence")
         if trust == "untrusted_external_evidence":
@@ -252,7 +262,135 @@ def _validate_source_ledger(
                 untrusted.add(locator)
             if status == "promoted":
                 errors.append(f"sourceLedger[{index}] untrusted external evidence cannot be promoted")
-    return locators, untrusted, unverifiable_local
+    return locators, untrusted, unverifiable_local, trusted_local
+
+
+def _iso_datetime(value: Any) -> datetime | None:
+    if not _text(value) or len(value) > 64:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def _validate_findings(
+    entries: Any,
+    errors: list[str],
+    locators: set[str],
+    untrusted: set[str],
+    unverifiable_local: set[str],
+    trusted_local: set[str],
+) -> None:
+    if entries is None:
+        return
+    if not isinstance(entries, list):
+        errors.append("findings must be a list")
+        return
+    if len(entries) > 64:
+        errors.append("findings may contain at most 64 entries")
+    ids: set[str] = set()
+    records: dict[str, dict[str, Any]] = {}
+    edges: dict[str, str] = {}
+    for index, finding in enumerate(entries):
+        field = f"findings[{index}]"
+        if not isinstance(finding, dict):
+            errors.append(f"{field} must be an object")
+            continue
+        _check_allowed_fields(finding, FINDING_FIELDS, field, errors)
+        for required in (
+            "id", "kind", "sourceRefs", "provenance", "evidenceDigest",
+            "counterexamples", "nextDistinguishingTest", "status",
+        ):
+            if required not in finding:
+                errors.append(f"{field}.{required} is required")
+        identifier = finding.get("id")
+        if (
+            not _text(identifier)
+            or len(identifier) > 128
+            or any(not (char.isascii() and (char.isalnum() or char in "._-")) for char in identifier)
+        ):
+            errors.append(f"{field}.id must be safe bounded text")
+        elif identifier in ids:
+            errors.append(f"{field}.id must be unique")
+        else:
+            ids.add(identifier)
+            records[identifier] = finding
+        if finding.get("kind") not in FINDING_KINDS:
+            errors.append(f"{field}.kind is invalid")
+        refs = finding.get("sourceRefs")
+        if not isinstance(refs, list):
+            errors.append(f"{field}.sourceRefs must be a list")
+            refs = []
+        elif not refs:
+            errors.append(f"{field}.sourceRefs must not be empty")
+        if len(refs) > 32:
+            errors.append(f"{field}.sourceRefs may contain at most 32 entries")
+        seen_refs: set[str] = set()
+        for ref_index, reference in enumerate(refs):
+            if not _text(reference) or len(reference) > 1024:
+                errors.append(f"{field}.sourceRefs[{ref_index}] must be non-empty text")
+            elif reference in seen_refs:
+                errors.append(f"{field}.sourceRefs contains an invalid or duplicate reference")
+            else:
+                seen_refs.add(reference)
+                if reference not in locators:
+                    errors.append(f"{field} references unknown source locator: {reference}")
+        _bounded_text(finding.get("provenance"), f"{field}.provenance", errors)
+        digest = finding.get("evidenceDigest")
+        if not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+            errors.append(f"{field}.evidenceDigest must be a lowercase SHA-256 digest")
+        expiry = finding.get("expiresAt")
+        parsed_expiry = None
+        if expiry is not None:
+            parsed_expiry = _iso_datetime(expiry)
+            if parsed_expiry is None:
+                errors.append(f"{field}.expiresAt must be a timezone-aware ISO timestamp")
+        counterexamples = finding.get("counterexamples")
+        if not isinstance(counterexamples, list):
+            errors.append(f"{field}.counterexamples must be a list")
+        else:
+            if len(counterexamples) > 16:
+                errors.append(f"{field}.counterexamples may contain at most 16 entries")
+            for counterexample_index, item in enumerate(counterexamples):
+                if not _text(item) or len(item) > 2048:
+                    errors.append(f"{field}.counterexamples[{counterexample_index}] must be bounded non-empty text")
+        _bounded_text(finding.get("nextDistinguishingTest"), f"{field}.nextDistinguishingTest", errors)
+        status = finding.get("status")
+        if status not in FINDING_STATUSES:
+            errors.append(f"{field}.status is invalid")
+        if status == "current":
+            if any(reference in untrusted for reference in refs):
+                errors.append(f"{field} with untrusted external evidence is advisory-only")
+            if parsed_expiry is not None and parsed_expiry <= datetime.now(timezone.utc):
+                errors.append(f"{field} expired findings cannot be current")
+        if finding.get("kind") == "verified-fact" and (
+            not refs
+            or not any(reference in trusted_local for reference in refs)
+            or any(reference in untrusted or reference in unverifiable_local for reference in refs)
+        ):
+            errors.append(f"{field} verified-fact requires trusted local evidence")
+        target = finding.get("supersedes")
+        if target is not None:
+            if not _text(target) or len(target) > 128:
+                errors.append(f"{field}.supersedes must reference a safe finding id")
+            elif _text(identifier):
+                edges[identifier] = target
+    for identifier, target in edges.items():
+        if target not in records:
+            errors.append(f"findings[{identifier}] supersedes missing finding: {target}")
+        elif records[target].get("status") != "superseded":
+            errors.append(f"findings[{identifier}] supersedes a finding that is not superseded: {target}")
+    for start in edges:
+        seen: set[str] = set()
+        node = start
+        while node in edges:
+            if node in seen:
+                errors.append("findings supersedes graph contains a cycle")
+                return
+            seen.add(node)
+            node = edges[node]
 
 
 def validate_research_portfolio(record: Any, workspace: Path | None = None) -> list[str]:
@@ -286,7 +424,12 @@ def validate_research_portfolio(record: Any, workspace: Path | None = None) -> l
         hypotheses = []
     if len(hypotheses) > 12:
         errors.append("hypotheses may contain at most 12 entries")
-    locators, untrusted, unverifiable_local = _validate_source_ledger(record.get("sourceLedger"), errors, workspace)
+    locators, untrusted, unverifiable_local, trusted_local = _validate_source_ledger(
+        record.get("sourceLedger"), errors, workspace
+    )
+    _validate_findings(
+        record.get("findings"), errors, locators, untrusted, unverifiable_local, trusted_local
+    )
     seen_ids: set[str] = set()
     seen_kinds: set[str] = set()
     for index, hypothesis in enumerate(hypotheses):

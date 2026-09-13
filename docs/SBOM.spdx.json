@@ -2,14 +2,14 @@
   "spdxVersion": "SPDX-2.3",
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
-  "name": "mission-center-0.5.1",
-  "documentNamespace": "https://github.com/Gale0418/Codex-Mission-Center/sbom/0.5.1",
+  "name": "mission-center-0.5.2",
+  "documentNamespace": "https://github.com/Gale0418/Codex-Mission-Center/sbom/0.5.2",
   "creationInfo": {
     "created": "2026-08-29T00:00:00Z",
     "creators": ["Tool: cargo-metadata-locked-offline", "Organization: Gale0418"]
   },
   "packages": [
-    {"name":"mission-center","SPDXID":"SPDXRef-Package-MissionCenter","versionInfo":"0.5.1","downloadLocation":"https://github.com/Gale0418/Codex-Mission-Center","filesAnalyzed":false,"licenseConcluded":"MIT","licenseDeclared":"MIT","copyrightText":"NOASSERTION"},
+    {"name":"mission-center","SPDXID":"SPDXRef-Package-MissionCenter","versionInfo":"0.5.2","downloadLocation":"https://github.com/Gale0418/Codex-Mission-Center","filesAnalyzed":false,"licenseConcluded":"MIT","licenseDeclared":"MIT","copyrightText":"NOASSERTION"},
     {"name":"itoa","SPDXID":"SPDXRef-Package-itoa","versionInfo":"1.0.18","downloadLocation":"https://crates.io/crates/itoa/1.0.18","filesAnalyzed":false,"licenseConcluded":"MIT OR Apache-2.0","licenseDeclared":"MIT OR Apache-2.0","copyrightText":"NOASSERTION"},
     {"name":"memchr","SPDXID":"SPDXRef-Package-memchr","versionInfo":"2.8.3","downloadLocation":"https://crates.io/crates/memchr/2.8.3","filesAnalyzed":false,"licenseConcluded":"Unlicense OR MIT","licenseDeclared":"Unlicense OR MIT","copyrightText":"NOASSERTION"},
     {"name":"proc-macro2","SPDXID":"SPDXRef-Package-proc-macro2","versionInfo":"1.0.107","downloadLocation":"https://crates.io/crates/proc-macro2/1.0.107","filesAnalyzed":false,"licenseConcluded":"MIT OR Apache-2.0","licenseDeclared":"MIT OR Apache-2.0","copyrightText":"NOASSERTION"},

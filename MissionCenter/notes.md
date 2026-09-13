@@ -24,6 +24,11 @@
 | 多個 AI 評審一致就視為品質保證 | https://openai.com/index/gdpval/ | Learn：自動 grader 不能取代真正專家；採 rubric、盲評式獨立初稿與人工風險接受 | OpenAI 官方研究說明；僅採評估方法 |
 | 只靠平均分判斷長流程互動品質 | https://deepmind.google/blog/evaluating-multimodal-interactive-agents/ | Adapt：以時間延伸的情境、可觀察 continuation 與人工標註概念建立 journey coverage；不把主觀感受偽裝成總分 | Google DeepMind 官方研究；僅採方法概念 |
 | 永久維護自製 Skill 搬運流程 | https://learn.chatgpt.com/docs/changelog、https://learn.chatgpt.com/docs/plugins | Adapt：Codex CLI 0.147.0 已支援 portable Agent Plugins 與多層 catalog；正式 plugin manifest 作主要發布契約，現有 publisher 降為離線／舊版相容層，另開相容性 spike 驗證後再移除任何路徑 | OpenAI 官方文件；不改動核心 workspace 契約 |
+| 網路逾時後直接重送所有外部操作 | https://www.rfc-editor.org/rfc/rfc9110.html、https://docs.aws.amazon.com/ec2/latest/devguide/ec2-api-idempotency.html | Adapt：同 operation ID＋同內容才可 replay；非冪等操作結果不明時先記 `unknown` 並以當前證據對帳，不猜成功也不盲目重送 | IETF 標準與 AWS 官方文件；僅採公開介面原則 |
+| 為可靠外部操作導入 message broker／outbox service | https://learn.microsoft.com/en-us/azure/architecture/databases/guide/transactional-out-box-cosmos | Reject：理解 at-least-once、dedupe 與 dual-write 風險，但 Mission Center 是離線單 repo 工具，沿用本機 receipt／lock／digest，不引入資料庫、broker、worker 或 daemon | Microsoft 官方架構文件；僅比較模式，未複製實作 |
+| 以可變路徑或敘述文字聲稱 evidence／binary 出處 | https://slsa.dev/spec/v1.2/provenance、https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations | Learn／Adapt：來源與產物以 revision／SHA-256 綁定，四平台 build 各自產生 artifact，再由 stable gate 組裝與驗證；不把舊 binary 重新貼版號 | SLSA 1.2 與 GitHub 官方文件；僅採 provenance 與驗證原則 |
+| 先 `exists` 再建立 operation record | https://doc.rust-lang.org/std/fs/index.html、https://doc.rust-lang.org/std/fs/fn.symlink_metadata.html | Adopt：沿用 atomic create／rename、writer lock 與不追蹤 symlink 的 metadata guard；保留 check-to-open race 限制，不宣稱跨平台絕對無 TOCTOU | Rust 1.98 標準庫文件；無外部程式碼複製 |
+| 直接引入 Temporal／Terraform 作為 0.5.2 執行引擎 | https://github.com/temporalio/sdk-rust、https://github.com/hashicorp/terraform | Reject：兩者的 durable workflow／plan-state 思維可作比較，但服務與依賴成本、授權／退出成本及 scope 遠超單 repo 離線 CLI；保留現有 Rust receipt 架構 | Temporal SDK MIT；Terraform 授權需另行審查；本次不導入依賴或程式碼 |
 
 ## Evolution 邊界
 

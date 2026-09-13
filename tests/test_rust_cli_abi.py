@@ -69,7 +69,7 @@ class RustCliSchemaTests(unittest.TestCase):
                     "publish",
                     "verify",
                     "--version",
-                    "0.5.1",
+                    "0.5.2",
                     "--platform",
                     "windows-x86_64",
                 ],
