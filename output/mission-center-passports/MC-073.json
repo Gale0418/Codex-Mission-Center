@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-073",
+  "taskDigest": "7e503c605e234c52e5ececc4b39b2714a62017f2a778fdac468ae4353236b2b2",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "docs/upgrade-0.5.2.md",
+      "docs/evidence/0.5.2/review-rounds.md",
+      "rust/mission-center-policy/tests/context_findings.rs",
+      "output/mission-center-reports/mc-078-v052-final-release-20260913.json"
+    ]
+  },
+  "findings": [
+    {"id": "STRICT-052-CONTEXT-DIGEST", "severity": "Medium", "disposition": "fixed"},
+    {"id": "STRICT-052-MANIFEST-ID", "severity": "Medium", "disposition": "fixed"}
+  ]
+}

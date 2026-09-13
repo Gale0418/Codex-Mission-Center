@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-078",
+  "taskDigest": "0d1f87f6f78f91399031c42faebc7b97781a39109ca80eba0da0fa588250ebff",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "MissionCenter/smoke-tests.md",
+      "docs/evidence/0.5.2/review-rounds.md",
+      "output/mission-center-reports/mc-078-v052-final-release-20260913.json",
+      ".github/workflows/ci.yml"
+    ]
+  },
+  "findings": [
+    {"id": "CR052-001", "severity": "Low", "disposition": "fixed"},
+    {"id": "CR052-002", "severity": "Low", "disposition": "fixed"},
+    {"id": "CR052-003", "severity": "Low", "disposition": "fixed"},
+    {"id": "CR052-004", "severity": "Low", "disposition": "fixed"},
+    {"id": "CR052-005", "severity": "Low", "disposition": "fixed"},
+    {"id": "CR052-006", "severity": "Low", "disposition": "fixed"},
+    {"id": "CR052-007", "severity": "Low", "disposition": "fixed"},
+    {"id": "CR052-008", "severity": "Low", "disposition": "fixed"},
+    {"id": "STRICT052-001", "severity": "Medium", "disposition": "fixed"},
+    {"id": "STRICT052-002", "severity": "Medium", "disposition": "fixed"}
+  ]
+}

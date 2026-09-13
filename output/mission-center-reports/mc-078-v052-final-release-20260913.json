@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "1.0",
+  "taskId": "MC-078",
+  "version": "0.5.2",
+  "source": {
+    "pullRequest": 25,
+    "mainCommit": "ba6141cd3883a9ee47ddcc78bb4dc5f66ef1da75"
+  },
+  "github": {
+    "successfulRuns": [34729579182, 34729580979],
+    "stableArtifactId": 10309007900,
+    "platforms": [
+      "windows-x86_64",
+      "linux-x86_64",
+      "macos-x86_64",
+      "macos-aarch64"
+    ]
+  },
+  "localInstall": {
+    "pluginId": "mission-center@mission-center-local",
+    "installedVersion": "0.5.2",
+    "installed": true,
+    "enabled": true,
+    "installOperationId": "mc-078-install-052-20260913",
+    "registrationOperationId": "mc-078-register-052-20260913",
+    "macosArm64Sha256": "af09aeb7d5b8671166acb478ef44e59e8edef47f99cdc0b0925469de6d1848b8",
+    "sourceCacheArtifactHashesMatch": true,
+    "statusFresh": true,
+    "resumeCanonicalFallback": false,
+    "doctor": "pass"
+  },
+  "review": {
+    "codeRabbitRuns": 3,
+    "codeRabbitFindingsFixed": 8,
+    "independentReview": {
+      "p0": 0,
+      "p1": 0,
+      "p2Fixed": 2,
+      "discoveryStoppedPerPolicy": true
+    }
+  },
+  "localVerification": {
+    "rustPassed": 194,
+    "pythonPassed": 508,
+    "pythonCapabilitySkips": 20,
+    "rustfmt": "pass",
+    "clippyWarningsDenied": "pass",
+    "diffCheck": "pass"
+  }
+}

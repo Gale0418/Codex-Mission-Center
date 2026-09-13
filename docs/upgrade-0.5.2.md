@@ -1,6 +1,6 @@
 # Mission Center 0.5.2 implementation and release checkpoint
 
-**Current status (2026-09-13): 0.5.2 source candidate; stable publication still requires the fresh four-platform GitHub gate.**
+**Current status (2026-09-13): 0.5.2 implementation, four-platform stable gate, main merge, and local trial installation completed.**
 
 The operator requested one authoritative Git branch: `main`. Any delivery branch is temporary and must be deleted after this exact candidate is merged and re-read from GitHub. Existing 0.5.1 binaries are historical inputs and are never relabelled; 0.5.2 delivery uses fresh artifacts from the exact candidate revision.
 
@@ -58,11 +58,10 @@ Observed source-candidate results after CodeRabbit fixes and before GitHub deliv
 - CodeRabbit's complete 40-file pass reported four minor findings. All four were reproduced and fixed: monotonic context severity in Rust/Python, exact bounded-output byte accounting, superseded-card parity, and the intended one-backslash Windows path fixture. The post-fix full local gates above passed. The hourly three-run quota prevented a fourth CodeRabbit invocation; independent post-fix review remains the final local review gate.
 - The independent strict review found no P0 or P1. Its two P2 findings were fixed: digest drift now reaches the documented `stale` route instead of being collapsed into `corrupt`, and the Python oracle validates optional `manifestId` values like the Rust policy/schema. Targeted regressions and the full gates above passed after those fixes; per the review stop rule, no further discovery round was opened.
 
-These results validate the current source on macOS. They do not constitute Windows execution evidence or a four-platform release certification.
+These local results are complemented by GitHub runs `34729579182` and `34729580979`, which passed Windows x86_64, Linux x86_64, macOS x86_64, macOS arm64, stable-package, and required-test gates. PR #25 was squash-merged to `main` as `ba6141cd3883a9ee47ddcc78bb4dc5f66ef1da75`.
 
-## Remaining delivery gates
+## Delivery result
 
-1. Push a temporary delivery branch, require repository CI and a fresh four-platform package, merge to `main`, verify the remote revision, and delete the branch.
-2. Verify and install only the fresh 0.5.2 package; never reuse or relabel an older binary.
+The fresh stable artifact `10309007900` was verified against its four-platform SHA-256 manifest. Its macOS arm64 payload was installed through the Rust receipt-bound installer and marketplace registrar, then registered with Codex as `mission-center@mission-center-local` version `0.5.2`. The installed cache, marketplace source, and downloaded artifact share SHA-256 `af09aeb7d5b8671166acb478ef44e59e8edef47f99cdc0b0925469de6d1848b8`; installed `status`, `resume`, and `doctor` passed without stale state or canonical fallback.
 
 Historical handoff packets and baseline probes remain under `docs/evidence/0.5.2/`. They describe the source and constraints at their recorded checkpoints; prominent superseded notices distinguish them from this current status.
