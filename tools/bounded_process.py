@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 import os
+from functools import lru_cache
 from pathlib import Path
 import select
 import shutil
@@ -46,6 +47,32 @@ def _unshare_path() -> str:
     if executable is None:
         raise RuntimeError("bounded probes require util-linux unshare")
     return executable
+
+
+@lru_cache(maxsize=1)
+def bounded_process_supported() -> bool:
+    """Return whether this host can create the required user/PID namespace."""
+    try:
+        unshare = _unshare_path()
+        probe = subprocess.run(
+            [
+                unshare,
+                "--user",
+                "--map-root-user",
+                "--pid",
+                "--fork",
+                "--kill-child=SIGKILL",
+                "true",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2.0,
+            check=False,
+        )
+    except (OSError, RuntimeError, subprocess.TimeoutExpired):
+        return False
+    return probe.returncode == 0
 
 
 def _notify_ready() -> None:

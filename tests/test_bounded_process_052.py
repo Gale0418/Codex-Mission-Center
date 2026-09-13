@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
 sys.path.insert(0, str(TOOLS))
-from bounded_process import run_bounded  # noqa: E402
+from bounded_process import bounded_process_supported, run_bounded  # noqa: E402
 from verify_upgrade_052 import (  # noqa: E402
     check_status,
     collect,
@@ -94,7 +94,7 @@ def _set_self_consistent_bytes(payload: dict) -> int:
     raise AssertionError("resume bytes declaration did not converge")
 
 
-@unittest.skipUnless(sys.platform.startswith("linux"), "Linux PID namespaces are required")
+@unittest.skipUnless(bounded_process_supported(), "usable Linux PID namespaces are required")
 class BoundedProcessTests(unittest.TestCase):
     def run_python(self, code: str, *, limit: int = 1024, timeout: float = 5.0):
         return run_bounded(
@@ -238,7 +238,7 @@ class BoundedProcessTests(unittest.TestCase):
         self.assertEqual(after, before)
 
 
-@unittest.skipUnless(sys.platform.startswith("linux"), "Linux bounded runner is required")
+@unittest.skipUnless(bounded_process_supported(), "usable Linux bounded runner is required")
 class HarnessMutationTests(unittest.TestCase):
     def test_collect_detects_mutation_by_the_first_resume(self):
         with tempfile.TemporaryDirectory(prefix="mc-052-fake-cli-") as temporary:
