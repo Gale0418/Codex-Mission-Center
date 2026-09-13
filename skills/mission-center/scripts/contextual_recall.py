@@ -182,7 +182,7 @@ def validate_context_manifest(manifest: Any, workspace: Path | None = None) -> l
         if target is not None:
             if not isinstance(target, str) or not _SAFE_ID.fullmatch(target):
                 errors.append(f"{field}.supersedes must reference a safe CTX- id")
-            elif isinstance(identifier, str):
+            elif isinstance(identifier, str) and identifier in records:
                 edges[identifier] = target
     for identifier, target in edges.items():
         if target not in records:

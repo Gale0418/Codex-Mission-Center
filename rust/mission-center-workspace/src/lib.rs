@@ -1023,9 +1023,12 @@ impl MissionWorkspace {
         let daily_log_path = self.mission_dir().join("daily-log.md");
         let existing_project = read_optional(project_path.clone(), PROJECT_MAX_BYTES)?;
         let existing_progress = read_optional(progress_path.clone(), PROJECT_MAX_BYTES)?;
-        let existing_brief = read_optional(brief_path.clone(), BRIEF_MAX_BYTES)?;
-        let existing_working_set = read_optional(working_set_path.clone(), WORKING_SET_MAX_BYTES)?;
-        let existing_focus = read_optional(focus_path.clone(), FOCUS_MAX_BYTES)?;
+        let (existing_brief, oversized_brief) =
+            read_optional_preserving_oversized(brief_path.clone(), BRIEF_MAX_BYTES)?;
+        let (existing_working_set, oversized_working_set) =
+            read_optional_preserving_oversized(working_set_path.clone(), WORKING_SET_MAX_BYTES)?;
+        let (existing_focus, oversized_focus) =
+            read_optional_preserving_oversized(focus_path.clone(), FOCUS_MAX_BYTES)?;
         let project_text = existing_project
             .as_deref()
             .map(|bytes| String::from_utf8(bytes.to_vec()))
@@ -1136,21 +1139,25 @@ impl MissionWorkspace {
             .as_deref()
             .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok())
             .unwrap_or_default();
-        let brief_bytes = if existing_brief.is_none() || derived_views::is_managed_view(&brief_text)
-        {
+        let brief_bytes = if oversized_brief {
+            None
+        } else if existing_brief.is_none() || derived_views::is_managed_view(&brief_text) {
             Some(views.brief.into_bytes())
         } else {
             None
         };
-        let working_set_bytes = if existing_working_set.is_none()
+        let working_set_bytes = if oversized_working_set {
+            None
+        } else if existing_working_set.is_none()
             || derived_views::is_managed_view(&working_set_text)
         {
             Some(views.working_set.into_bytes())
         } else {
             None
         };
-        let focus_bytes = if existing_focus.is_none() || derived_views::is_managed_view(&focus_text)
-        {
+        let focus_bytes = if oversized_focus {
+            None
+        } else if existing_focus.is_none() || derived_views::is_managed_view(&focus_text) {
             Some(views.focus.into_bytes())
         } else {
             None
@@ -1690,6 +1697,17 @@ fn read_optional(path: PathBuf, limit: u64) -> Result<Option<Vec<u8>>, Workspace
     match read_bounded(&path, limit) {
         Ok(value) => Ok(Some(value)),
         Err(WorkspaceError::NotFound { .. }) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+fn read_optional_preserving_oversized(
+    path: PathBuf,
+    limit: u64,
+) -> Result<(Option<Vec<u8>>, bool), WorkspaceError> {
+    match read_optional(path, limit) {
+        Ok(value) => Ok((value, false)),
+        Err(WorkspaceError::TooLarge { .. }) => Ok((None, true)),
         Err(error) => Err(error),
     }
 }
@@ -5864,6 +5882,33 @@ mod tests {
             custom
         );
         assert_eq!(fs::read(fixture.workspace.tasks_path()).unwrap(), before);
+    }
+
+    #[test]
+    fn sync_preserves_each_oversized_derived_view() {
+        for (index, (name, limit)) in [
+            ("brief.md", BRIEF_MAX_BYTES),
+            ("working-set.md", WORKING_SET_MAX_BYTES),
+            ("focus.md", FOCUS_MAX_BYTES),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let fixture = fixture();
+            let path = fixture.workspace.mission_dir().join(name);
+            let oversized = vec![b'x'; limit as usize + 1];
+            fs::write(&path, &oversized).unwrap();
+
+            fixture
+                .workspace
+                .sync(
+                    &format!("sync-oversized-view-{index}"),
+                    "2026-08-29T00:00:00Z",
+                )
+                .unwrap();
+
+            assert_eq!(fs::read(path).unwrap(), oversized, "{name}");
+        }
     }
 
     #[test]

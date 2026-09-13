@@ -76,6 +76,16 @@ class ContextualRecallTests(unittest.TestCase):
             duplicate = manifest(content)
             duplicate["cards"].append(json.loads(json.dumps(duplicate["cards"][0])))
             self.assertTrue(any("unique" in error or "duplicates" in error for error in validate_context_manifest(duplicate, root)))
+            duplicate["cards"][1]["supersedes"] = "CTX-deploy-unknown"
+            self.assertTrue(any("unique" in error for error in validate_context_manifest(duplicate, root)))
+            invalid_id = manifest(content)
+            valid_target = json.loads(json.dumps(invalid_id["cards"][0]))
+            valid_target["id"] = "CTX-valid-target"
+            valid_target["validity"] = "superseded"
+            invalid_id["cards"].append(valid_target)
+            invalid_id["cards"][0]["id"] = "invalid"
+            invalid_id["cards"][0]["supersedes"] = "CTX-valid-target"
+            self.assertTrue(any("safe CTX-" in error for error in validate_context_manifest(invalid_id, root)))
             secret = manifest(content)
             secret["cards"][0]["reason"] = "ghp_123456789012345678901234567890123456"
             self.assertTrue(any("secret" in error for error in validate_context_manifest(secret, root)))

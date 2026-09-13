@@ -249,18 +249,28 @@ class PublishLocalTests(unittest.TestCase):
             package = make_verified_release_package(root)
             manifest_path = package / "platform-manifest.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            manifest["artifacts"][0]["path"] = "../../../outside"
+            escaped_name = f"outside-{root.name}"
+            manifest["artifacts"][0]["path"] = f"../../../{escaped_name}"
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             staging = root / "staging"
-            outside = root / "outside"
+            outside = (staging / ".." / ".." / ".." / escaped_name).resolve()
+            original_copy = shutil.copy2
 
-            with self.assertRaisesRegex(ValueError, "artifact metadata is invalid"):
-                stage_marketplace(
-                    repo,
-                    staging,
-                    stamp_version=False,
-                    release_package=package,
-                )
+            def reject_escaped_copy(source, target):
+                try:
+                    Path(target).resolve().relative_to(staging.resolve())
+                except ValueError as error:
+                    raise AssertionError(f"copy escaped staging: {target}") from error
+                return original_copy(source, target)
+
+            with patch("publish_local.shutil.copy2", side_effect=reject_escaped_copy):
+                with self.assertRaisesRegex(ValueError, "artifact metadata is invalid"):
+                    stage_marketplace(
+                        repo,
+                        staging,
+                        stamp_version=False,
+                        release_package=package,
+                    )
 
             self.assertFalse(outside.exists())
             self.assertFalse(staging.exists())

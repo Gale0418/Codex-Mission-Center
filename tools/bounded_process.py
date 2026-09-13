@@ -172,6 +172,8 @@ def _wait_ready(
     while True:
         if abort.is_set():
             failure = next((error for error in failures if error is not None), None)
+            if isinstance(failure, OutputLimitError):
+                raise failure
             raise RuntimeError(str(failure) if failure else "candidate pipe read failed") from failure
         remaining = setup_deadline - time.monotonic()
         if remaining <= 0:
@@ -280,6 +282,8 @@ def run_bounded(
         while True:
             if abort.is_set():
                 failure = next((error for error in failures if error is not None), None)
+                if isinstance(failure, OutputLimitError):
+                    raise failure
                 raise RuntimeError(str(failure) if failure else "candidate pipe read failed") from failure
             if all(event.is_set() for event in done) and process.poll() is not None:
                 stderr = bytes(buffers[1])

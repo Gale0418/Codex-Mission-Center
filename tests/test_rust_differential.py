@@ -31,7 +31,7 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-from tests import workspace_tempdir
+from tests import native_binary_matches_host, workspace_tempdir
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,7 +49,7 @@ def _find_rust_binary() -> Path | None:
     configured = os.environ.get("MISSION_CENTER_RUST_BIN")
     if configured:
         candidate = Path(configured).expanduser()
-        return candidate.resolve() if candidate.is_file() else None
+        return candidate.resolve() if native_binary_matches_host(candidate) else None
     # Ignore stale target artifacts from a previously removed CLI crate.  The
     # source-tree presence is the useful definition of "available" for the
     # default discovery path; CI can still point explicitly at a packaged
@@ -66,7 +66,10 @@ def _find_rust_binary() -> Path | None:
         for profile in ("debug", "release")
         for name in names
     ]
-    return next((path.resolve() for path in candidates if path.is_file()), None)
+    return next(
+        (path.resolve() for path in candidates if native_binary_matches_host(path)),
+        None,
+    )
 
 
 RUST_BINARY = _find_rust_binary()
