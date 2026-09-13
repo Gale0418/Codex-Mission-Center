@@ -1,3 +1,5 @@
+mod contextual;
+
 use mission_center_core::{Task, TaskStatus, canonicalize_hash_bytes, sha256_digest};
 use mission_center_policy::validate_tasks;
 use mission_center_publish::{
@@ -10,7 +12,8 @@ use mission_center_runtime::{
     stdio_command, validate_health_payload,
 };
 use mission_center_workspace::{
-    DAILY_LOG_MAX_BYTES, MissionWorkspace, SyncOptions, read_bounded_file, read_bounded_utf8,
+    DAILY_LOG_MAX_BYTES, ExternalOperationRecord, MissionWorkspace, OperationOutcome, SyncOptions,
+    read_bounded_file, read_bounded_utf8,
 };
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
@@ -187,9 +190,9 @@ fn public_command(command: &str) -> &str {
     match command {
         "init" | "sync" | "status" | "resume" | "reconcile" | "doctor" | "runtime" | "publish"
         | "install" | "hud" | "normalize" | "verify" | "snapshot" | "pulse" | "handoff"
-        | "closeout" | "project-map" | "claim" | "release-claim" | "transition" | "research"
-        | "optimize" | "steelman" | "critic" | "shift-loss" | "security" | "compatibility"
-        | "hook" | "help" => command,
+        | "closeout" | "project-map" | "claim" | "release-claim" | "transition" | "commitments"
+        | "context" | "preflight" | "external-operation" | "research" | "optimize" | "steelman"
+        | "critic" | "shift-loss" | "security" | "compatibility" | "hook" | "help" => command,
         _ => "unknown",
     }
 }
@@ -215,6 +218,10 @@ const PUBLIC_COMMANDS: &[&str] = &[
     "claim",
     "release-claim",
     "transition",
+    "commitments",
+    "context",
+    "preflight",
+    "external-operation",
     "research",
     "optimize",
     "steelman",
@@ -234,6 +241,10 @@ fn command_usage(command: &str) -> Option<String> {
         "status" | "resume" | "reconcile" => {
             format!("mission-center {command} --root <path> [--date <YYYY-MM-DD>]")
         }
+        "commitments" => "mission-center commitments --root <path>".to_owned(),
+        "context" => "mission-center context <validate|recall> --root <path> [--manifest <MissionCenter/path.json>] [--context <boundary>] [--scope <json>] [--max-bytes <1..16384>]".to_owned(),
+        "preflight" => "mission-center preflight --root <path> --context <boundary> [--manifest <MissionCenter/path.json>] [--scope <json>]".to_owned(),
+        "external-operation" => "mission-center external-operation <prepare|reconcile|get|list> --root <path> [operation flags]".to_owned(),
         _ => format!("mission-center {command} [options]"),
     })
 }
@@ -1749,6 +1760,57 @@ fn resume_packet(ws: &MissionWorkspace, _tasks: &[Task], date: &str) -> Result<V
         &mut files_read,
         &mut read_next,
     );
+    let (context_status, context_bundle) = match context_manifest(ws, &[]) {
+        Err(error) => (
+            "corrupt".to_owned(),
+            Some(
+                json!({
+                    "status":"corrupt",
+                    "valid":false,
+                    "errors":[error],
+                    "cards":[],
+                    "readOnly":true
+                })
+                .to_string(),
+            ),
+        ),
+        Ok(None) => ("absent".to_owned(), None),
+        Ok(Some((locator, manifest))) => {
+            files_read.push(locator);
+            let recalled = contextual::recall(ws, &manifest, "resume", &json!({}), 4 * 1024)
+                .unwrap_or_else(|error| {
+                    json!({
+                        "status":"corrupt",
+                        "valid":false,
+                        "errors":[error],
+                        "cards":[],
+                        "readOnly":true
+                    })
+                });
+            if let Some(cards) = recalled.get("cards").and_then(Value::as_array) {
+                for source in cards
+                    .iter()
+                    .filter_map(|card| card.get("source"))
+                    .filter_map(|source| source.get("locator"))
+                    .filter_map(Value::as_str)
+                {
+                    if !files_read.iter().any(|known| known == source) {
+                        files_read.push(source.to_owned());
+                    }
+                }
+            }
+            let status = recalled
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("corrupt")
+                .to_owned();
+            (status, Some(recalled.to_string()))
+        }
+    };
+    let context_invalid = matches!(context_status.as_str(), "stale" | "corrupt");
+    if context_invalid {
+        stale_reasons.push("context_manifest_invalid".to_owned());
+    }
     let source_fresh = missing.is_empty()
         && marker_fingerprint(brief.as_deref().unwrap_or_default()) == Some(fingerprint.as_str())
         && marker_fingerprint(working_set.as_deref().unwrap_or_default()) == Some(task_fp.as_str());
@@ -1840,6 +1902,7 @@ fn resume_packet(ws: &MissionWorkspace, _tasks: &[Task], date: &str) -> Result<V
             "activeCriticalLessons",
             lessons.map(|value| active_lessons(&value)),
         ),
+        ("contextCards", context_bundle),
         ("snapshot", snapshot),
     ];
     let handoff_object = handoff.clone();
@@ -1870,8 +1933,11 @@ fn resume_packet(ws: &MissionWorkspace, _tasks: &[Task], date: &str) -> Result<V
                 )
             })
             .collect::<serde_json::Map<_, _>>();
-        let fallback =
-            !source_fresh || !date_fresh || ledger_status == "corrupt" || snapshot_invalid;
+        let fallback = !source_fresh
+            || !date_fresh
+            || ledger_status == "corrupt"
+            || snapshot_invalid
+            || context_invalid;
         let mut object = serde_json::Map::new();
         object.insert("schemaVersion".to_owned(), Value::String("1.1".to_owned()));
         object.insert("route".to_owned(), Value::String("resume".to_owned()));
@@ -1894,7 +1960,7 @@ fn resume_packet(ws: &MissionWorkspace, _tasks: &[Task], date: &str) -> Result<V
         );
         object.insert(
             "context".to_owned(),
-            json!({"includedBytes": Value::Object(included)}),
+            json!({"includedBytes": Value::Object(included),"status":context_status}),
         );
         object.insert("bytes".to_owned(), Value::from(0u64));
         object.insert("maxBytes".to_owned(), Value::from(RESUME_MAX_BYTES as u64));
@@ -2321,7 +2387,158 @@ fn read_cached_evidence_locator(
     result
 }
 
-fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
+#[derive(Debug, Clone)]
+struct EvidenceRecord {
+    envelope_id: Option<String>,
+    task_id: Option<String>,
+    check_id: Option<String>,
+    status: Option<String>,
+    result: Option<String>,
+    supersedes: Option<String>,
+    state: &'static str,
+    reason: String,
+}
+
+#[derive(Debug)]
+struct EvidenceInspection {
+    status: &'static str,
+    message: String,
+    records: Vec<EvidenceRecord>,
+    unbound_corruption: bool,
+}
+
+fn evidence_inspection(status: &'static str, message: String) -> EvidenceInspection {
+    EvidenceInspection {
+        status,
+        message,
+        records: Vec::new(),
+        unbound_corruption: status == "corrupt",
+    }
+}
+
+fn commitment_status_rank(status: &str) -> u8 {
+    match status {
+        "satisfied" => 0,
+        "missing" => 1,
+        "unknown" => 2,
+        "stale" => 3,
+        "failed" => 4,
+        _ => 2,
+    }
+}
+
+fn commitments_report(tasks: &[Task], evidence: &EvidenceInspection) -> Value {
+    let mut requirements = Vec::new();
+    let mut overall = "satisfied";
+    for task in tasks.iter().filter(|task| !task.verification.is_empty()) {
+        let current = evidence
+            .records
+            .iter()
+            .filter(|record| {
+                record.task_id.as_deref() == Some(task.id.as_str())
+                    && record.status.as_deref() == Some("current")
+            })
+            .collect::<Vec<_>>();
+        let current_checks = current
+            .iter()
+            .filter_map(|record| record.check_id.as_deref())
+            .collect::<HashSet<_>>();
+        let duplicate_current_check = current_checks.len() != current.len();
+        let stale = current.iter().any(|record| record.state == "stale");
+        let unknown = current.iter().any(|record| record.state == "unknown");
+        let (state, reason, next) = if evidence.unbound_corruption {
+            (
+                "unknown",
+                "evidence set contains an unbound malformed envelope".to_owned(),
+                "Repair malformed evidence, then record one unambiguous current result.".to_owned(),
+            )
+        } else if duplicate_current_check {
+            (
+                "unknown",
+                "multiple current evidence envelopes match the same task/check".to_owned(),
+                "Resolve the current-envelope conflict, then record one current result.".to_owned(),
+            )
+        } else if stale {
+            let detail = current
+                .iter()
+                .find(|record| record.state == "stale")
+                .map(|record| record.reason.clone())
+                .unwrap_or_else(|| "current evidence scope is stale".to_owned());
+            (
+                "stale",
+                detail,
+                "Re-run the requirement against the current scope and record a fresh evidence envelope.".to_owned(),
+            )
+        } else if unknown {
+            let detail = current
+                .iter()
+                .find(|record| record.state == "unknown")
+                .map(|record| record.reason.clone())
+                .unwrap_or_else(|| "current evidence is malformed or conflicting".to_owned());
+            (
+                "unknown",
+                detail,
+                "Inspect the malformed or conflicting evidence, then record one unambiguous current result.".to_owned(),
+            )
+        } else if current
+            .iter()
+            .any(|record| record.result.as_deref() == Some("fail"))
+        {
+            (
+                "failed",
+                "at least one current evidence envelope reports fail".to_owned(),
+                "Re-run the requirement and replace failing evidence with current pass evidence."
+                    .to_owned(),
+            )
+        } else if current
+            .iter()
+            .any(|record| record.result.as_deref() == Some("unknown"))
+        {
+            (
+                "unknown",
+                "at least one current evidence result is unknown".to_owned(),
+                "Record current evidence with an unambiguous pass or fail result.".to_owned(),
+            )
+        } else if !current.is_empty()
+            && current
+                .iter()
+                .all(|record| record.result.as_deref() == Some("pass"))
+        {
+            (
+                "satisfied",
+                "all current evidence envelopes report pass".to_owned(),
+                "No further verification is required while current pass evidence remains valid."
+                    .to_owned(),
+            )
+        } else {
+            (
+                "missing",
+                "no current evidence envelope matches this task".to_owned(),
+                "Run the requirement and record a current evidence envelope.".to_owned(),
+            )
+        };
+        if commitment_status_rank(state) > commitment_status_rank(overall) {
+            overall = state;
+        }
+        requirements.push(json!({
+            "requirementId": task.id,
+            "taskId": task.id,
+            "text": task.verification,
+            "state": state,
+            "reason": reason,
+            "nextDistinguishingVerification": next,
+        }));
+    }
+    json!({
+        "status": overall,
+        "overallStatus": overall,
+        "readOnly": true,
+        "taskCount": requirements.len(),
+        "requirements": requirements,
+    })
+}
+
+fn inspect_evidence(root: &Path, tasks: &[Task]) -> EvidenceInspection {
     let directory = root.join("output/mission-center-evidence");
     let unknown = || {
         (
@@ -2331,25 +2548,31 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
     };
     let metadata = match fs::symlink_metadata(&directory) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return unknown(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let (status, message) = unknown();
+            return evidence_inspection(status, message);
+        }
         Err(error) => {
-            return (
+            return evidence_inspection(
                 "corrupt",
                 format!("cannot inspect evidence directory: {error}"),
             );
         }
     };
     if metadata.file_type().is_symlink() || metadata_is_reparse(&metadata) || !metadata.is_dir() {
-        return (
+        return evidence_inspection(
             "corrupt",
             "evidence directory is not a safe directory".to_owned(),
         );
     }
     let entries = match fs::read_dir(&directory) {
         Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return unknown(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let (status, message) = unknown();
+            return evidence_inspection(status, message);
+        }
         Err(error) => {
-            return (
+            return evidence_inspection(
                 "corrupt",
                 format!("cannot enumerate evidence directory: {error}"),
             );
@@ -2362,7 +2585,7 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
-                return (
+                return evidence_inspection(
                     "corrupt",
                     format!("cannot enumerate evidence entry: {error}"),
                 );
@@ -2370,21 +2593,31 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
         };
         entry_count += 1;
         if entry_count > MAX_EVIDENCE_FILES {
-            return (
+            return evidence_inspection(
                 "corrupt",
                 format!("evidence directory exceeds {MAX_EVIDENCE_FILES} entries"),
             );
         }
         let file_type = match entry.file_type() {
             Ok(file_type) => file_type,
-            Err(error) => return ("corrupt", format!("cannot inspect evidence entry: {error}")),
+            Err(error) => {
+                return evidence_inspection(
+                    "corrupt",
+                    format!("cannot inspect evidence entry: {error}"),
+                );
+            }
         };
         let entry_metadata = match fs::symlink_metadata(entry.path()) {
             Ok(metadata) => metadata,
-            Err(error) => return ("corrupt", format!("cannot inspect evidence entry: {error}")),
+            Err(error) => {
+                return evidence_inspection(
+                    "corrupt",
+                    format!("cannot inspect evidence entry: {error}"),
+                );
+            }
         };
         if file_type.is_symlink() || metadata_is_reparse(&entry_metadata) {
-            return (
+            return evidence_inspection(
                 "corrupt",
                 "evidence directory contains a symlink/reparse entry".to_owned(),
             );
@@ -2392,12 +2625,17 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
         if file_type.is_file() {
             let size = match entry.metadata() {
                 Ok(metadata) => metadata.len(),
-                Err(error) => return ("corrupt", format!("cannot stat evidence entry: {error}")),
+                Err(error) => {
+                    return evidence_inspection(
+                        "corrupt",
+                        format!("cannot stat evidence entry: {error}"),
+                    );
+                }
             };
             total_bytes = match total_bytes.checked_add(size) {
                 Some(total) if total <= MAX_EVIDENCE_TOTAL_BYTES => total,
                 _ => {
-                    return (
+                    return evidence_inspection(
                         "corrupt",
                         format!("evidence directory exceeds {MAX_EVIDENCE_TOTAL_BYTES} bytes"),
                     );
@@ -2409,15 +2647,17 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
         }
     }
     if paths.is_empty() {
-        return unknown();
+        let (status, message) = unknown();
+        return evidence_inspection(status, message);
     }
     paths.sort();
     let mut aggregate_bytes = total_bytes;
     let mut locator_cache: HashMap<String, Result<Vec<u8>, String>> = HashMap::new();
     let task_ids: HashSet<String> = tasks.iter().map(|task| task.id.clone()).collect();
-    let mut records = Vec::new();
+    let mut records: Vec<EvidenceRecord> = Vec::new();
     let mut statuses = Vec::new();
     let mut errors = Vec::new();
+    let mut unbound_corruption = false;
     for path in paths {
         let name = path
             .file_name()
@@ -2428,6 +2668,7 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
             Err(error) => {
                 statuses.push("corrupt");
                 errors.push(format!("{name}: {error}"));
+                unbound_corruption = true;
                 continue;
             }
         };
@@ -2437,12 +2678,14 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
             Err(error) => {
                 statuses.push("corrupt");
                 errors.push(format!("{name}: invalid JSON: {error}"));
+                unbound_corruption = true;
                 continue;
             }
         };
         let Some(object) = payload.as_object() else {
             statuses.push("corrupt");
             errors.push(format!("{name}: envelope must be an object"));
+            unbound_corruption = true;
             continue;
         };
         let allowed = [
@@ -2591,29 +2834,53 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
             .iter()
             .map(|(locator, bytes)| (locator.as_str(), bytes.as_slice()))
             .collect();
-        if local.is_empty()
+        let scope_digest_stale = local.is_empty()
             && status != Some("superseded")
             && digest.as_deref()
-                != Some(mission_center_publish::scope_digest_files(&scope_refs).as_str())
-        {
+                != Some(mission_center_publish::scope_digest_files(&scope_refs).as_str());
+        let stale_locator = local.iter().any(|error| {
+            (error.starts_with("scope ") || error.starts_with("artifact "))
+                && (error.contains("No such file")
+                    || error.contains("not found")
+                    || error.contains("does not exist"))
+        });
+        let (record_state, record_reason) = if scope_digest_stale {
             statuses.push("stale");
-            errors.push(format!("{name}: scopeDigest does not match scope"));
+            let reason = format!("{name}: scopeDigest does not match scope");
+            errors.push(reason.clone());
+            ("stale", reason)
         } else if !local.is_empty() {
             statuses.push("corrupt");
-            errors.push(format!("{name}: {}", local.join("; ")));
-        }
-        records.push((
+            let reason = format!("{name}: {}", local.join("; "));
+            errors.push(reason.clone());
+            if stale_locator {
+                ("stale", reason)
+            } else {
+                ("unknown", reason)
+            }
+        } else {
+            ("valid", format!("{name}: evidence envelope is valid"))
+        };
+        records.push(EvidenceRecord {
             envelope_id,
             task_id,
             check_id,
-            status.map(ToOwned::to_owned),
-            result.map(ToOwned::to_owned),
+            status: status.map(ToOwned::to_owned),
+            result: result.map(ToOwned::to_owned),
             supersedes,
-        ));
+            state: record_state,
+            reason: record_reason,
+        });
     }
     let mut current_keys = HashSet::new();
     let mut ids = HashSet::new();
-    for (id, task, check, status, result, supersedes) in &records {
+    for record in &records {
+        let id = &record.envelope_id;
+        let task = &record.task_id;
+        let check = &record.check_id;
+        let status = &record.status;
+        let result = &record.result;
+        let supersedes = &record.supersedes;
         if let Some(id) = id
             && !ids.insert(id.clone())
         {
@@ -2644,13 +2911,12 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
         if let Some(target) = supersedes {
             let target_record = records
                 .iter()
-                .find(|(id, _, _, _, _, _)| id.as_deref() == Some(target));
-            let valid_target =
-                target_record.is_some_and(|(_, target_task, target_check, target_status, _, _)| {
-                    target_status.as_deref() == Some("superseded")
-                        && target_task == task
-                        && target_check == check
-                });
+                .find(|record| record.envelope_id.as_deref() == Some(target));
+            let valid_target = target_record.is_some_and(|record| {
+                record.status.as_deref() == Some("superseded")
+                    && record.task_id == *task
+                    && record.check_id == *check
+            });
             if !valid_target {
                 statuses.push("conflict");
                 errors.push(format!(
@@ -2659,17 +2925,15 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
             }
         }
     }
-    for (id, _, _, status, _, _) in &records {
-        if status.as_deref() == Some("superseded")
-            && !records
-                .iter()
-                .any(|(_, _, _, candidate_status, _, supersedes)| {
-                    candidate_status.as_deref() == Some("current")
-                        && supersedes.as_deref() == id.as_deref()
-                })
+    for record in &records {
+        if record.status.as_deref() == Some("superseded")
+            && !records.iter().any(|candidate| {
+                candidate.status.as_deref() == Some("current")
+                    && candidate.supersedes.as_deref() == record.envelope_id.as_deref()
+            })
         {
             statuses.push("conflict");
-            if let Some(id) = id {
+            if let Some(id) = &record.envelope_id {
                 errors.push(format!(
                     "superseded envelope has no current replacement: {id}"
                 ));
@@ -2678,9 +2942,9 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
     }
     let covered: HashSet<String> = records
         .iter()
-        .filter_map(|(_, task, _, status, _, _)| {
-            (status.as_deref() == Some("current"))
-                .then(|| task.clone())
+        .filter_map(|record| {
+            (record.status.as_deref() == Some("current"))
+                .then(|| record.task_id.clone())
                 .flatten()
         })
         .collect();
@@ -2694,10 +2958,12 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
         }
     }
     if statuses.is_empty() {
-        return (
-            "pass",
-            format!("{} evidence envelope(s) are valid", records.len()),
-        );
+        return EvidenceInspection {
+            status: "pass",
+            message: format!("{} evidence envelope(s) are valid", records.len()),
+            records,
+            unbound_corruption,
+        };
     }
     let status = statuses
         .into_iter()
@@ -2709,7 +2975,12 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> (&'static str, String) {
         .map(|error| bounded_utf8_prefix(error, 512))
         .collect::<Vec<_>>()
         .join("; ");
-    (status, message)
+    EvidenceInspection {
+        status,
+        message,
+        records,
+        unbound_corruption,
+    }
 }
 
 fn reconcile_workspace_checks(
@@ -2924,7 +3195,9 @@ fn reconcile_workspace_checks(
         json!({"name":"derived_date","status":date_status,"message":"daily organization date"}),
     );
     let evidence = inspect_evidence(ws.root(), tasks);
-    checks.push(json!({"name":"evidence_envelope","status":evidence.0,"message":evidence.1}));
+    checks.push(
+        json!({"name":"evidence_envelope","status":evidence.status,"message":evidence.message}),
+    );
     let overall = checks
         .iter()
         .filter_map(|check| check["status"].as_str())
@@ -3019,6 +3292,7 @@ fn validate_flags(args: &[String], allowed: &[&str]) -> Result<(), String> {
 fn validate_workspace_flags(command: &str, args: &[String]) -> Result<(), String> {
     let (values, booleans, positional_limit): (&[&str], &[&str], usize) = match command {
         "status" | "resume" | "reconcile" => (&["--date"], &[], 0),
+        "commitments" => (&[], &[], 0),
         "init" => (
             &["--operation-id", "--timestamp", "--language"],
             &["--force"],
@@ -4573,6 +4847,202 @@ fn hud_run(mode: &str, root: PathBuf, args: &[String]) -> Result<String, String>
     Ok(output)
 }
 
+fn context_manifest(
+    ws: &MissionWorkspace,
+    args: &[String],
+) -> Result<Option<(String, Value)>, String> {
+    let locator = optional_arg(args, "--manifest")
+        .unwrap_or_else(|| "MissionCenter/context-manifest.json".to_owned());
+    match ws.read_artifact(&locator, 128 * 1024) {
+        Ok(bytes) => serde_json::from_slice::<StrictJson>(&bytes)
+            .map(|value| Some((locator, value.0)))
+            .map_err(|error| format!("invalid context manifest JSON: {error}")),
+        Err(mission_center_workspace::WorkspaceError::NotFound { .. }) => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+fn context_scope(args: &[String]) -> Result<Value, String> {
+    match optional_arg(args, "--scope") {
+        Some(raw) => serde_json::from_str::<StrictJson>(&raw)
+            .map(|value| value.0)
+            .map_err(|error| format!("invalid scope JSON: {error}")),
+        None => Ok(json!({})),
+    }
+}
+
+fn context_run(command: &str, ws: &MissionWorkspace, args: &[String]) -> Result<String, String> {
+    let (mode, flags) = if command == "context" {
+        let mode = args.first().map(String::as_str).unwrap_or("recall");
+        if !matches!(mode, "validate" | "recall") {
+            return Err(format!("unknown subcommand: {mode}"));
+        }
+        (mode, if args.is_empty() { args } else { &args[1..] })
+    } else {
+        ("preflight", args)
+    };
+    let allowed: &[&str] = match mode {
+        "validate" => &["--manifest"],
+        "recall" => &["--manifest", "--context", "--scope", "--max-bytes"],
+        "preflight" => &["--manifest", "--context", "--scope"],
+        _ => unreachable!("context mode was validated before flag parsing"),
+    };
+    strict_new_flags(flags, allowed, &[])?;
+    let Some((locator, manifest)) = context_manifest(ws, flags)? else {
+        let data = if mode == "preflight" {
+            json!({"status":"unknown","manifestPresent":false,"coverage":"not-covered","decision":"unknown","requiredVerification":[],"cards":[],"readOnly":true})
+        } else {
+            json!({"status":"unknown","manifestPresent":false,"valid":false,"errors":["context manifest is absent"],"cards":[],"readOnly":true})
+        };
+        return Ok(value_envelope(command, "unknown", data));
+    };
+    if mode == "validate" {
+        let errors = mission_center_policy::validate_context_manifest(&manifest, Some(ws.root()));
+        let valid = errors.is_empty();
+        return Ok(value_envelope(
+            command,
+            if valid { "pass" } else { "error" },
+            json!({"valid":valid,"manifest":locator,"errors":errors,"readOnly":true}),
+        ));
+    }
+    let context = optional_arg(flags, "--context").unwrap_or_else(|| "resume".to_owned());
+    let scope = context_scope(flags)?;
+    let data = if mode == "preflight" {
+        contextual::preflight(ws, &manifest, &context, &scope)?
+    } else {
+        let max_bytes = optional_arg(flags, "--max-bytes")
+            .map(|value| {
+                value
+                    .parse::<usize>()
+                    .map_err(|_| "max-bytes must be an integer".to_owned())
+            })
+            .transpose()?
+            .unwrap_or(contextual::CONTEXT_MAX_OUTPUT_BYTES);
+        contextual::recall(ws, &manifest, &context, &scope, max_bytes)?
+    };
+    let status = data
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("corrupt")
+        .to_owned();
+    Ok(value_envelope(command, &status, data))
+}
+
+fn external_record_value(record: &ExternalOperationRecord) -> Value {
+    json!({
+        "operationId":record.operation_id,
+        "taskId":record.task_id,
+        "scopeDigest":record.scope_digest,
+        "receiptDigest":record.receipt_digest,
+        "status":record.status.as_str(),
+        "evidenceLocator":record.evidence_locator,
+        "evidenceDigest":record.evidence_digest,
+        "recordedAt":record.recorded_at,
+        "digest":record.digest,
+    })
+}
+
+fn operation_outcome(outcome: OperationOutcome) -> &'static str {
+    match outcome {
+        OperationOutcome::Started => "started",
+        OperationOutcome::Replay => "replay",
+        OperationOutcome::Committed => "committed",
+    }
+}
+
+fn external_operation_run(ws: &MissionWorkspace, args: &[String]) -> Result<String, String> {
+    let mode = args.first().map(String::as_str).unwrap_or("list");
+    let flags = if args.is_empty() { args } else { &args[1..] };
+    let allowed: &[&str] = match mode {
+        "prepare" => &[
+            "--operation-id",
+            "--task-id",
+            "--scope-digest",
+            "--receipt-digest",
+            "--timestamp",
+        ],
+        "reconcile" => &[
+            "--operation-id",
+            "--task-id",
+            "--scope-digest",
+            "--receipt-digest",
+            "--status",
+            "--evidence-locator",
+            "--evidence-digest",
+            "--timestamp",
+        ],
+        "get" => &["--operation-id"],
+        "list" => &[],
+        _ => return Err(format!("unknown subcommand: {mode}")),
+    };
+    strict_new_flags(flags, allowed, &[])?;
+    match mode {
+        "prepare" => {
+            let result = ws
+                .prepare_external_operation(
+                    &required_arg(flags, "--operation-id")?,
+                    &required_arg(flags, "--task-id")?,
+                    &required_arg(flags, "--scope-digest")?,
+                    &required_arg(flags, "--receipt-digest")?,
+                    &required_arg(flags, "--timestamp")?,
+                )
+                .map_err(|error| error.to_string())?;
+            let status = operation_outcome(result.outcome);
+            Ok(value_envelope(
+                "external-operation",
+                status,
+                json!({"outcome":status,"record":external_record_value(&result.record),"exactlyOnce":false}),
+            ))
+        }
+        "reconcile" => {
+            let operation_id = required_arg(flags, "--operation-id")?;
+            let task_id = required_arg(flags, "--task-id")?;
+            let scope_digest = required_arg(flags, "--scope-digest")?;
+            let receipt_digest = required_arg(flags, "--receipt-digest")?;
+            let requested_status = required_arg(flags, "--status")?;
+            let result = ws
+                .reconcile_external_operation(
+                    &operation_id,
+                    &task_id,
+                    &scope_digest,
+                    &receipt_digest,
+                    requested_status.as_str(),
+                    optional_arg(flags, "--evidence-locator").as_deref(),
+                    optional_arg(flags, "--evidence-digest").as_deref(),
+                    &required_arg(flags, "--timestamp")?,
+                )
+                .map_err(|error| error.to_string())?;
+            let status = operation_outcome(result.outcome);
+            Ok(value_envelope(
+                "external-operation",
+                status,
+                json!({"outcome":status,"record":external_record_value(&result.record),"exactlyOnce":false}),
+            ))
+        }
+        "get" => {
+            let record = ws
+                .read_external_operation(&required_arg(flags, "--operation-id")?)
+                .map_err(|error| error.to_string())?;
+            Ok(value_envelope(
+                "external-operation",
+                "ok",
+                json!({"record":external_record_value(&record),"readOnly":true,"exactlyOnce":false}),
+            ))
+        }
+        "list" => {
+            let records = ws
+                .query_external_operations()
+                .map_err(|error| error.to_string())?;
+            Ok(value_envelope(
+                "external-operation",
+                "ok",
+                json!({"records":records.iter().map(external_record_value).collect::<Vec<_>>(),"readOnly":true,"exactlyOnce":false}),
+            ))
+        }
+        _ => unreachable!("mode was validated before dispatch"),
+    }
+}
+
 fn run(command: &str, root: PathBuf, args: &[String]) -> Result<String, String> {
     if command == "help" {
         if args.len() > 1 {
@@ -4666,6 +5136,13 @@ fn run(command: &str, root: PathBuf, args: &[String]) -> Result<String, String> 
             | "compatibility"
     ) {
         return policy_run(command, &root, args);
+    }
+    let ws = MissionWorkspace::new(root.clone());
+    if matches!(command, "context" | "preflight") {
+        return context_run(command, &ws, args);
+    }
+    if command == "external-operation" {
+        return external_operation_run(&ws, args);
     }
     validate_workspace_flags(command, args)?;
     let ws = MissionWorkspace::new(root);
@@ -4937,6 +5414,15 @@ fn run(command: &str, root: PathBuf, args: &[String]) -> Result<String, String> 
             }
             let report = reconcile_workspace_checks(&ws, &tasks, &date)?;
             let overall = report["status"].as_str().unwrap_or("unknown").to_owned();
+            Ok(value_envelope(command, &overall, report))
+        }
+        "commitments" => {
+            let evidence = inspect_evidence(ws.root(), &tasks);
+            let report = commitments_report(&tasks, &evidence);
+            let overall = report["overallStatus"]
+                .as_str()
+                .unwrap_or("unknown")
+                .to_owned();
             Ok(value_envelope(command, &overall, report))
         }
         "verify" => Ok(envelope(
@@ -5409,6 +5895,15 @@ fn machine_failed(command: &str, value: &Value) -> bool {
             .get("status")
             .and_then(Value::as_str)
             .is_some_and(|status| matches!(status, "conflict" | "corrupt")),
+        "context" => data
+            .get("status")
+            .and_then(Value::as_str)
+            .is_some_and(|status| matches!(status, "stale" | "corrupt")),
+        "preflight" => data.get("decision").and_then(Value::as_str) == Some("blocked"),
+        "commitments" => data
+            .get("overallStatus")
+            .and_then(Value::as_str)
+            .is_some_and(|status| matches!(status, "failed" | "stale")),
         "research" | "optimize" | "steelman" | "critic" | "shift-loss" | "security"
         | "compatibility" => {
             data.get("valid").and_then(Value::as_bool) == Some(false)

@@ -16,7 +16,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "mission-center-cli"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "mission-center-core",
  "mission-center-policy",
@@ -29,14 +29,14 @@ dependencies = [
 
 [[package]]
 name = "mission-center-core"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "mission-center-policy"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "mission-center-core",
  "serde_json",
@@ -44,7 +44,7 @@ dependencies = [
 
 [[package]]
 name = "mission-center-publish"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "mission-center-core",
  "serde",
@@ -53,7 +53,7 @@ dependencies = [
 
 [[package]]
 name = "mission-center-runtime"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "mission-center-core",
  "serde",
@@ -62,7 +62,7 @@ dependencies = [
 
 [[package]]
 name = "mission-center-workspace"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "mission-center-core",
  "mission-center-policy",

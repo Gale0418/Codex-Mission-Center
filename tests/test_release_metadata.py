@@ -17,7 +17,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(manifest["schemaVersion"], "1.0")
         self.assertEqual(manifest["kind"], "mission-center-release")
         self.assertEqual(manifest["pluginName"], "mission-center")
-        self.assertEqual(manifest["version"], "0.5.1")
+        self.assertEqual(manifest["version"], "0.5.2")
         self.assertEqual(manifest["releaseStage"], "stable")
         self.assertEqual(manifest["runtime"], "rust")
         self.assertTrue(manifest["rustOnly"])
@@ -58,7 +58,7 @@ class ReleaseMetadataTests(unittest.TestCase):
 
     def test_plugin_version_is_v05_release(self):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "0.5.1")
+        self.assertEqual(manifest["version"], "0.5.2")
 
     def test_stable_release_identity_matches_root_plugin(self):
         plugin = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
@@ -69,7 +69,7 @@ class ReleaseMetadataTests(unittest.TestCase):
     def test_stable_release_has_sbom_notes_and_rollback_guidance(self):
         sbom = json.loads((ROOT / "docs" / "SBOM.spdx.json").read_text(encoding="utf-8"))
         self.assertEqual(sbom["spdxVersion"], "SPDX-2.3")
-        self.assertEqual(sbom["name"], "mission-center-0.5.1")
+        self.assertEqual(sbom["name"], "mission-center-0.5.2")
         packages = {(item["name"], item["versionInfo"]) for item in sbom["packages"]}
         lock = tomllib.loads((ROOT / "rust" / "Cargo.lock").read_text(encoding="utf-8"))
         external = {
@@ -77,11 +77,11 @@ class ReleaseMetadataTests(unittest.TestCase):
             for item in lock["package"]
             if not item["name"].startswith("mission-center-")
         }
-        self.assertEqual(external, packages - {("mission-center", "0.5.1")})
-        release_notes = (ROOT / "docs" / "releases" / "0.5.1.md").read_text(encoding="utf-8")
+        self.assertEqual(external, packages - {("mission-center", "0.5.2")})
+        release_notes = (ROOT / "docs" / "releases" / "0.5.2.md").read_text(encoding="utf-8")
         self.assertIn("DELIVERY", release_notes.upper())
         self.assertIn("rollback", release_notes.casefold())
-        self.assertTrue((ROOT / "docs" / "rust-maintainability-audit-0.5.1.md").is_file())
+        self.assertTrue((ROOT / "docs" / "rust-maintainability-audit-0.5.2.md").is_file())
 
     def test_python_oracle_boundary_is_explicit_and_non_runtime(self):
         boundary = json.loads(

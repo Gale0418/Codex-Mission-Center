@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-import platform
 import sys
 import tempfile
 import unittest
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
 sys.path.insert(0, str(TOOLS))
+
+from bounded_process import bounded_process_supported  # noqa: E402
 
 from verify_upgrade_052 import (  # noqa: E402
     _bounded_resume_string_bytes,
@@ -78,7 +79,7 @@ def _set_declared_bytes(result: dict) -> None:
 
 
 class ResumeReportRedactionTests(unittest.TestCase):
-    @unittest.skipUnless(platform.system() == "Linux", "Linux PID namespaces are required")
+    @unittest.skipUnless(bounded_process_supported(), "usable Linux PID namespaces are required")
     def test_invoke_preserves_raw_fixture_path_for_validation(self):
         with tempfile.TemporaryDirectory(prefix="mc-052-raw-invoke-") as temporary:
             root = Path(temporary)

@@ -11,7 +11,7 @@ Mission Center 僅處理 `./MissionCenter/`，不掃描、註冊、監控或合�
 
 ## 先判斷意圖
 
-- **恢復**：執行 `<mission-center> resume --root .`，只用 bounded packet；`workingSet`、`activeCriticalLessons`、`snapshot` 對應 `working-set.md`、`critical-lessons.md`、有效 active `snapshot.md`。若 `fallbackReason` 為 `derived view stale`，執行 `sync --root . --operation-id <id> --timestamp <RFC3339>` 後 resume；否則僅依 `packet.readNext`／`fallbackReason` 讀指定檔，不掃描 `MissionCenter/`。變更狀態、順序、優先級、依賴或下一步前須讀 `tasks.md`；詳見 [記憶維護](references/memory-maintenance.md)。
+- **恢復**：執行 `<mission-center> resume --root .`；packet 對應 `working-set.md`、`critical-lessons.md`、`snapshot.md`，只讀 bounded `readNext`，不掃描目錄。stale 時執行 `<mission-center> sync --root . --operation-id <id> --timestamp <RFC3339>`；詳見[記憶維護](references/memory-maintenance.md)與[情境召回](references/contextual-recall-preflight.md)。
 - **目標未清**：依 [訪談](references/intake-protocol.md) 重述理解、指出最大缺口並提出**至多一個**阻塞問題；可用安全可逆假設繼續。完整前不建立工作區／任務。
 - **規劃／發布**：依 [任務工作區](references/task-workspace.md)、[Linear 規劃](references/linear-parity.md) 與 [執行閘門](references/execution-gates.md)；完整 Epic 地圖與首個里程碑須經使用者核准，才寫入 `tasks.md`。
 - **執行／變更**：維持最小可驗證切片，依 [任務種子](references/task-seeding.md)、[規格化](references/normalization-rules.md)、[活動紀錄](references/activity-log-format.md) 記錄事實。
@@ -28,7 +28,7 @@ HUD helper 一對一 task，來源永遠是 `tasks.md`，依 [視覺 HUD](refere
 
 開 HUD：`<mission-center> hud launch --root . --foreground`；僅 loopback；宿主不支援時回報 unsupported，不開外部瀏覽器。
 
-Project Map：`<mission-center> project-map --root .`（與 RuntimeState 分離）。生命週期每次只前進一格：`<mission-center> transition <TASK_ID> <STATUS> --operation-id <id> --timestamp <RFC3339> --root .`；Rust 會拒絕跳過 Review 的 Done，並以 receipt 提供安全 replay。
+Project Map 與 RuntimeState 分離；task transition 每次只前進一格、不得跳過 Review，並以 receipt 安全 replay。
 
 ## 驗證、Done 與收尾
 
@@ -44,6 +44,7 @@ source checkout 的 **Maintainer-only** pre-commit 是 check-only；可安裝於
 
 - [活動格式](references/activity-log-format.md)｜[協作](references/agent-orchestration.md)｜[收尾](references/closeout-format.md)｜[CodeRabbit](references/coderabbit-review-gate.md)
 - [Pulse/Handoff](references/execution-pulse-handoff.md)｜[Evidence](references/evidence-envelope.md)｜[Completion Passport](references/completion-passport.md)
+- [情境召回／Preflight](references/contextual-recall-preflight.md)｜[承諾閉環](references/commitment-closure.md)｜[外部操作對帳](references/external-operation-reconciliation.md)
 - [Steelman Evolution](references/steelman-evolution.md)｜[Research Portfolio／Saturation](references/research-portfolio.md)
 - [Shift-Loss Eval／Self-Metrics](references/shift-loss-eval.md)｜[完成評論](references/completion-critic-council.md)
 - [動態專家](references/dynamic-expert-council.md)｜[執行閘門](references/execution-gates.md)｜[實驗設計](references/experiment-design.md)

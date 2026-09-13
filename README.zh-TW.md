@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml/badge.svg)](https://github.com/Gale0418/Codex-Mission-Center/actions/workflows/ci.yml)
 [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![版本](https://img.shields.io/badge/version-0.5.1-F59E0B.svg)](.codex-plugin/plugin.json)
+[![版本](https://img.shields.io/badge/version-0.5.2-F59E0B.svg)](.codex-plugin/plugin.json)
 [![Rust](https://img.shields.io/badge/rust-1.98.1-DEA584.svg)](rust/rust-toolchain.toml)
 
 **把模糊目標變成 Codex 可持續接手、可審查、以證據收尾的本地任務工作區。**
@@ -10,9 +10,9 @@
 Mission Center 是一次只服務一個專案的離線、檔案型 Codex 外掛與 Skill。它協助釐清意圖、讓你核准滾動式計畫、保存因果式交接，並把驗證證據留在任務資料旁邊。它不是託管式專案管理服務，也不是 `pip` 或 `npm` 套件。
 
 <p align="center">
-  <img src="docs/assets/mission-center-fleet-command-deck.png" alt="Mission Center 0.5.1 本機 file-snapshot HUD" width="100%">
+  <img src="docs/assets/mission-center-fleet-command-deck.png" alt="Mission Center 0.5.2 本機 file-snapshot HUD" width="100%">
 </p>
-<p align="center"><em>這是 Mission Center 0.5.1 的本機 file-snapshot HUD；呈現的是受限 repository 證據，不是全域 live sensor。</em></p>
+<p align="center"><em>這是 Mission Center 0.5.2 的本機 file-snapshot HUD；呈現的是受限 repository 證據，不是全域 live sensor。</em></p>
 
 <p align="center">
   <img src="skills/mission-center/assets/visual-hub/mission-fleet-bridge-background.webp" alt="Mission Center fleet crossing a bridge" width="100%">
@@ -50,7 +50,7 @@ flowchart LR
 
 Mission Center 故意保持狹窄：
 
-> **Rust-only stable（0.5.1）：**正式 Plugin 入口是有版本契約的
+> **Rust-only stable（0.5.2）：**正式 Plugin 入口是有版本契約的
 > `mission-center` Rust CLI 與四平台 frozen package。下方保留的 Python
 > scripts 只供 differential test／migration diagnostics 使用，不會放入
 > stable Plugin，也不會作為 runtime fallback。
@@ -130,7 +130,7 @@ bash ./scripts/install-unix.sh --with-personal-skill
 `MISSION_CENTER_PYTHON_COMPAT=1` 時才會註冊 Plugin；正式安裝請使用已驗證
 的 Rust package。
 
-Rust stable 也能在不呼叫 Codex CLI、不開外部瀏覽器的情況下，註冊已驗證的 marketplace tree：`mission-center install register apply --plugin-root <絕對 marketplace>/plugins/mission-center --marketplace-root <絕對 marketplace> --operation-id <id> --version 0.5.1`。產生的 receipt 支援相同內容 replay、`register rollback` 與 `register reconcile`。
+Rust stable 也能在不呼叫 Codex CLI、不開外部瀏覽器的情況下，註冊已驗證的 marketplace tree：`mission-center install register apply --plugin-root <絕對 marketplace>/plugins/mission-center --marketplace-root <絕對 marketplace> --operation-id <id> --version 0.5.2`。產生的 receipt 支援相同內容 replay、`register rollback` 與 `register reconcile`。
 
 只預覽或驗證衍生目標、不寫檔：
 
@@ -182,7 +182,7 @@ MissionCenter/
 
 > **路徑提醒：** 本節命令均以 source checkout 為例。plugin-only 安裝請直接由 Codex 使用 Mission Center；只有需要穩定的 `$CODEX_HOME/skills/mission-center/` 手動腳本路徑時，才選用獨立個人 Skill。請以 `--workspace <target-repo>` 指定要觀察或分析的 repository。`requirements-runtime.txt` 位於 source checkout 根目錄；啟用 WebSocket Runtime 前，請從該 checkout（或等價的絕對路徑）安裝它。
 
-以下 Python 命令在 0.5.1 preview 階段僅作相容／oracle 工具；正式 Hook 與 Plugin 寫入路徑使用 Rust CLI。
+以下 Python 命令在 0.5.2 stable 仍僅作相容／oracle 工具；正式 Hook 與 Plugin 寫入路徑使用 Rust CLI。
 
 ### HUD 與 Runtime
 
@@ -224,6 +224,20 @@ python skills/mission-center/scripts/mission_runtime.py --workspace . connect --
 
 被動觀察不會呼叫模型；已連接 Agent 自己執行任務時仍使用原本額度。只有明確啟用的 LLM 分類或 Agent 驅動 trial 會消耗模型 token，且必須服從 manifest 預算。Runtime 或 `websockets` 不可用時，靜態 HUD 仍可使用。
 
+### 情境、承諾與外部結果
+
+0.5.2 加入明確的 Rust-only 讀取／對帳邊界，不建立第二套任務或記憶資料庫：
+
+```bash
+mission-center context validate --root .
+mission-center context recall --root . --context before-deploy --scope '{"component":"release"}'
+mission-center preflight --root . --context before-deploy --scope '{"component":"release"}'
+mission-center commitments --root .
+mission-center external-operation list --root .
+```
+
+可選的 `MissionCenter/context-manifest.json` 只列出具 anchor 與 SHA-256 的 `MissionCenter/` 來源。召回與 preflight 有界且唯讀；沒有 coverage 是 `unknown`，絕不是批准。承諾狀態由 canonical `Verification` cell 與 current evidence envelope 衍生。外部操作明確保留 `pending / confirmed / failed / unknown`，不宣稱 provider 副作用 exactly-once。
+
 ### 自適應最佳化與受控評估
 
 最佳化是一條路由，不承諾數值最佳解。它需要可量測訊號、硬限制、預算與停止規則；否則 Mission Center 會回到研究或決策。Shadow 評估只分析唯讀 fixture，不會自動採用勝出方案：
@@ -237,7 +251,7 @@ python skills/mission-center/scripts/mission_optimizer.py shadow \
   --manifest experiment.json --observations observations.json --workspace .
 ```
 
-其他受控路由包括 Pulse／Handoff continuity、Steelman Evolution、Research Portfolio／Saturation，以及隱私安全的 Shift-Loss self-evaluation。這些 artifact 是供審查的證據，不會自動改任務，也不是現實世界 benchmark 聲稱。
+其他受控路由包括 Pulse／Handoff continuity、Steelman Evolution、含來源型 findings exchange 的 Research Portfolio／Saturation，以及隱私安全的 Shift-Loss self-evaluation。這些 artifact 是供審查的證據，不會自動改任務，也不是現實世界 benchmark 聲稱。
 
 ## 實測效益：誠實版本
 

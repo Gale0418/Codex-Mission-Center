@@ -1,6 +1,6 @@
 {
   "name": "mission-center",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Rust-only Mission Center planning with causal continuity, bounded research and review gates, privacy-safe evaluation, and an optional local HUD.",
   "author": {
     "name": "Gale0418",
@@ -23,7 +23,7 @@
   "interface": {
     "displayName": "Mission Center",
     "shortDescription": "Offline causal task center for Codex",
-    "longDescription": "Mission Center 0.5.1 clarifies goals, preserves causal pulse-to-handoff continuity, routes medium/high-risk decisions through bounded Steelman and research portfolio gates, evaluates privacy-safe Shift-Loss metrics, and keeps optional runtime agents separate from the canonical task lifecycle. Its formal plugin runtime is an offline, checksum-verified Rust CLI with no alternate runtime fallback.",
+    "longDescription": "Mission Center 0.5.2 adds bounded source-backed context recall and preflight, evidence-derived commitment closure, explicit external-result reconciliation, and research findings exchange while preserving causal continuity and the canonical task lifecycle. Its formal plugin runtime is an offline, checksum-verified Rust CLI with no alternate runtime fallback.",
     "developerName": "Gale0418",
     "category": "Productivity",
     "capabilities": [

@@ -30,6 +30,9 @@ pub const DAILY_LOG_MAX_BYTES: u64 = 128 * 1024;
 pub const SNAPSHOT_MAX_BYTES: u64 = 64 * 1024;
 pub const COMPLETION_PASSPORT_MAX_BYTES: u64 = 256 * 1024;
 const MAX_RECENT_ATTEMPTS: usize = 5;
+const EXTERNAL_OPERATION_MAX_BYTES: u64 = 16 * 1024;
+const EXTERNAL_OPERATION_MAX_FILES: u64 = 256;
+const EXTERNAL_EVIDENCE_MAX_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug)]
 pub enum WorkspaceError {
@@ -1279,6 +1282,369 @@ impl MissionWorkspace {
         }
         Ok(WorkspaceLanguage::English)
     }
+
+    pub fn external_operations_dir(&self) -> PathBuf {
+        self.mission_dir()
+            .join(".mission-center")
+            .join("external-operations")
+    }
+
+    pub fn external_operation_path(&self, operation_id: &str) -> Result<PathBuf, WorkspaceError> {
+        validate_external_operation_id(operation_id)?;
+        Ok(self
+            .external_operations_dir()
+            .join(format!("{}.json", sha256_digest(operation_id.as_bytes()))))
+    }
+
+    /// Reserve an external operation as `pending`.  Only the result record is
+    /// persisted; no external adapter/provider is invoked.
+    pub fn prepare_external_operation(
+        &self,
+        operation_id: &str,
+        task_id: &str,
+        scope_digest: &str,
+        receipt_digest: &str,
+        recorded_at: &str,
+    ) -> Result<ExternalOperationResult, WorkspaceError> {
+        validate_timestamp(recorded_at)?;
+        validate_external_operation_id(operation_id)?;
+        validate_external_task_id(task_id)?;
+        validate_sha256(scope_digest, "scopeDigest")?;
+        validate_sha256(receipt_digest, "receiptDigest")?;
+        reject_secret_fields(&[operation_id, task_id, scope_digest, receipt_digest])?;
+        let lock = self.acquire_writer_lock(&format!("external:{operation_id}"))?;
+        let result = (|| {
+            let (_, tasks) = self.read_tasks()?;
+            let canonical_task = tasks
+                .iter()
+                .find(|task| task.id.eq_ignore_ascii_case(task_id))
+                .ok_or_else(|| WorkspaceError::ClaimRejected(format!("unknown task: {task_id}")))?;
+            let path = self.external_operation_path(operation_id)?;
+            let previous = match fs::symlink_metadata(&path) {
+                Ok(_) => Some(read_external_operation(&path)?),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+                Err(error) => return Err(WorkspaceError::Io(error)),
+            };
+            if let Some(existing) = previous {
+                if existing.task_id == canonical_task.id
+                    && existing.scope_digest == scope_digest
+                    && existing.receipt_digest == receipt_digest
+                {
+                    return Ok(ExternalOperationResult {
+                        record: self.reconcile_external_read_against_tasks(existing, &tasks)?,
+                        outcome: OperationOutcome::Replay,
+                    });
+                }
+                return Err(WorkspaceError::Conflict(operation_id.to_owned()));
+            }
+            check_external_operation_capacity(&self.external_operations_dir(), &path)?;
+            let record = ExternalOperationRecord {
+                operation_id: operation_id.to_owned(),
+                task_id: canonical_task.id.clone(),
+                scope_digest: scope_digest.to_ascii_lowercase(),
+                receipt_digest: receipt_digest.to_ascii_lowercase(),
+                status: ExternalOperationStatus::Pending,
+                evidence_locator: None,
+                evidence_digest: None,
+                recorded_at: recorded_at.to_owned(),
+                digest: String::new(),
+            };
+            let record = with_external_digest(record);
+            let history_id = external_history_id(&record);
+            let history = self.begin_operation_locked(&history_id, &record.digest, recorded_at)?;
+            if history == OperationOutcome::Replay {
+                return Err(WorkspaceError::RecoveryUnknown(
+                    "external operation receipt committed without its result record".to_owned(),
+                ));
+            }
+            ensure_directory(path.parent().expect("external operation parent"))?;
+            if let Err(error) =
+                self.atomic_write(&path, external_operation_json(&record).as_bytes())
+            {
+                let _ = self.abort_operation_locked(&history_id, &record.digest, recorded_at);
+                return Err(error);
+            }
+            if let Err(error) =
+                self.commit_operation_locked(&history_id, &record.digest, recorded_at)
+            {
+                let restore = fs::remove_file(&path).map_err(WorkspaceError::Io);
+                let abort = self.abort_operation_locked(&history_id, &record.digest, recorded_at);
+                if let Err(restore_error) = restore {
+                    return Err(WorkspaceError::RecoveryUnknown(format!(
+                        "external record commit failed: {error}; record cleanup failed: {restore_error}"
+                    )));
+                }
+                if let Err(abort_error) = abort {
+                    return Err(WorkspaceError::RecoveryUnknown(format!(
+                        "external record commit failed: {error}; receipt abort failed: {abort_error}"
+                    )));
+                }
+                return Err(error);
+            }
+            Ok(ExternalOperationResult {
+                record,
+                outcome: OperationOutcome::Committed,
+            })
+        })();
+        lock.release()?;
+        result
+    }
+
+    /// Reconcile a provider result against the caller-supplied current
+    /// evidence. The generic status accepts either the enum or a validated
+    /// string conversion; invalid strings fail closed.
+    #[allow(clippy::too_many_arguments)]
+    pub fn reconcile_external_operation<S: IntoExternalOperationStatus>(
+        &self,
+        operation_id: &str,
+        task_id: &str,
+        scope_digest: &str,
+        receipt_digest: &str,
+        status: S,
+        evidence_locator: Option<&str>,
+        evidence_digest: Option<&str>,
+        recorded_at: &str,
+    ) -> Result<ExternalOperationResult, WorkspaceError> {
+        self.update_external_operation(
+            operation_id,
+            task_id,
+            scope_digest,
+            receipt_digest,
+            status,
+            evidence_locator,
+            evidence_digest,
+            recorded_at,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_external_operation<S: IntoExternalOperationStatus>(
+        &self,
+        operation_id: &str,
+        task_id: &str,
+        scope_digest: &str,
+        receipt_digest: &str,
+        status: S,
+        evidence_locator: Option<&str>,
+        evidence_digest: Option<&str>,
+        recorded_at: &str,
+    ) -> Result<ExternalOperationResult, WorkspaceError> {
+        validate_timestamp(recorded_at)?;
+        validate_external_operation_id(operation_id)?;
+        validate_external_task_id(task_id)?;
+        validate_sha256(scope_digest, "scopeDigest")?;
+        validate_sha256(receipt_digest, "receiptDigest")?;
+        let status = status.into_external_status()?;
+        reject_secret_fields(&[
+            operation_id,
+            task_id,
+            scope_digest,
+            receipt_digest,
+            status.as_str(),
+        ])?;
+        let lock = self.acquire_writer_lock(&format!("external:{operation_id}"))?;
+        let result = (|| {
+            let evidence = validate_external_evidence(self, evidence_locator, evidence_digest)?;
+            let (_, tasks) = self.read_tasks()?;
+            let canonical_task = tasks
+                .iter()
+                .find(|task| task.id.eq_ignore_ascii_case(task_id))
+                .ok_or_else(|| WorkspaceError::ClaimRejected(format!("unknown task: {task_id}")))?;
+            let path = self.external_operation_path(operation_id)?;
+            let stored_existing = read_external_operation(&path)?;
+            let existing =
+                self.reconcile_external_read_against_tasks(stored_existing.clone(), &tasks)?;
+            if existing.task_id != canonical_task.id
+                || existing.scope_digest != scope_digest.to_ascii_lowercase()
+                || existing.receipt_digest != receipt_digest.to_ascii_lowercase()
+            {
+                return Err(WorkspaceError::Conflict(operation_id.to_owned()));
+            }
+            if existing.status == status
+                && existing.evidence_locator == evidence.0
+                && existing.evidence_digest == evidence.1
+                && existing.recorded_at == recorded_at
+            {
+                return Ok(ExternalOperationResult {
+                    record: self.reconcile_external_read_against_tasks(existing, &tasks)?,
+                    outcome: OperationOutcome::Replay,
+                });
+            }
+            if matches!(
+                existing.status,
+                ExternalOperationStatus::Confirmed | ExternalOperationStatus::Failed
+            ) {
+                return Err(WorkspaceError::Conflict(operation_id.to_owned()));
+            }
+            if existing.status == ExternalOperationStatus::Unknown
+                && !matches!(
+                    status,
+                    ExternalOperationStatus::Confirmed | ExternalOperationStatus::Failed
+                )
+            {
+                return Err(WorkspaceError::Conflict(
+                    "unknown result requires confirmed or failed current evidence".to_owned(),
+                ));
+            }
+            if existing.status == ExternalOperationStatus::Unknown
+                && (evidence.0.is_none() || evidence.1.is_none())
+            {
+                return Err(WorkspaceError::ClaimRejected(
+                    "unknown result requires evidence locator and digest".to_owned(),
+                ));
+            }
+            if existing.status == ExternalOperationStatus::Pending
+                && status == ExternalOperationStatus::Pending
+            {
+                return Err(WorkspaceError::Conflict(
+                    "pending result cannot be updated to a different pending record".to_owned(),
+                ));
+            }
+            let next = with_external_digest(ExternalOperationRecord {
+                operation_id: existing.operation_id.clone(),
+                task_id: existing.task_id.clone(),
+                scope_digest: existing.scope_digest.clone(),
+                receipt_digest: existing.receipt_digest.clone(),
+                status,
+                evidence_locator: evidence.0,
+                evidence_digest: evidence.1,
+                recorded_at: recorded_at.to_owned(),
+                digest: String::new(),
+            });
+            let history_id = external_history_id(&next);
+            let history = self.begin_operation_locked(&history_id, &next.digest, recorded_at)?;
+            if history == OperationOutcome::Replay {
+                return Err(WorkspaceError::RecoveryUnknown(
+                    "external update receipt committed without its result record".to_owned(),
+                ));
+            }
+            let old_bytes = external_operation_json(&stored_existing).into_bytes();
+            if let Err(error) = self.atomic_write(&path, external_operation_json(&next).as_bytes())
+            {
+                let _ = self.abort_operation_locked(&history_id, &next.digest, recorded_at);
+                return Err(error);
+            }
+            if let Err(error) = self.commit_operation_locked(&history_id, &next.digest, recorded_at)
+            {
+                let restore = self.atomic_write(&path, &old_bytes);
+                let abort = self.abort_operation_locked(&history_id, &next.digest, recorded_at);
+                if let Err(restore_error) = restore {
+                    return Err(WorkspaceError::RecoveryUnknown(format!(
+                        "external update commit failed: {error}; record restore failed: {restore_error}"
+                    )));
+                }
+                if let Err(abort_error) = abort {
+                    return Err(WorkspaceError::RecoveryUnknown(format!(
+                        "external update commit failed: {error}; receipt abort failed: {abort_error}"
+                    )));
+                }
+                return Err(error);
+            }
+            Ok(ExternalOperationResult {
+                record: next,
+                outcome: OperationOutcome::Committed,
+            })
+        })();
+        lock.release()?;
+        result
+    }
+
+    pub fn read_external_operation(
+        &self,
+        operation_id: &str,
+    ) -> Result<ExternalOperationRecord, WorkspaceError> {
+        let path = self.external_operation_path(operation_id)?;
+        let record = read_external_operation(&path)?;
+        if record.operation_id != operation_id {
+            return Err(WorkspaceError::Conflict(operation_id.to_owned()));
+        }
+        self.reconcile_external_read(record)
+    }
+
+    pub fn query_external_operations(
+        &self,
+    ) -> Result<Vec<ExternalOperationRecord>, WorkspaceError> {
+        let directory = self.external_operations_dir();
+        match fs::symlink_metadata(&directory) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(WorkspaceError::Io(error)),
+            Ok(_) => ensure_no_reparse(&directory)?,
+        }
+        let mut entries = Vec::new();
+        for entry in fs::read_dir(&directory).map_err(WorkspaceError::Io)? {
+            let entry = entry.map_err(WorkspaceError::Io)?;
+            entries.push(entry.path());
+            if entries.len() as u64 > EXTERNAL_OPERATION_MAX_FILES {
+                return Err(WorkspaceError::TooLarge {
+                    path: directory.clone(),
+                    limit: EXTERNAL_OPERATION_MAX_FILES,
+                });
+            }
+        }
+        entries.sort();
+        let (_, tasks) = self.read_tasks()?;
+        let mut records = Vec::with_capacity(entries.len());
+        for path in entries {
+            ensure_no_reparse(&path)?;
+            if !path.is_file() {
+                return Err(WorkspaceError::UnsafePath { path });
+            }
+            let record = read_external_operation(&path)?;
+            let expected = format!("{}.json", sha256_digest(record.operation_id.as_bytes()));
+            if path.file_name().and_then(|name| name.to_str()) != Some(expected.as_str()) {
+                return Err(WorkspaceError::InvalidReceipt(
+                    "external operation filename does not match operationId".to_owned(),
+                ));
+            }
+            records.push(self.reconcile_external_read_against_tasks(record, &tasks)?);
+        }
+        Ok(records)
+    }
+
+    pub fn list_external_operations(&self) -> Result<Vec<ExternalOperationRecord>, WorkspaceError> {
+        self.query_external_operations()
+    }
+
+    fn reconcile_external_read(
+        &self,
+        record: ExternalOperationRecord,
+    ) -> Result<ExternalOperationRecord, WorkspaceError> {
+        let (_, tasks) = self.read_tasks()?;
+        self.reconcile_external_read_against_tasks(record, &tasks)
+    }
+
+    fn reconcile_external_read_against_tasks(
+        &self,
+        mut record: ExternalOperationRecord,
+        tasks: &[Task],
+    ) -> Result<ExternalOperationRecord, WorkspaceError> {
+        if !tasks
+            .iter()
+            .any(|task| task.id.eq_ignore_ascii_case(&record.task_id))
+        {
+            return Err(WorkspaceError::ClaimRejected(format!(
+                "external operation task is absent from canonical tasks.md: {}",
+                record.task_id
+            )));
+        }
+        if matches!(
+            record.status,
+            ExternalOperationStatus::Confirmed | ExternalOperationStatus::Failed
+        ) {
+            let history = self.operation_path(&external_history_id(&record))?;
+            match read_bounded_text(&history, INTERNAL_MAX_BYTES)
+                .and_then(|text| parse_operation_receipt(&text))
+            {
+                Ok(receipt) if receipt.status == "committed" && receipt.digest == record.digest => {
+                }
+                Ok(_) | Err(WorkspaceError::NotFound { .. }) => {
+                    record.status = ExternalOperationStatus::Unknown;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(record)
+    }
 }
 
 #[cfg(windows)]
@@ -1427,6 +1793,83 @@ pub enum OperationOutcome {
     Started,
     Replay,
     Committed,
+}
+
+/// The durable state of an external provider operation.  This record is only
+/// a bounded result/evidence cache; it never performs (or retries) a provider
+/// side effect and therefore makes no exactly-once claim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExternalOperationStatus {
+    Pending,
+    Confirmed,
+    Failed,
+    Unknown,
+}
+
+impl ExternalOperationStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Confirmed => "confirmed",
+            Self::Failed => "failed",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternalOperationRecord {
+    pub operation_id: String,
+    pub task_id: String,
+    pub scope_digest: String,
+    pub receipt_digest: String,
+    pub status: ExternalOperationStatus,
+    pub evidence_locator: Option<String>,
+    pub evidence_digest: Option<String>,
+    pub recorded_at: String,
+    pub digest: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternalOperationResult {
+    pub record: ExternalOperationRecord,
+    pub outcome: OperationOutcome,
+}
+
+pub trait IntoExternalOperationStatus {
+    fn into_external_status(self) -> Result<ExternalOperationStatus, WorkspaceError>;
+}
+
+impl IntoExternalOperationStatus for ExternalOperationStatus {
+    fn into_external_status(self) -> Result<ExternalOperationStatus, WorkspaceError> {
+        Ok(self)
+    }
+}
+
+impl IntoExternalOperationStatus for &str {
+    fn into_external_status(self) -> Result<ExternalOperationStatus, WorkspaceError> {
+        match self {
+            "pending" => Ok(ExternalOperationStatus::Pending),
+            "confirmed" => Ok(ExternalOperationStatus::Confirmed),
+            "failed" => Ok(ExternalOperationStatus::Failed),
+            "unknown" => Ok(ExternalOperationStatus::Unknown),
+            _ => Err(WorkspaceError::ClaimRejected(
+                "invalid external operation status".to_owned(),
+            )),
+        }
+    }
+}
+
+impl IntoExternalOperationStatus for &String {
+    fn into_external_status(self) -> Result<ExternalOperationStatus, WorkspaceError> {
+        self.as_str().into_external_status()
+    }
+}
+
+impl IntoExternalOperationStatus for String {
+    fn into_external_status(self) -> Result<ExternalOperationStatus, WorkspaceError> {
+        self.as_str().into_external_status()
+    }
 }
 
 /// The small, deterministic part of the Python bootstrap contract that the
@@ -4125,6 +4568,359 @@ fn json_quote(value: &str) -> String {
     }
     result.push('\"');
     result
+}
+
+fn validate_external_operation_id(value: &str) -> Result<(), WorkspaceError> {
+    safe_id(value)?;
+    if value.contains("..") || secret_like(value) {
+        return Err(WorkspaceError::InvalidLocator(value.to_owned()));
+    }
+    Ok(())
+}
+
+fn validate_external_task_id(value: &str) -> Result<(), WorkspaceError> {
+    if value.is_empty()
+        || value.len() > OPERATION_ID_MAX_BYTES
+        || value.chars().any(|character| character.is_control())
+        || secret_like(value)
+    {
+        return Err(WorkspaceError::ClaimRejected(
+            "external taskId is empty, oversized, or unsafe".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_sha256(value: &str, field: &str) -> Result<(), WorkspaceError> {
+    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(WorkspaceError::InvalidReceipt(format!(
+            "{field} must be a lowercase SHA-256 digest"
+        )));
+    }
+    if value.bytes().any(|byte| byte.is_ascii_uppercase()) || secret_like(value) {
+        return Err(WorkspaceError::InvalidReceipt(format!(
+            "{field} must be a lowercase SHA-256 digest"
+        )));
+    }
+    Ok(())
+}
+
+fn reject_secret_fields(values: &[&str]) -> Result<(), WorkspaceError> {
+    if values.iter().any(|value| secret_like(value)) {
+        Err(WorkspaceError::ClaimRejected(
+            "external operation contains secret-like data".to_owned(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_external_locator(value: &str) -> Result<(), WorkspaceError> {
+    if value.is_empty()
+        || value.len() > 512
+        || value.starts_with('.')
+        || value.starts_with('/')
+        || value.contains('\\')
+        || value.contains(':')
+        || value.contains("//")
+        || value.contains("..")
+        || value.contains("\0")
+        || value.chars().any(|character| character.is_control())
+        || secret_like(value)
+    {
+        return Err(WorkspaceError::InvalidLocator(value.to_owned()));
+    }
+    let path = Path::new(value);
+    if path.is_absolute()
+        || path.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(WorkspaceError::InvalidLocator(value.to_owned()));
+    }
+    Ok(())
+}
+
+fn validate_external_evidence(
+    workspace: &MissionWorkspace,
+    locator: Option<&str>,
+    digest: Option<&str>,
+) -> Result<(Option<String>, Option<String>), WorkspaceError> {
+    match (locator, digest) {
+        (None, None) => Ok((None, None)),
+        (Some(locator), Some(digest)) => {
+            validate_external_locator(locator)?;
+            validate_sha256(digest, "evidenceDigest")?;
+            let path = workspace.artifact_path(locator)?;
+            ensure_no_reparse(&path)?;
+            let metadata = fs::metadata(&path).map_err(WorkspaceError::Io)?;
+            if !metadata.is_file() {
+                return Err(WorkspaceError::UnsafePath { path });
+            }
+            let bytes = read_bounded(&path, EXTERNAL_EVIDENCE_MAX_BYTES)?;
+            let actual = sha256_digest(&bytes);
+            if actual != digest {
+                return Err(WorkspaceError::Conflict(
+                    "evidenceDigest does not match evidenceLocator".to_owned(),
+                ));
+            }
+            Ok((Some(locator.to_owned()), Some(digest.to_owned())))
+        }
+        _ => Err(WorkspaceError::ClaimRejected(
+            "evidence locator and digest must be supplied together".to_owned(),
+        )),
+    }
+}
+
+fn external_operation_digest(record: &ExternalOperationRecord) -> String {
+    let mut input = String::from("external-operation\0");
+    for value in [
+        record.operation_id.as_str(),
+        record.task_id.as_str(),
+        record.scope_digest.as_str(),
+        record.receipt_digest.as_str(),
+        record.status.as_str(),
+        record.evidence_locator.as_deref().unwrap_or(""),
+        record.evidence_digest.as_deref().unwrap_or(""),
+        record.recorded_at.as_str(),
+    ] {
+        input.push_str(value);
+        input.push('\0');
+    }
+    sha256_digest(input.as_bytes())
+}
+
+fn with_external_digest(mut record: ExternalOperationRecord) -> ExternalOperationRecord {
+    record.digest = external_operation_digest(&record);
+    record
+}
+
+fn external_history_id(record: &ExternalOperationRecord) -> String {
+    format!(
+        "external-{}",
+        sha256_digest(format!("{}\0{}", record.operation_id, record.digest).as_bytes())
+    )
+}
+
+fn external_operation_json(record: &ExternalOperationRecord) -> String {
+    format!(
+        "{{\"schemaVersion\":\"1.0\",\"operationId\":{},\"taskId\":{},\"scopeDigest\":{},\"receiptDigest\":{},\"status\":{},\"evidenceLocator\":{},\"evidenceDigest\":{},\"recordedAt\":{},\"digest\":{}}}",
+        json_quote(&record.operation_id),
+        json_quote(&record.task_id),
+        json_quote(&record.scope_digest),
+        json_quote(&record.receipt_digest),
+        json_quote(record.status.as_str()),
+        record
+            .evidence_locator
+            .as_deref()
+            .map_or_else(|| "null".to_owned(), json_quote),
+        record
+            .evidence_digest
+            .as_deref()
+            .map_or_else(|| "null".to_owned(), json_quote),
+        json_quote(&record.recorded_at),
+        json_quote(&record.digest),
+    )
+}
+
+fn parse_json_nullable_string(
+    characters: &[char],
+    index: &mut usize,
+) -> Result<Option<String>, WorkspaceError> {
+    if characters.get(*index) == Some(&'n') {
+        for expected in ['n', 'u', 'l', 'l'] {
+            expect_json_char(characters, index, expected)?;
+        }
+        Ok(None)
+    } else {
+        parse_json_string(characters, index).map(Some)
+    }
+}
+
+fn read_external_operation(path: &Path) -> Result<ExternalOperationRecord, WorkspaceError> {
+    let text = read_bounded_text(path, EXTERNAL_OPERATION_MAX_BYTES)?;
+    parse_external_operation(&text)
+}
+
+fn parse_external_operation(text: &str) -> Result<ExternalOperationRecord, WorkspaceError> {
+    let characters: Vec<char> = text.chars().collect();
+    let mut index = 0;
+    skip_json_whitespace(&characters, &mut index);
+    expect_json_char(&characters, &mut index, '{')?;
+    let mut fields: Vec<(String, Option<String>)> = Vec::new();
+    loop {
+        skip_json_whitespace(&characters, &mut index);
+        if characters.get(index) == Some(&'}') {
+            index += 1;
+            break;
+        }
+        let key = parse_json_string(&characters, &mut index)?;
+        if !matches!(
+            key.as_str(),
+            "schemaVersion"
+                | "operationId"
+                | "taskId"
+                | "scopeDigest"
+                | "receiptDigest"
+                | "status"
+                | "evidenceLocator"
+                | "evidenceDigest"
+                | "recordedAt"
+                | "digest"
+        ) || fields.iter().any(|(known, _)| known == &key)
+        {
+            return Err(WorkspaceError::InvalidReceipt(
+                "unknown or duplicate external operation field".to_owned(),
+            ));
+        }
+        skip_json_whitespace(&characters, &mut index);
+        expect_json_char(&characters, &mut index, ':')?;
+        let value = if matches!(key.as_str(), "evidenceLocator" | "evidenceDigest") {
+            parse_json_nullable_string(&characters, &mut index)?
+        } else {
+            Some(parse_json_string(&characters, &mut index)?)
+        };
+        fields.push((key, value));
+        skip_json_whitespace(&characters, &mut index);
+        match characters.get(index) {
+            Some(',') => {
+                index += 1;
+                skip_json_whitespace(&characters, &mut index);
+                if characters.get(index) == Some(&'}') {
+                    return Err(WorkspaceError::InvalidReceipt(
+                        "trailing comma in external operation".to_owned(),
+                    ));
+                }
+            }
+            Some('}') => {
+                index += 1;
+                break;
+            }
+            _ => {
+                return Err(WorkspaceError::InvalidReceipt(
+                    "invalid external operation separator".to_owned(),
+                ));
+            }
+        }
+    }
+    skip_json_whitespace(&characters, &mut index);
+    if index != characters.len() || fields.len() != 10 {
+        return Err(WorkspaceError::InvalidReceipt(
+            "missing external operation field".to_owned(),
+        ));
+    }
+    let get = |name: &str| {
+        fields
+            .iter()
+            .find_map(|(key, value)| (key == name).then_some(value.clone()))
+            .flatten()
+            .ok_or_else(|| WorkspaceError::InvalidReceipt(format!("missing {name}")))
+    };
+    if get("schemaVersion")?.as_str() != "1.0" {
+        return Err(WorkspaceError::InvalidReceipt(
+            "unsupported external operation schemaVersion".to_owned(),
+        ));
+    }
+    let operation_id = get("operationId")?;
+    let task_id = get("taskId")?;
+    let scope_digest = get("scopeDigest")?;
+    let receipt_digest = get("receiptDigest")?;
+    let status_text = get("status")?;
+    let evidence_locator = fields
+        .iter()
+        .find_map(|(key, value)| (key == "evidenceLocator").then_some(value.clone()))
+        .flatten();
+    let evidence_digest = fields
+        .iter()
+        .find_map(|(key, value)| (key == "evidenceDigest").then_some(value.clone()))
+        .flatten();
+    let recorded_at = get("recordedAt")?;
+    let digest = get("digest")?;
+    let status = match status_text.as_str() {
+        "pending" => ExternalOperationStatus::Pending,
+        "confirmed" => ExternalOperationStatus::Confirmed,
+        "failed" => ExternalOperationStatus::Failed,
+        "unknown" => ExternalOperationStatus::Unknown,
+        _ => {
+            return Err(WorkspaceError::InvalidReceipt(
+                "invalid external status".to_owned(),
+            ));
+        }
+    };
+    validate_external_operation_id(&operation_id)?;
+    validate_external_task_id(&task_id)?;
+    validate_sha256(&scope_digest, "scopeDigest")?;
+    validate_sha256(&receipt_digest, "receiptDigest")?;
+    if let Some(locator) = evidence_locator.as_deref() {
+        validate_external_locator(locator)?;
+    }
+    if let Some(value) = &evidence_digest {
+        validate_sha256(value, "evidenceDigest")?;
+    }
+    if evidence_locator.is_some() != evidence_digest.is_some() {
+        return Err(WorkspaceError::InvalidReceipt(
+            "evidence locator/digest nullability mismatch".to_owned(),
+        ));
+    }
+    validate_timestamp(&recorded_at)?;
+    validate_sha256(&digest, "digest")?;
+    reject_secret_fields(&[
+        &operation_id,
+        &task_id,
+        &scope_digest,
+        &receipt_digest,
+        &status_text,
+        &recorded_at,
+    ])?;
+    let record = ExternalOperationRecord {
+        operation_id,
+        task_id,
+        scope_digest,
+        receipt_digest,
+        status,
+        evidence_locator,
+        evidence_digest,
+        recorded_at,
+        digest,
+    };
+    if external_operation_digest(&record) != record.digest {
+        return Err(WorkspaceError::InvalidReceipt(
+            "external operation digest mismatch".to_owned(),
+        ));
+    }
+    Ok(record)
+}
+
+fn check_external_operation_capacity(
+    directory: &Path,
+    target: &Path,
+) -> Result<(), WorkspaceError> {
+    match fs::symlink_metadata(directory) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(WorkspaceError::Io(error)),
+        Ok(_) => ensure_no_reparse(directory)?,
+    }
+    let mut count = 0u64;
+    for entry in fs::read_dir(directory).map_err(WorkspaceError::Io)? {
+        let entry = entry.map_err(WorkspaceError::Io)?;
+        ensure_no_reparse(&entry.path())?;
+        count += 1;
+        if count > EXTERNAL_OPERATION_MAX_FILES {
+            return Err(WorkspaceError::TooLarge {
+                path: directory.to_path_buf(),
+                limit: EXTERNAL_OPERATION_MAX_FILES,
+            });
+        }
+    }
+    if fs::symlink_metadata(target).is_ok() {
+        return Err(WorkspaceError::Conflict(
+            "external operation path collision".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 fn parse_operation_receipt(text: &str) -> Result<OperationReceipt, WorkspaceError> {

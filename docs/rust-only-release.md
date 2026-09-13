@@ -1,6 +1,6 @@
-# Rust-only 0.5.1 stable release
+# Rust-only 0.5.2 stable release
 
-Mission Center 0.5.1 的正式 Plugin front door 是四平台、SHA-256 驗證的
+Mission Center 0.5.2 的正式 Plugin front door 是四平台、SHA-256 驗證的
 Rust CLI。`.codex-plugin/release.json` 是 stable release contract；
 `platform-manifest.json` 必須同時列出 Windows x86_64、Linux x86_64、
 macOS x86_64 與 macOS arm64，缺少任一 artifact 都 fail closed。
@@ -15,8 +15,8 @@ diagnostics，不是正式 Plugin 執行路徑。
 安裝與發布只接受已驗證的 `frozen-package-v1`：
 
 ```text
-mission-center install apply --package <package> --destination <target> --operation-id <id> --platform <platform> --version 0.5.1
-mission-center publish apply --package <package> --destination <target> --operation-id <id> --platform <platform> --version 0.5.1
+mission-center install apply --package <package> --destination <target> --operation-id <id> --platform <platform> --version 0.5.2
+mission-center publish apply --package <package> --destination <target> --operation-id <id> --platform <platform> --version 0.5.2
 ```
 
 每次 mutation 都綁定 operation ID 與 receipt。相同 ID＋相同內容可安全 replay；
@@ -30,7 +30,7 @@ mission-center install rollback --receipt <receipt.json>
 Marketplace registration 同樣是本機、receipt-bound transaction：
 
 ```text
-mission-center install register apply --plugin-root <marketplace>/plugins/mission-center --marketplace-root <marketplace> --operation-id <id> --version 0.5.1
+mission-center install register apply --plugin-root <marketplace>/plugins/mission-center --marketplace-root <marketplace> --operation-id <id> --version 0.5.2
 mission-center install register reconcile --marketplace-root <marketplace>
 mission-center install register rollback --receipt <receipt.json>
 ```
@@ -48,7 +48,7 @@ POSIX Hook 呼叫 `bin/mission-center`；Windows Hook 呼叫
 
 ## Stable promotion gate
 
-main 上的 `0.5.1` 會啟動完整 stable gate：歷史 MC-001～MC-060 evidence、四平台
+main 上的 `0.5.2` 會啟動完整 stable gate：歷史 MC-001～MC-060 evidence、四平台
 真實 binary、checksum、frozen package、Rust verifier、native registration、install、
 publish、reconcile、Python-runtime exclusion、SBOM、license notice 與 rollback contract
 必須全部通過。未知歷史人工證據保留為 bounded `unknown`，不得冒充 pass。

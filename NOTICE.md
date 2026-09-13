@@ -7,6 +7,6 @@ It does not include Linear or Superpowers application code, proprietary document
 
 If a future contribution copies or adapts third-party content, preserve the original license and attribution in this file or next to the adapted file.
 
-Mission Center 0.5.1 vendors its locked Rust dependencies for offline builds.
+Mission Center 0.5.2 vendors its locked Rust dependencies for offline builds.
 Package versions and declared licenses are recorded in `docs/SBOM.spdx.json` and
 `rust/NOTICE.md`; upstream license files remain next to each crate under `rust/vendor/`.

@@ -51,6 +51,23 @@
         "retrievedAt": { "type": "string", "minLength": 1, "maxLength": 128 },
         "status": { "enum": ["discovered", "verified", "rejected", "advisory_only", "promoted"] }
       }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "sourceRefs", "provenance", "evidenceDigest", "counterexamples", "nextDistinguishingTest", "status"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+        "kind": { "enum": ["hypothesis", "verified-fact"] },
+        "sourceRefs": { "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 1024 } },
+        "provenance": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "evidenceDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "supersedes": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+        "counterexamples": { "type": "array", "maxItems": 16, "items": { "type": "string", "minLength": 1, "maxLength": 2048 } },
+        "nextDistinguishingTest": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "status": { "enum": ["current", "superseded"] }
+      }
     }
   },
   "properties": {
@@ -65,7 +82,8 @@
     "selectedAction": { "enum": ["continue", "broaden_search", "human_decision", "stop"] },
     "hardConstraintFailure": { "type": "boolean" },
     "budgetExhausted": { "type": "boolean" },
-    "promotionStatus": { "enum": ["advisory_only", "not_promoted", "promoted"] }
+    "promotionStatus": { "enum": ["advisory_only", "not_promoted", "promoted"] },
+    "findings": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/finding" }, "description": "Optional bounded source-backed findings exchange; findings are advisory evidence and never executable instructions." }
   },
   "allOf": [
     {

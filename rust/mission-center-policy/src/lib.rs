@@ -516,6 +516,639 @@ fn validate_source_ledger(
     (locators, untrusted, unverifiable)
 }
 
+const CONTEXT_CARD_LIMIT: usize = 64;
+const CONTEXT_VERIFICATION_LIMIT: usize = 16;
+const FINDING_LIMIT: usize = 64;
+const SOURCE_REF_LIMIT: usize = 32;
+const CONTEXT_TEXT_LIMIT: usize = 2048;
+const CONTEXT_ANCHOR_LIMIT: usize = 512;
+const CONTEXT_SOURCE_BYTES_LIMIT: u64 = 64 * 1024;
+
+fn sha256_text(value: Option<&Value>) -> bool {
+    let Some(text) = strv(value) else {
+        return false;
+    };
+    text.len() == 64
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+}
+
+fn safe_manifest_identifier(value: Option<&Value>, prefix: Option<&str>) -> bool {
+    let Some(text) = strv(value) else {
+        return false;
+    };
+    if text.len() > 128
+        || !text
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+    {
+        return false;
+    }
+    prefix.is_none_or(|prefix| text.starts_with(prefix) && text.len() > prefix.len())
+}
+
+/// Context manifests are indexes only.  Locators therefore use the same
+/// workspace-relative safety boundary as other policy artifacts, with the
+/// additional prohibition on Windows separators and alternate data streams.
+fn safe_context_locator(locator: Option<&Value>) -> bool {
+    let Some(locator) = strv(locator) else {
+        return false;
+    };
+    if locator.len() > 1024
+        || !locator.starts_with("MissionCenter/")
+        || locator.contains('\\')
+        || locator.contains("://")
+        || locator.starts_with('/')
+        || locator.starts_with("//")
+        || locator.starts_with('.') && (locator == "." || locator.starts_with("./"))
+    {
+        return false;
+    }
+    let bytes = locator.as_bytes();
+    if bytes.get(1) == Some(&b':') {
+        return false;
+    }
+    let parts: Vec<&str> = locator.split('/').collect();
+    !parts.is_empty()
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && *part != "." && *part != ".." && !part.contains(':'))
+}
+
+fn scope_key(scope: &Map<String, Value>) -> String {
+    [
+        "taskId",
+        "component",
+        "phase",
+        "operation",
+        "version",
+        "scopeDigest",
+    ]
+    .iter()
+    .map(|field| scope.get(*field).and_then(Value::as_str).unwrap_or(""))
+    .collect::<Vec<_>>()
+    .join("\u{1f}")
+}
+
+fn validate_context_scope(
+    scope: Option<&Value>,
+    errors: &mut Vec<String>,
+    index: usize,
+) -> Option<String> {
+    let Some(scope) = obj(scope.unwrap_or(&Value::Null)) else {
+        errors.push(format!("cards[{index}].scope must be an object"));
+        return None;
+    };
+    let fields = [
+        "taskId",
+        "component",
+        "phase",
+        "operation",
+        "version",
+        "scopeDigest",
+    ];
+    push_unknown(errors, scope, &fields);
+    for field in fields
+        .iter()
+        .copied()
+        .filter(|field| *field != "scopeDigest")
+    {
+        if scope.get(field).is_some()
+            && strv(scope.get(field)).is_none_or(|value| value.len() > CONTEXT_TEXT_LIMIT)
+        {
+            errors.push(format!(
+                "cards[{index}].scope.{field} must be bounded non-empty text"
+            ));
+        }
+    }
+    if scope.get("scopeDigest").is_some() && !sha256_text(scope.get("scopeDigest")) {
+        errors.push(format!(
+            "cards[{index}].scope.scopeDigest must be a lowercase SHA-256 digest"
+        ));
+    }
+    Some(scope_key(scope))
+}
+
+fn validate_context_verification(value: Option<&Value>, errors: &mut Vec<String>, index: usize) {
+    let Some(items) = arr(value) else {
+        errors.push(format!(
+            "cards[{index}].requiredVerification must be a list"
+        ));
+        return;
+    };
+    if items.len() > CONTEXT_VERIFICATION_LIMIT {
+        errors.push(format!(
+            "cards[{index}].requiredVerification may contain at most {CONTEXT_VERIFICATION_LIMIT} entries"
+        ));
+    }
+    for (verification_index, item) in items.iter().enumerate() {
+        if strv(Some(item)).is_none_or(|text| text.len() > CONTEXT_TEXT_LIMIT) {
+            errors.push(format!(
+                "cards[{index}].requiredVerification[{verification_index}] must be bounded non-empty text"
+            ));
+        }
+    }
+}
+
+fn graph_has_cycle(graph: &HashMap<String, String>) -> bool {
+    fn visit(
+        node: &str,
+        graph: &HashMap<String, String>,
+        visiting: &mut HashSet<String>,
+        done: &mut HashSet<String>,
+    ) -> bool {
+        if visiting.contains(node) {
+            return true;
+        }
+        if done.contains(node) {
+            return false;
+        }
+        visiting.insert(node.to_owned());
+        let cycle = graph
+            .get(node)
+            .is_some_and(|next| visit(next, graph, visiting, done));
+        visiting.remove(node);
+        done.insert(node.to_owned());
+        cycle
+    }
+    let mut visiting = HashSet::new();
+    let mut done = HashSet::new();
+    graph
+        .keys()
+        .any(|node| visit(node, graph, &mut visiting, &mut done))
+}
+
+/// Validate the bounded, index-only contextual recall manifest.
+pub fn validate_context_manifest(manifest: &Value, workspace: Option<&Path>) -> Vec<String> {
+    let Some(root) = obj(manifest) else {
+        return vec!["context manifest must be an object".to_owned()];
+    };
+    let mut errors = scan_forbidden_content(manifest);
+    push_unknown(
+        &mut errors,
+        root,
+        &["schemaVersion", "artifactType", "manifestId", "cards"],
+    );
+    if strv(root.get("schemaVersion")) != Some(POLICY_SCHEMA_VERSION) {
+        errors.push("schemaVersion must be 1.0".to_owned());
+    }
+    if strv(root.get("artifactType")) != Some("context-manifest") {
+        errors.push("artifactType must be context-manifest".to_owned());
+    }
+    if root.get("manifestId").is_some() && !safe_manifest_identifier(root.get("manifestId"), None) {
+        errors.push("manifestId must be safe bounded text".to_owned());
+    }
+    let Some(cards) = arr(root.get("cards")) else {
+        errors.push("cards must be a list".to_owned());
+        return errors;
+    };
+    if cards.is_empty() {
+        errors.push("cards must be a non-empty list".to_owned());
+    }
+    if cards.len() > CONTEXT_CARD_LIMIT {
+        errors.push(format!(
+            "cards may contain at most {CONTEXT_CARD_LIMIT} entries"
+        ));
+    }
+    let mut ids = HashSet::new();
+    let mut source_anchors = HashSet::new();
+    let mut graph = HashMap::new();
+    let mut active = HashSet::new();
+    let mut scope_by_id = HashMap::new();
+    for (index, value) in cards.iter().enumerate() {
+        let Some(card) = obj(value) else {
+            errors.push(format!("cards[{index}] must be an object"));
+            continue;
+        };
+        push_unknown(
+            &mut errors,
+            card,
+            &[
+                "id",
+                "context",
+                "reason",
+                "scope",
+                "source",
+                "validity",
+                "requiredVerification",
+                "supersedes",
+            ],
+        );
+        let id = strv(card.get("id"));
+        if !safe_manifest_identifier(card.get("id"), Some("CTX-")) {
+            errors.push(format!("cards[{index}].id must use safe CTX- format"));
+        } else if !ids.insert(id.unwrap().to_owned()) {
+            errors.push(format!("cards[{index}].id must be unique"));
+        }
+        let context = strv(card.get("context"));
+        if !matches!(
+            context,
+            Some(
+                "resume"
+                    | "enter-review"
+                    | "before-deploy"
+                    | "before-migration"
+                    | "after-repeated-failure"
+            )
+        ) {
+            errors.push(format!("cards[{index}].context is invalid"));
+        }
+        if card.get("reason").is_some()
+            && strv(card.get("reason")).is_none_or(|text| text.len() > CONTEXT_TEXT_LIMIT)
+        {
+            errors.push(format!(
+                "cards[{index}].reason must be bounded non-empty text"
+            ));
+        }
+        let scope = validate_context_scope(card.get("scope"), &mut errors, index);
+        if let Some(scope) = scope.as_ref() {
+            if let Some(context) = context {
+                let key = format!("{}\u{1f}{scope}", context);
+                if strv(card.get("validity")) == Some("active") && !active.insert(key) {
+                    errors.push(format!(
+                        "cards[{index}] conflicts with another active card in the same scope"
+                    ));
+                }
+            }
+            if let Some(id) = id {
+                scope_by_id.insert(id.to_owned(), scope.clone());
+            }
+        }
+        let Some(source) = obj(card.get("source").unwrap_or(&Value::Null)) else {
+            errors.push(format!("cards[{index}].source must be an object"));
+            continue;
+        };
+        push_unknown(&mut errors, source, &["locator", "anchor", "digest"]);
+        for field in ["locator", "anchor", "digest"] {
+            if source.get(field).is_none() {
+                errors.push(format!("cards[{index}].source.{field} is required"));
+            }
+        }
+        if !safe_context_locator(source.get("locator")) {
+            errors.push(format!(
+                "cards[{index}].source.locator must be a safe relative locator"
+            ));
+        }
+        if strv(source.get("anchor")).is_none_or(|text| {
+            text.len() > CONTEXT_ANCHOR_LIMIT || text.chars().any(char::is_control)
+        }) {
+            errors.push(format!(
+                "cards[{index}].source.anchor must be bounded non-empty text"
+            ));
+        }
+        if !sha256_text(source.get("digest")) {
+            errors.push(format!(
+                "cards[{index}].source.digest must be a lowercase SHA-256 digest"
+            ));
+        }
+        if let (Some(locator), Some(anchor)) =
+            (strv(source.get("locator")), strv(source.get("anchor")))
+        {
+            if !source_anchors.insert((locator.to_owned(), anchor.to_owned())) {
+                errors.push(format!(
+                    "cards[{index}] duplicates source locator and anchor"
+                ));
+            }
+            if let Some(workspace) = workspace
+                && let Some(reason) = relative_locator(locator, Some(workspace), true)
+            {
+                errors.push(format!("cards[{index}].source.locator {reason}"));
+            } else if let Some(workspace) = workspace {
+                let root = mission_center_workspace_path(workspace);
+                let path = root.join(locator);
+                let mut current = root.clone();
+                let has_symlink = Path::new(locator)
+                    .components()
+                    .filter_map(|component| match component {
+                        std::path::Component::Normal(part) => Some(part),
+                        _ => None,
+                    })
+                    .any(|part| {
+                        current.push(part);
+                        std::fs::symlink_metadata(&current)
+                            .is_ok_and(|metadata| metadata.file_type().is_symlink())
+                    });
+                if has_symlink {
+                    errors.push(format!(
+                        "cards[{index}].source.locator source path contains a symlink"
+                    ));
+                } else {
+                    match std::fs::metadata(&path) {
+                        Ok(metadata) if metadata.len() > CONTEXT_SOURCE_BYTES_LIMIT => {
+                            errors.push(format!(
+                                "cards[{index}].source exceeds {CONTEXT_SOURCE_BYTES_LIMIT} bytes"
+                            ))
+                        }
+                        Ok(_) => match std::fs::read(&path) {
+                            Ok(bytes) => {
+                                if sha256_text(source.get("digest"))
+                                    && mission_center_core::sha256_digest(&bytes)
+                                        != source
+                                            .get("digest")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or("")
+                                {
+                                    errors.push(format!(
+                                        "cards[{index}].source.digest does not match source"
+                                    ));
+                                }
+                            }
+                            Err(_) => {
+                                errors.push(format!("cards[{index}].source.locator cannot be read"))
+                            }
+                        },
+                        Err(_) => {}
+                    }
+                }
+            }
+        }
+        let validity = strv(card.get("validity"));
+        if !matches!(
+            validity,
+            Some("active" | "superseded" | "incompatible" | "recheck-required")
+        ) {
+            errors.push(format!("cards[{index}].validity is invalid"));
+        }
+        validate_context_verification(card.get("requiredVerification"), &mut errors, index);
+        if let Some(target) = card.get("supersedes") {
+            if !safe_manifest_identifier(Some(target), Some("CTX-")) {
+                errors.push(format!(
+                    "cards[{index}].supersedes must reference a safe CTX- id"
+                ));
+            } else if let (Some(id), Some(target)) = (id, strv(Some(target))) {
+                graph.insert(id.to_owned(), target.to_owned());
+            }
+        }
+    }
+    for (id, target) in &graph {
+        if !ids.contains(target) {
+            errors.push(format!("cards[{id}] supersedes missing card: {target}"));
+        } else if scope_by_id.get(id) != scope_by_id.get(target) {
+            errors.push(format!(
+                "cards[{id}] supersedes a card from a different scope"
+            ));
+        }
+    }
+    if graph_has_cycle(&graph) {
+        errors.push("cards supersedes graph contains a cycle".to_owned());
+    }
+    errors
+}
+
+fn timestamp_epoch(text: &str) -> Option<i64> {
+    if !iso_timestamp(Some(&Value::String(text.to_owned()))) {
+        return None;
+    }
+    let year = text.get(0..4)?.parse::<i64>().ok()?;
+    let month = text.get(5..7)?.parse::<i64>().ok()?;
+    let day = text.get(8..10)?.parse::<i64>().ok()?;
+    let hour = text.get(11..13)?.parse::<i64>().ok()?;
+    let minute = text.get(14..16)?.parse::<i64>().ok()?;
+    let second = text.get(17..19)?.parse::<i64>().ok()?;
+    // Howard Hinnant's proleptic Gregorian conversion, kept local to avoid a
+    // date/time dependency in this zero-dependency policy crate.
+    let adjusted_year = year - i64::from(month <= 2);
+    let era = (if adjusted_year >= 0 {
+        adjusted_year
+    } else {
+        adjusted_year - 399
+    }) / 400;
+    let year_of_era = adjusted_year - era * 400;
+    let month_prime = month + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * month_prime + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    let mut offset_seconds = 0i64;
+    let timezone_start = text.find('Z').map(|_| text.len() - 1).or_else(|| {
+        text.rfind('+')
+            .or_else(|| text.get(19..)?.rfind('-').map(|position| position + 19))
+    });
+    if let Some(start) = timezone_start
+        && text.as_bytes().get(start) != Some(&b'Z')
+    {
+        let offset_hour = text.get(start + 1..start + 3)?.parse::<i64>().ok()?;
+        let offset_minute = text.get(start + 4..start + 6)?.parse::<i64>().ok()?;
+        let sign = if text.as_bytes().get(start) == Some(&b'-') {
+            -1
+        } else {
+            1
+        };
+        offset_seconds = sign * (offset_hour * 3_600 + offset_minute * 60);
+    }
+    Some(days * 86_400 + hour * 3_600 + minute * 60 + second - offset_seconds)
+}
+
+fn finding_is_expired(value: Option<&Value>) -> bool {
+    let Some(text) = strv(value) else {
+        return false;
+    };
+    let Some(expiry) = timestamp_epoch(text) else {
+        return false;
+    };
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .is_ok_and(|now| expiry <= now.as_secs() as i64)
+}
+
+fn validate_research_findings(
+    entries: Option<&Value>,
+    source_ledger: Option<&Value>,
+    source_locators: &HashSet<String>,
+    unverifiable_local: &HashSet<String>,
+    errors: &mut Vec<String>,
+) {
+    let Some(findings) = entries else {
+        return;
+    };
+    let Some(findings) = arr(Some(findings)) else {
+        errors.push("findings must be a list".to_owned());
+        return;
+    };
+    if findings.len() > FINDING_LIMIT {
+        errors.push(format!(
+            "findings may contain at most {FINDING_LIMIT} entries"
+        ));
+    }
+    let mut source_trust: HashMap<String, (String, bool)> = HashMap::new();
+    if let Some(sources) = arr(source_ledger) {
+        for source in sources {
+            if let Some(source) = obj(source)
+                && let Some(locator) = strv(source.get("locator"))
+            {
+                let source_type = strv(source.get("sourceType"))
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                source_trust.insert(
+                    locator.to_owned(),
+                    (
+                        strv(source.get("trustStatus")).unwrap_or("").to_owned(),
+                        ["local", "repo", "workspace", "fixture"].contains(&source_type.as_str()),
+                    ),
+                );
+            }
+        }
+    }
+    let mut ids = HashSet::new();
+    let mut statuses = HashMap::new();
+    let mut graph = HashMap::new();
+    for (index, value) in findings.iter().enumerate() {
+        let Some(finding) = obj(value) else {
+            errors.push(format!("findings[{index}] must be an object"));
+            continue;
+        };
+        push_unknown(
+            errors,
+            finding,
+            &[
+                "id",
+                "kind",
+                "sourceRefs",
+                "provenance",
+                "evidenceDigest",
+                "expiresAt",
+                "supersedes",
+                "counterexamples",
+                "nextDistinguishingTest",
+                "status",
+            ],
+        );
+        let id = strv(finding.get("id"));
+        if !safe_manifest_identifier(finding.get("id"), None) {
+            errors.push(format!("findings[{index}].id must be safe bounded text"));
+        } else if !ids.insert(id.unwrap().to_owned()) {
+            errors.push(format!("findings[{index}].id must be unique"));
+        }
+        let kind = strv(finding.get("kind"));
+        if !matches!(kind, Some("hypothesis" | "verified-fact")) {
+            errors.push(format!("findings[{index}].kind is invalid"));
+        }
+        let Some(refs) = arr(finding.get("sourceRefs")) else {
+            errors.push(format!("findings[{index}].sourceRefs must be a list"));
+            continue;
+        };
+        if refs.is_empty() {
+            errors.push(format!("findings[{index}].sourceRefs must not be empty"));
+        }
+        if refs.len() > SOURCE_REF_LIMIT {
+            errors.push(format!(
+                "findings[{index}].sourceRefs may contain at most {SOURCE_REF_LIMIT} entries"
+            ));
+        }
+        let mut seen_refs = HashSet::new();
+        let mut has_untrusted = false;
+        let mut has_trusted_local = false;
+        for (ref_index, reference) in refs.iter().enumerate() {
+            let Some(reference) = strv(Some(reference)) else {
+                errors.push(format!(
+                    "findings[{index}].sourceRefs[{ref_index}] must be non-empty text"
+                ));
+                continue;
+            };
+            if reference.len() > 1024 || !seen_refs.insert(reference.to_owned()) {
+                errors.push(format!(
+                    "findings[{index}].sourceRefs contains an invalid or duplicate reference"
+                ));
+            }
+            if !source_locators.contains(reference) {
+                errors.push(format!(
+                    "findings[{index}] references unknown source locator: {reference}"
+                ));
+            }
+            if let Some((trust, local)) = source_trust.get(reference) {
+                has_untrusted |= trust == "untrusted_external_evidence";
+                has_trusted_local |=
+                    trust == "trusted_local" && *local && !unverifiable_local.contains(reference);
+            }
+        }
+        if strv(finding.get("provenance")).is_none_or(|text| text.len() > CONTEXT_TEXT_LIMIT) {
+            errors.push(format!(
+                "findings[{index}].provenance must be bounded non-empty text"
+            ));
+        }
+        if !sha256_text(finding.get("evidenceDigest")) {
+            errors.push(format!(
+                "findings[{index}].evidenceDigest must be a lowercase SHA-256 digest"
+            ));
+        }
+        if let Some(expires) = finding.get("expiresAt")
+            && !iso_timestamp(Some(expires))
+        {
+            errors.push(format!(
+                "findings[{index}].expiresAt must be a timezone-aware ISO timestamp"
+            ));
+        }
+        let Some(counterexamples) = arr(finding.get("counterexamples")) else {
+            errors.push(format!("findings[{index}].counterexamples must be a list"));
+            continue;
+        };
+        if counterexamples.len() > 16 {
+            errors.push(format!(
+                "findings[{index}].counterexamples may contain at most 16 entries"
+            ));
+        }
+        for (counterexample_index, counterexample) in counterexamples.iter().enumerate() {
+            if strv(Some(counterexample)).is_none_or(|text| text.len() > CONTEXT_TEXT_LIMIT) {
+                errors.push(format!("findings[{index}].counterexamples[{counterexample_index}] must be bounded non-empty text"));
+            }
+        }
+        if strv(finding.get("nextDistinguishingTest"))
+            .is_none_or(|text| text.len() > CONTEXT_TEXT_LIMIT)
+        {
+            errors.push(format!(
+                "findings[{index}].nextDistinguishingTest must be bounded non-empty text"
+            ));
+        }
+        let status = strv(finding.get("status"));
+        if !matches!(status, Some("current" | "superseded")) {
+            errors.push(format!("findings[{index}].status is invalid"));
+        }
+        if let Some(id) = id {
+            statuses.insert(id.to_owned(), status.unwrap_or("").to_owned());
+        }
+        if status == Some("current") {
+            if has_untrusted {
+                errors.push(format!(
+                    "findings[{index}] with untrusted external evidence is advisory-only"
+                ));
+            }
+            if finding_is_expired(finding.get("expiresAt")) {
+                errors.push(format!(
+                    "findings[{index}] expired findings cannot be current"
+                ));
+            }
+        }
+        if kind == Some("verified-fact") && (!has_trusted_local || has_untrusted) {
+            errors.push(format!(
+                "findings[{index}] verified-fact requires trusted local evidence"
+            ));
+        }
+        if let Some(target) = finding.get("supersedes") {
+            if !safe_manifest_identifier(Some(target), None) {
+                errors.push(format!(
+                    "findings[{index}].supersedes must reference a safe finding id"
+                ));
+            } else if let (Some(id), Some(target)) = (id, strv(Some(target))) {
+                graph.insert(id.to_owned(), target.to_owned());
+            }
+        }
+    }
+    for (id, target) in &graph {
+        match statuses.get(target) {
+            None => errors.push(format!(
+                "findings[{id}] supersedes missing finding: {target}"
+            )),
+            Some(status) if status != "superseded" => errors.push(format!(
+                "findings[{id}] supersedes a finding that is not superseded: {target}"
+            )),
+            _ => {}
+        }
+    }
+    if graph_has_cycle(&graph) {
+        errors.push("findings supersedes graph contains a cycle".to_owned());
+    }
+}
+
 /// Python research_portfolio 的 bounded parity validator。
 #[allow(clippy::collapsible_if)]
 pub fn validate_research_portfolio(record: &Value, workspace: Option<&Path>) -> Vec<String> {
@@ -536,6 +1169,7 @@ pub fn validate_research_portfolio(record: &Value, workspace: Option<&Path>) -> 
         "hardConstraintFailure",
         "budgetExhausted",
         "promotionStatus",
+        "findings",
     ];
     push_unknown(&mut errors, record, &allowed);
     if strv(record.get("schemaVersion")) != Some(POLICY_SCHEMA_VERSION) {
@@ -787,6 +1421,13 @@ pub fn validate_research_portfolio(record: &Value, workspace: Option<&Path>) -> 
             );
         }
     }
+    validate_research_findings(
+        record.get("findings"),
+        record.get("sourceLedger"),
+        &locators,
+        &unverifiable,
+        &mut errors,
+    );
     errors
 }
 

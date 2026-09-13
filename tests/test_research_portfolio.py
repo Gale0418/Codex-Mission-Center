@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import sys
 import unittest
 from pathlib import Path
@@ -73,7 +74,58 @@ def portfolio(task_id="T1"):
     }
 
 
+def finding(identifier="finding-1", *, kind="hypothesis", refs=None, status="current"):
+    return {
+        "id": identifier,
+        "kind": kind,
+        "sourceRefs": ["MissionCenter/tasks.md"] if refs is None else refs,
+        "provenance": "bounded fixture",
+        "evidenceDigest": hashlib.sha256(b"fixture").hexdigest(),
+        "counterexamples": [],
+        "nextDistinguishingTest": "run the smallest observable test",
+        "status": status,
+    }
+
+
 class ResearchPortfolioTests(unittest.TestCase):
+    def test_findings_are_optional_and_bounded_source_backed(self):
+        with workspace_tempdir("research-findings-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            record = portfolio()
+            record["sourceLedger"] = [source(trust="trusted_local")]
+            record["findings"] = [finding(kind="verified-fact")]
+            self.assertEqual(validate_research_portfolio(record, workspace), [])
+
+            duplicate = copy.deepcopy(record)
+            duplicate["findings"].append(copy.deepcopy(duplicate["findings"][0]))
+            self.assertTrue(any("unique" in error for error in validate_research_portfolio(duplicate, workspace)))
+
+    def test_findings_reject_untrusted_fact_expiry_and_bad_supersession(self):
+        record = portfolio()
+        record["sourceLedger"] = [source("https://example.invalid", "untrusted_external_evidence", "external_url", "advisory_only")]
+        record["findings"] = [finding(kind="verified-fact", refs=["https://example.invalid"])]
+        errors = validate_research_portfolio(record)
+        self.assertTrue(any("advisory-only" in error for error in errors))
+        self.assertTrue(any("trusted local evidence" in error for error in errors))
+
+        expired = portfolio()
+        expired["findings"] = [dict(finding(), expiresAt="2000-01-01T00:00:00Z")]
+        self.assertTrue(any("expired" in error for error in validate_research_portfolio(expired)))
+
+        chain = portfolio()
+        chain["findings"] = [finding("new"), dict(finding("old", status="current")),]
+        chain["findings"][0]["supersedes"] = "old"
+        self.assertTrue(any("not superseded" in error for error in validate_research_portfolio(chain)))
+
+    def test_verified_fact_requires_positively_trusted_local_source(self):
+        with workspace_tempdir("research-findings-trust-") as temporary:
+            workspace = make_workspace(Path(temporary))
+            record = portfolio()
+            record["sourceLedger"] = [source(trust="unverified")]
+            record["findings"] = [finding(kind="verified-fact")]
+            errors = validate_research_portfolio(record, workspace)
+            self.assertTrue(any("trusted local evidence" in error for error in errors))
+
     def test_three_hypothesis_kinds_and_default_allocation_validate(self):
         with workspace_tempdir("research-portfolio-") as temporary:
             workspace = make_workspace(Path(temporary))

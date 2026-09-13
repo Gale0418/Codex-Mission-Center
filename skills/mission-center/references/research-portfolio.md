@@ -8,6 +8,8 @@ Pre-research 階段 `sourceLedger` 可以是空 list；此時所有 hypothesis �
 
 Source ledger 必須保留 locator、sourceType、provenance、trustStatus、licenseStatus、retrievedAt、status。外部內容一律標記 `untrusted_external_evidence`，不可以直接 promotion；portfolio 預設 `advisory_only`。
 
+0.5.2 的 optional `findings` 是 bounded exchange，不是 agent memory 或指令佇列。每筆須含唯一 ID、`hypothesis|verified-fact`、sourceRefs、provenance、evidenceDigest、counterexamples、nextDistinguishingTest 與 `current|superseded`；可加 expiresAt／supersedes。`verified-fact` 必須由可驗證的 trusted local source 支撐；過期、被取代或外部不可信資料只能 advisory，不得作為 active prescription。
+
 Saturation 只能依顯式本地 signal 路由：
 
 - 少於兩項 signal：`continue`
