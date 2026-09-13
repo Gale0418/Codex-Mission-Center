@@ -3,7 +3,7 @@
 - Schema: 1.0
 - Cycle: v0.5.2-release-candidate
 - Closed at: 2026-09-13T23:55:00+08:00
-- Source fingerprint: aa97be4ac7e5614293312102d17d06fe178840d54346775a41f845f72d34d3c0
+- Source fingerprint: ba5cdc8589a4f00a599d6e936ff251194556d3de0514e6a89eb2f86d66815cc6
 - Tasks: 78
 - 摘要: 0.5.2 本機驗證與審查完成，等待 GitHub 四平台 gate 與 main 收斂
 - 已完成: MC-071
