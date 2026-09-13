@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
 sys.path.insert(0, str(TOOLS))
-from bounded_process import bounded_process_supported, run_bounded  # noqa: E402
+from bounded_process import OutputLimitError, bounded_process_supported, run_bounded  # noqa: E402
 from verify_upgrade_052 import (  # noqa: E402
     check_status,
     collect,
@@ -120,11 +120,11 @@ class BoundedProcessTests(unittest.TestCase):
         self.assertEqual(self.run_python("pass", limit=0), (0, b"", b""))
 
     def test_stdout_overflow_is_stopped(self):
-        with self.assertRaisesRegex(RuntimeError, "stdout exceeded"):
+        with self.assertRaisesRegex(OutputLimitError, "stdout exceeded"):
             self.run_python("import os\nwhile True: os.write(1,b'x'*8192)", limit=256)
 
     def test_stderr_overflow_is_stopped(self):
-        with self.assertRaisesRegex(RuntimeError, "stderr exceeded"):
+        with self.assertRaisesRegex(OutputLimitError, "stderr exceeded"):
             self.run_python("import os\nwhile True: os.write(2,b'x'*8192)", limit=256)
 
     def test_both_streams_cannot_deadlock(self):

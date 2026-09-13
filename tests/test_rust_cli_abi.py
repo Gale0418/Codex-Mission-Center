@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests import native_binary_matches_host
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "rust" / "mission-center-cli" / "schemas" / "cli-envelope.schema.json"
@@ -16,15 +18,57 @@ SCHEMA_PATH = ROOT / "rust" / "mission-center-cli" / "schemas" / "cli-envelope.s
 
 def _binary() -> Path | None:
     configured = os.environ.get("MISSION_CENTER_RUST_BIN")
-    if configured and Path(configured).is_file():
+    if configured and native_binary_matches_host(Path(configured)):
         return Path(configured)
     for candidate in (
         ROOT / "rust" / "target" / "debug" / "mission-center.exe",
         ROOT / "rust" / "target" / "debug" / "mission-center",
     ):
-        if candidate.is_file():
+        if native_binary_matches_host(candidate):
             return candidate
     return None
+
+
+class NativeBinaryMagicTests(unittest.TestCase):
+    def test_selector_rejects_cross_platform_binary_magic(self):
+        with tempfile.TemporaryDirectory(prefix="mission-center-binary-magic-") as temporary:
+            root = Path(temporary)
+            pe = bytearray(128)
+            pe[:2] = b"MZ"
+            pe[0x3C:0x40] = (64).to_bytes(4, "little")
+            pe[64:68] = b"PE\0\0"
+            pe[68:70] = (0x8664).to_bytes(2, "little")
+            windows = root / "mission-center.exe"
+            windows.write_bytes(pe)
+            elf = bytearray(128)
+            elf[:6] = b"\x7fELF\x02\x01"
+            elf[18:20] = (62).to_bytes(2, "little")
+            linux = root / "mission-center"
+            linux.write_bytes(elf)
+            macho = bytearray(128)
+            macho[:4] = b"\xcf\xfa\xed\xfe"
+            macho[4:8] = (0x01000007).to_bytes(4, "little")
+            macos = root / "mission-center-macos"
+            macos.write_bytes(macho)
+
+            fat = bytearray(8 + 40)
+            fat[:4] = b"\xca\xfe\xba\xbe"
+            fat[4:8] = (2).to_bytes(4, "big")
+            fat[8:12] = (0x01000007).to_bytes(4, "big")
+            fat[28:32] = (0x0100000C).to_bytes(4, "big")
+            universal = root / "mission-center-universal"
+            universal.write_bytes(fat)
+
+            self.assertTrue(native_binary_matches_host(windows, "win32", "x86_64"))
+            self.assertFalse(native_binary_matches_host(windows, "win32", "aarch64"))
+            self.assertFalse(native_binary_matches_host(linux, "win32", "x86_64"))
+            self.assertTrue(native_binary_matches_host(linux, "linux", "x86_64"))
+            self.assertFalse(native_binary_matches_host(linux, "linux", "aarch64"))
+            self.assertFalse(native_binary_matches_host(windows, "linux", "x86_64"))
+            self.assertTrue(native_binary_matches_host(macos, "darwin", "x86_64"))
+            self.assertFalse(native_binary_matches_host(macos, "darwin", "aarch64"))
+            self.assertTrue(native_binary_matches_host(universal, "darwin", "x86_64"))
+            self.assertTrue(native_binary_matches_host(universal, "darwin", "aarch64"))
 
 
 @unittest.skipUnless(_binary() is not None, "Rust CLI binary unavailable")

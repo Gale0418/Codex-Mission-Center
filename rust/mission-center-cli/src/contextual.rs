@@ -59,15 +59,18 @@ fn status_rank(status: &str) -> u8 {
 
 fn bounded_result(mut result: Value, max_bytes: usize) -> Result<Value, String> {
     loop {
-        let mut encoded = serde_json::to_vec(&result).map_err(|error| error.to_string())?;
-        if let Some(object) = result.as_object_mut() {
+        for _ in 0..4 {
+            let encoded = serde_json::to_vec(&result).map_err(|error| error.to_string())?;
+            let Some(object) = result.as_object_mut() else {
+                break;
+            };
+            if object.get("bytes").and_then(Value::as_u64) == Some(encoded.len() as u64) {
+                break;
+            }
             object.insert("bytes".to_owned(), Value::from(encoded.len() as u64));
         }
-        encoded = serde_json::to_vec(&result).map_err(|error| error.to_string())?;
+        let encoded = serde_json::to_vec(&result).map_err(|error| error.to_string())?;
         if encoded.len() <= max_bytes {
-            if let Some(object) = result.as_object_mut() {
-                object.insert("bytes".to_owned(), Value::from(encoded.len() as u64));
-            }
             return Ok(result);
         }
         let cards = result
@@ -263,7 +266,8 @@ pub fn preflight(
 
 #[cfg(test)]
 mod tests {
-    use super::anchor_excerpt;
+    use super::{CONTEXT_MAX_OUTPUT_BYTES, anchor_excerpt, bounded_result};
+    use serde_json::{Value, json};
 
     #[test]
     fn heading_excerpt_stops_at_same_level() {
@@ -272,5 +276,21 @@ mod tests {
             anchor_excerpt(source, "## Target").as_deref(),
             Some("## Target\nkeep\n### Child\nkeep child")
         );
+    }
+
+    #[test]
+    fn bounded_result_bytes_converge_across_number_width_boundaries() {
+        for payload_len in 0..512 {
+            let result = bounded_result(
+                json!({"payload":"x".repeat(payload_len),"cards":[],"bytes":0}),
+                CONTEXT_MAX_OUTPUT_BYTES,
+            )
+            .expect("bounded result");
+            let encoded = serde_json::to_vec(&result).expect("encoded result");
+            assert_eq!(
+                result.get("bytes").and_then(Value::as_u64),
+                Some(encoded.len() as u64)
+            );
+        }
     }
 }

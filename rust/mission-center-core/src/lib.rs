@@ -317,6 +317,30 @@ pub fn locate_task_table_rows(lines: &[&str]) -> Result<Vec<TaskTableRows>, Core
                     offset += 2;
                 } else {
                     let active = active.ok_or(CoreError::InvalidHeader)?;
+                    if offset + 1 < block.len() {
+                        let header_cells = split_cells(block[offset].1)?;
+                        let separator_cells = split_cells(block[offset + 1].1)?;
+                        let is_foreign_header = !header_cells.is_empty()
+                            && header_cells.len() == separator_cells.len()
+                            && separator_cells.iter().all(|cell| is_separator(cell));
+                        if is_foreign_header {
+                            let width = header_cells.len();
+                            let mut previous_line = block[offset + 1].0;
+                            offset += 2;
+                            while offset < block.len() && block[offset].0 == previous_line + 1 {
+                                if task_headers_at(&block, offset)?.is_some() {
+                                    break;
+                                }
+                                let cells = split_cells(block[offset].1)?;
+                                if cells.len() != width {
+                                    break;
+                                }
+                                previous_line = block[offset].0;
+                                offset += 1;
+                            }
+                            continue;
+                        }
+                    }
                     tables[active].row_lines.push(block[offset].0);
                     offset += 1;
                 }
@@ -793,6 +817,19 @@ mod tests {
     fn parses_heading_continuation_and_ignores_non_task_block() {
         let source = "| ID | Title | Status |\n| --- | --- | --- |\n| MC-1 | First | Ready |\n\n## Appendix\n| Note | Value |\n| --- | --- |\n| Keep | this |\n\n## Continuation\n  | MC-2 | Second | Review |\n";
         let tasks = parse_tasks_markdown(source).expect("heading continuation");
+        assert_eq!(
+            tasks
+                .iter()
+                .map(|task| task.id.as_str())
+                .collect::<Vec<_>>(),
+            ["MC-1", "MC-2"]
+        );
+    }
+
+    #[test]
+    fn ignores_foreign_table_inside_task_table_block() {
+        let source = "| ID | Title | Status |\n| --- | --- | --- |\n| MC-1 | First | Ready |\n\n| Note | Value |\n| --- | --- |\n| Keep | this |\n\n| MC-2 | Second | Review |\n";
+        let tasks = parse_tasks_markdown(source).expect("foreign table and continuation");
         assert_eq!(
             tasks
                 .iter()
