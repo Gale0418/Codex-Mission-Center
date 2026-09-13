@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-072",
+  "taskDigest": "afa5ba62052d4ade235036744469d5d6ca363a17fecefd96ecc40d742258ce0d",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "MissionCenter/smoke-tests.md",
+      "docs/upgrade-0.5.2.md",
+      "output/mission-center-reports/mc-078-v052-final-release-20260913.json"
+    ]
+  },
+  "findings": []
+}

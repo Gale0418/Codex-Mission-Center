@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-075",
+  "taskDigest": "51e4e6e609b436e58b3f8f8f2fbab34b02c6483d864059b8aefd6b094ba84e14",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "docs/upgrade-0.5.2.md",
+      "rust/mission-center-workspace/tests/external_operations_052.rs",
+      "output/mission-center-reports/mc-078-v052-final-release-20260913.json"
+    ]
+  },
+  "findings": []
+}
