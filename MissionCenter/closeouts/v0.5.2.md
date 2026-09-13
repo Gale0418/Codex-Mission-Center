@@ -3,7 +3,7 @@
 - Schema: 1.0
 - Cycle: v0.5.2
 - Closed at: 2026-09-13T09:20:00+08:00
-- Source fingerprint: d903850fc2dcb0c8366da999a40967f77bd168035ae730a747a693a0b64a0b86
+- Source fingerprint: 9fb56ad9d3d0ddd759b9ae04f20feeeaf0b048dae11ddf60fd5d9460c89db39a
 - Tasks: 78
 - 摘要: 0.5.2 B/C/D 能力、審查、四平台 package、main 與本機安裝完成
 - 已完成: MC-072, MC-073, MC-074, MC-075, MC-076, MC-077, MC-078
