@@ -1,6 +1,19 @@
 use mission_center_policy::*;
 use serde_json::json;
 
+fn valid_critic_lite_record() -> serde_json::Value {
+    json!({
+        "schemaVersion":"1.0", "route":"critic_lite", "taskId":"T1",
+        "chairRecordLocator":"output/mission-center-critique/T1.json",
+        "artifactManifest":[{"locator":"artifact.zip","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","laneId":"main"}],
+        "snapshots":[{"id":"s1","revision":"r1","hash":"h1","evidenceLinks":["evidence.log"]}],
+        "authorization":{"explicitApproval":true}, "budgets":{"total":10,"perSeat":3,"tool":2,"wallClock":60},
+        "critics":[{"id":"a"},{"id":"b"}], "outcome":"passed",
+        "lanes":[{"id":"main","kind":"article/nonfiction","required":true,"seatId":"a","evidenceLocator":"review.md","coverageStatus":"covered"}],
+        "findings":[]
+    })
+}
+
 #[test]
 fn research_rejects_unknown_and_overlarge_hypotheses() {
     let mut record = json!({"schemaVersion":"1.0","artifactType":"research-portfolio","taskId":"T1","initialHypothesisAllocation":{"exploit":60,"adjacent_explore":30,"moonshot":10},"allocationKind":"initial_hypothesis_allocation","hypotheses":[],"sourceLedger":[],"saturationSignals":{},"selectedAction":"continue","extra":true});
@@ -152,4 +165,131 @@ fn critic_finding_disposition_and_acceptance_gates() {
             .iter()
             .any(|error| error.contains("humanAcceptance"))
     );
+}
+
+#[test]
+fn critic_loop_policy_preserves_bounded_and_converges_by_parent_chain() {
+    let mut bounded = valid_critic_lite_record();
+    bounded["loopPolicy"] = json!({"mode":"bounded"});
+    bounded["snapshots"] = json!([
+        {"id":"s1","revision":"r1","hash":"h1","evidenceLinks":["e1"]},
+        {"id":"s2","parent":"s1","revision":"r2","hash":"h2","evidenceLinks":["e2"]}
+    ]);
+    assert!(validate_critic_record(&bounded).is_empty());
+    bounded["snapshots"] = json!([
+        {"id":"s1","revision":"r1","hash":"h1","evidenceLinks":["e1"]},
+        {"id":"s2","parent":"s1","revision":"r2","hash":"h2","evidenceLinks":["e2"]},
+        {"id":"s3","parent":"s2","revision":"r3","hash":"h3","evidenceLinks":["e3"]}
+    ]);
+    assert!(
+        validate_critic_record(&bounded)
+            .iter()
+            .any(|error| error.contains("one or two"))
+    );
+
+    let mut converged = valid_critic_lite_record();
+    converged["loopPolicy"] = json!({
+        "mode":"converge", "stopCondition":"all_findings_resolved",
+        "closure": {
+            "snapshotId":"s4", "evidenceLocator":"closure.md",
+            "reviews":[
+                {"seatId":"a","snapshotId":"s4","evidenceLocator":"a.md","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+                {"seatId":"b","snapshotId":"s4","evidenceLocator":"b.md","sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+            ]
+        }
+    });
+    converged["snapshots"] = json!([
+        {"id":"s1","revision":"r1","hash":"h1","evidenceLinks":["e1"]},
+        {"id":"s2","parent":"s1","revision":"r2","hash":"h2","evidenceLinks":["e2"]},
+        {"id":"s3","parent":"s2","revision":"r3","hash":"h3","evidenceLinks":["e3"]},
+        {"id":"s4","parent":"s3","revision":"r4","hash":"h4","evidenceLinks":["e4"]}
+    ]);
+    assert!(validate_critic_record(&converged).is_empty());
+    converged["snapshots"][2]["parent"] = json!("s1");
+    assert!(
+        validate_critic_record(&converged)
+            .iter()
+            .any(|error| error.contains("previous snapshot"))
+    );
+}
+
+#[test]
+fn critic_converge_closure_and_findings_fail_closed() {
+    let mut record = valid_critic_lite_record();
+    record["loopPolicy"] = json!({"mode":"converge","stopCondition":"all_findings_resolved"});
+    assert!(
+        validate_critic_record(&record)
+            .iter()
+            .any(|error| error.contains("closure evidence"))
+    );
+
+    record["loopPolicy"] = json!({
+        "mode":"converge", "stopCondition":"all_findings_resolved",
+        "closure":{"snapshotId":"s1","evidenceLocator":"closure.md","reviews":[
+            {"seatId":"a","snapshotId":"s1","evidenceLocator":"a.md","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+            {"seatId":"b","snapshotId":"s1","evidenceLocator":"b.md","sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+        ]}
+    });
+    record["findings"] = json!([{
+        "id":"CACC-T1-quality-1234abcd-1", "severity":"Low", "category":"quality",
+        "observation":"defect", "evidenceLocator":"artifact.md:3", "reproOrReadPath":"Read line 3",
+        "impact":"breaks acceptance", "confidence":"high", "unknown":"none", "recommendation":"repair",
+        "criticProposedDisposition":"deferred", "chairFinalDisposition":"deferred"
+    }]);
+    assert!(
+        validate_critic_record(&record)
+            .iter()
+            .any(|error| error.contains("every finding"))
+    );
+    record["findings"][0]["chairFinalDisposition"] = json!("fixed");
+    assert!(validate_critic_record(&record).is_empty());
+
+    record["outcome"] = json!("blocked");
+    record["findings"][0]["severity"] = json!("Critical");
+    record["findings"][0]["chairFinalDisposition"] = json!("deferred");
+    record["findings"][0]["criticProposedDisposition"] = json!("deferred");
+    record["loopPolicy"] = json!({"mode":"converge","stopCondition":"all_findings_resolved"});
+    assert!(validate_critic_record(&record).is_empty());
+    record["findings"][0]["chairFinalDisposition"] = json!("accepted");
+    assert!(
+        validate_critic_record(&record)
+            .iter()
+            .any(|error| error.contains("Critical cannot"))
+    );
+}
+
+#[test]
+fn v11_incomplete_records_cannot_hide_loop_policy_or_pass() {
+    let mut skipped = json!({
+        "schemaVersion":"1.1", "selectedRoute":"skip", "executionStatus":"skipped",
+        "requiredByPolicy":false, "taskId":"T1",
+        "chairRecordLocator":"output/mission-center-critique/T1.json", "reason":"not applicable",
+        "loopPolicy":{"mode":"converge","stopCondition":"all_findings_resolved"}
+    });
+    assert!(
+        validate_critic_record(&skipped)
+            .iter()
+            .any(|error| error.contains("skip route"))
+    );
+    skipped["loopPolicy"] = json!({"mode":"bounded"});
+    skipped["outcome"] = json!("passed");
+    assert!(
+        validate_critic_record(&skipped)
+            .iter()
+            .any(|error| error.contains("cannot be passed"))
+    );
+
+    let mut pending = skipped;
+    pending["selectedRoute"] = json!("critic_lite");
+    pending["executionStatus"] = json!("not_dispatched");
+    pending["outcome"] = json!("limited");
+    assert!(validate_critic_record(&pending).is_empty());
+
+    let mut completed = valid_critic_lite_record();
+    completed["schemaVersion"] = json!("1.1");
+    completed["selectedRoute"] = json!("critic_lite");
+    completed["route"] = json!("skip");
+    completed["executionStatus"] = json!("completed");
+    completed["requiredByPolicy"] = json!(false);
+    assert!(validate_critic_record(&completed).is_empty());
 }

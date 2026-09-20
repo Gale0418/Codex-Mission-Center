@@ -1699,6 +1699,7 @@ pub fn native_install_package(
     let receipt_path = transaction_root.join(format!("{operation_id}.json"));
     reject_native_path(&receipt_path, "transaction receipt")?;
     if let Some(previous) = read_transaction_receipt(&receipt_path)? {
+        validate_native_receipt(&previous, &receipt_path, &transaction_root)?;
         if previous.digest != report.digest {
             return Err(PublishError::stable(
                 ErrorCode::TransactionConflict,
@@ -1707,6 +1708,18 @@ pub fn native_install_package(
         }
         if previous.status == TransactionStatus::Committed {
             return Ok(previous);
+        }
+        let verified_rollback = previous.status == TransactionStatus::Aborted
+            && !previous.targets.is_empty()
+            && previous
+                .targets
+                .iter()
+                .all(|target| target.phase == TargetPhase::Restored);
+        if !verified_rollback {
+            return Err(PublishError::stable(
+                ErrorCode::TransactionConflict,
+                "install operation 已有未完成 receipt，請先 rollback 或 reconcile。",
+            ));
         }
     }
     validate_destinations(&package, &transaction_root, destinations)?;
@@ -1778,12 +1791,12 @@ pub fn native_install_package(
         Ok::<(), PublishError>(())
     })();
     if let Err(error) = swap_result {
-        restore_native_targets(&receipt.targets);
+        restore_native_targets(&receipt.targets)?;
         receipt.status = TransactionStatus::Aborted;
         for target in &mut receipt.targets {
             target.phase = TargetPhase::Restored;
         }
-        let _ = write_transaction_receipt(&receipt_path, &receipt);
+        write_transaction_receipt(&receipt_path, &receipt)?;
         return Err(error);
     }
     receipt.status = TransactionStatus::Committed;
@@ -2639,21 +2652,22 @@ fn remove_native_temps(targets: &[TargetReceipt]) {
     }
 }
 
-fn restore_native_targets(targets: &[TargetReceipt]) {
+fn restore_native_targets(targets: &[TargetReceipt]) -> Result<(), PublishError> {
     for target in targets.iter().rev() {
         let destination = Path::new(&target.destination);
         let temp = Path::new(&target.temp);
         let backup = Path::new(&target.backup);
         if destination.exists() {
-            let _ = remove_native_tree(destination);
+            remove_native_tree(destination)?;
         }
         if backup.exists() {
-            let _ = fs::rename(backup, destination);
+            fs::rename(backup, destination).map_err(native_io)?;
         }
         if temp.exists() {
-            let _ = remove_native_tree(temp);
+            remove_native_tree(temp)?;
         }
     }
+    Ok(())
 }
 
 fn restore_native_targets_checked(
@@ -2678,8 +2692,7 @@ fn restore_native_targets_checked(
             ));
         }
     }
-    restore_native_targets(targets);
-    Ok(())
+    restore_native_targets(targets)
 }
 
 fn remove_native_tree(path: &Path) -> Result<(), PublishError> {

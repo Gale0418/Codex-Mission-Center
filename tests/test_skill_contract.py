@@ -137,7 +137,7 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("explicit user approval", orchestration)
         self.assertIn("simulated perspectives", orchestration)
 
-    def test_completion_critic_council_is_budgeted_real_read_only_and_bounded(self):
+    def test_completion_critic_council_is_budgeted_real_read_only_and_convergence_aware(self):
         critic = (
             SKILL_ROOT / "references" / "completion-critic-council.md"
         ).read_text(encoding="utf-8")
@@ -164,6 +164,10 @@ class SkillContractTests(unittest.TestCase):
             "can never be represented as passing smoke evidence",
             "initial wave and one delta wave",
             "until clean",
+            "no fixed wave count",
+            "every verified, in-scope p2/p3 repaired",
+            "an interrupted loop is not successful convergence",
+            "critic-prompts.md",
             "critical",
             "unresolved `critical` findings block `done`",
             "approver identity, approval time",

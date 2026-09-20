@@ -157,6 +157,17 @@ fn native_install_replays_and_rolls_back_a_verified_package() {
     assert_eq!(restored.status, TransactionStatus::Aborted);
     assert!(destination.join("old.txt").is_file());
     assert!(!destination.join(PLATFORM_MANIFEST_FILE).exists());
+    let retried = native_install_package(
+        &package_root,
+        std::slice::from_ref(&destination),
+        "native-install-1",
+        platform,
+        "0.5.1",
+    )
+    .unwrap();
+    assert_eq!(retried.status, TransactionStatus::Committed);
+    assert!(destination.join(PLATFORM_MANIFEST_FILE).is_file());
+    assert!(!destination.join("old.txt").exists());
     let _ = fs::remove_dir_all(root);
 }
 
@@ -306,6 +317,89 @@ fn native_reconcile_rolls_back_started_receipt_after_crash() {
     assert_eq!(receipts[0].status, TransactionStatus::Aborted);
     assert!(destination.join("old.txt").is_file());
     assert!(!destination.join(PLATFORM_MANIFEST_FILE).exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn native_install_rejects_replay_of_non_committed_receipt() {
+    let root = temp_root("replay-started");
+    let package_root = root.join("package");
+    package(&package_root);
+    let destination = root.join("installed");
+    let platform = Platform::host().expect("test host must be supported");
+    native_install_package(
+        &package_root,
+        std::slice::from_ref(&destination),
+        "native-replay-started",
+        platform,
+        "0.5.1",
+    )
+    .unwrap();
+    let receipt_path = root
+        .join(".mission-center-transactions")
+        .join("native-replay-started.json");
+    let mut json: serde_json::Value =
+        serde_json::from_slice(&fs::read(&receipt_path).unwrap()).unwrap();
+    json["status"] = serde_json::Value::String("started".into());
+    fs::write(&receipt_path, serde_json::to_vec(&json).unwrap()).unwrap();
+
+    let error = native_install_package(
+        &package_root,
+        std::slice::from_ref(&destination),
+        "native-replay-started",
+        platform,
+        "0.5.1",
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), ErrorCode::TransactionConflict);
+    let preserved: serde_json::Value =
+        serde_json::from_slice(&fs::read(&receipt_path).unwrap()).unwrap();
+    assert_eq!(preserved["status"], "started");
+    assert!(destination.join(PLATFORM_MANIFEST_FILE).is_file());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn native_install_rejects_malformed_aborted_receipt_before_replay() {
+    let root = temp_root("replay-malformed-aborted");
+    let package_root = root.join("package");
+    package(&package_root);
+    let destination = root.join("installed");
+    let platform = Platform::host().expect("test host must be supported");
+    native_install_package(
+        &package_root,
+        std::slice::from_ref(&destination),
+        "native-replay-malformed-aborted",
+        platform,
+        "0.5.1",
+    )
+    .unwrap();
+    let receipt_path = root
+        .join(".mission-center-transactions")
+        .join("native-replay-malformed-aborted.json");
+    let mut json: serde_json::Value =
+        serde_json::from_slice(&fs::read(&receipt_path).unwrap()).unwrap();
+    json["status"] = serde_json::Value::String("aborted".into());
+    json["destinationCount"] = serde_json::json!(0);
+    json["destinations"] = serde_json::json!([]);
+    json["backups"] = serde_json::json!([]);
+    json["targets"] = serde_json::json!([]);
+    fs::write(&receipt_path, serde_json::to_vec(&json).unwrap()).unwrap();
+
+    let error = native_install_package(
+        &package_root,
+        std::slice::from_ref(&destination),
+        "native-replay-malformed-aborted",
+        platform,
+        "0.5.1",
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), ErrorCode::TransactionCorrupt);
+    assert!(destination.join(PLATFORM_MANIFEST_FILE).is_file());
+    let preserved: serde_json::Value =
+        serde_json::from_slice(&fs::read(&receipt_path).unwrap()).unwrap();
+    assert_eq!(preserved["status"], "aborted");
+    assert_eq!(preserved["targets"], serde_json::json!([]));
     let _ = fs::remove_dir_all(root);
 }
 

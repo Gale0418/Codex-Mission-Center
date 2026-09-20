@@ -15,6 +15,8 @@ SEVERITIES = {"Critical", "High", "Medium", "Low"}
 DISPOSITIONS = {"fixed", "rejected-with-counterevidence", "deferred", "accepted"}
 OUTCOMES = {"passed", "limited", "blocked"}
 COVERAGE = {"covered", "unknown", "not_applicable"}
+LOOP_MODES = {"bounded", "converge"}
+CONVERGENCE_STOP_CONDITION = "all_findings_resolved"
 GAME_CHECKPOINTS = {
     "first_launch",
     "onboarding",
@@ -67,6 +69,156 @@ def _valid_acceptance(value: Any) -> bool:
     )
 
 
+def _validate_loop_policy(record: dict[str, Any]) -> tuple[list[str], str | None]:
+    """Validate the optional loop policy and return its effective mode.
+
+    An omitted policy keeps the historical bounded contract.  Convergence is
+    deliberately opt-in so existing records do not acquire stricter closure
+    requirements merely by being revalidated.
+    """
+    if "loopPolicy" not in record:
+        return [], None
+    policy = record["loopPolicy"]
+    if not _mapping(policy):
+        return ["loopPolicy must be an object"], None
+
+    errors: list[str] = []
+    if set(policy) - {"mode", "stopCondition", "closure"}:
+        errors.append("loopPolicy has unknown fields")
+    mode = policy.get("mode")
+    if mode not in LOOP_MODES:
+        errors.append("loopPolicy.mode must be bounded or converge")
+        return errors, None
+    if mode == "converge":
+        if policy.get("stopCondition") != CONVERGENCE_STOP_CONDITION:
+            errors.append(
+                "converge loopPolicy requires stopCondition all_findings_resolved"
+            )
+        route = record.get("selectedRoute") if record.get("schemaVersion") == "1.1" else record.get("route")
+        if route == "skip":
+            errors.append("skip route cannot select converge loopPolicy")
+        if record.get("schemaVersion") == "1.1" and record.get("executionStatus") != "completed" and record.get("outcome") == "passed":
+            errors.append("incomplete converge execution cannot have passed outcome")
+        if record.get("outcome") == "passed":
+            closure = policy.get("closure")
+            if not _mapping(closure):
+                errors.append("converge passed requires closure evidence")
+            else:
+                if set(closure) - {"snapshotId", "evidenceLocator", "reviews"}:
+                    errors.append("loopPolicy.closure has unknown fields")
+                if not _text(closure.get("snapshotId")):
+                    errors.append("loopPolicy.closure needs snapshotId")
+                if not _text(closure.get("evidenceLocator")):
+                    errors.append("loopPolicy.closure needs evidenceLocator")
+    return errors, mode
+
+
+def _validate_snapshots(
+    snapshots: Any, *, convergence: bool, closure_snapshot_id: str | None
+) -> list[str]:
+    """Validate a bounded snapshot pair or an unbounded parent-linked chain."""
+    errors: list[str] = []
+    if not isinstance(snapshots, list) or not snapshots:
+        errors.append(
+            "snapshots must contain one or more snapshots"
+            if convergence
+            else "snapshots must contain one or two snapshots"
+        )
+        return errors
+    if not convergence and len(snapshots) > 2:
+        errors.append("snapshots must contain one or two snapshots")
+    if not all(_mapping(snapshot) for snapshot in snapshots):
+        errors.append("each snapshot must be an object")
+        return errors
+
+    snapshot_ids: set[str] = set()
+    for index, snapshot in enumerate(snapshots):
+        snapshot_id = snapshot.get("id", snapshot.get("snapshotId"))
+        if not _text(snapshot_id) or snapshot_id in snapshot_ids:
+            errors.append(f"snapshot {index} needs a unique id")
+        else:
+            snapshot_ids.add(snapshot_id)
+        for field in ("revision", "hash", "evidenceLinks"):
+            if field == "evidenceLinks":
+                valid = isinstance(snapshot.get(field), list) and bool(snapshot[field])
+            else:
+                valid = _text(snapshot.get(field))
+            if not valid:
+                errors.append(f"snapshot {index} needs {field}")
+
+        if index == 0:
+            if snapshot.get("parent") not in (None, ""):
+                errors.append("first snapshot must not have a parent")
+        else:
+            previous_id = snapshots[index - 1].get(
+                "id", snapshots[index - 1].get("snapshotId")
+            )
+            if snapshot.get("parent") != previous_id:
+                if not convergence and index == 1:
+                    errors.append("delta snapshot parent must reference first snapshot")
+                else:
+                    errors.append(
+                        f"snapshot {index} parent must reference the previous snapshot"
+                    )
+
+    if convergence and closure_snapshot_id:
+        final_id = snapshots[-1].get("id", snapshots[-1].get("snapshotId"))
+        if closure_snapshot_id != final_id:
+            errors.append("loopPolicy.closure.snapshotId must reference the final snapshot")
+    return errors
+
+
+def _validate_closure_reviews(
+    record: dict[str, Any], closure: dict[str, Any], final_snapshot_id: str | None
+) -> list[str]:
+    """Require one final-snapshot review receipt for every council seat."""
+    errors: list[str] = []
+    reviews = closure.get("reviews")
+    if not isinstance(reviews, list) or not reviews:
+        return ["converge passed requires non-empty closure.reviews"]
+
+    expected_seat_ids: set[str] = set()
+    critics = record.get("critics")
+    if isinstance(critics, list):
+        expected_seat_ids.update(
+            critic.get("id")
+            for critic in critics
+            if _mapping(critic) and _text(critic.get("id"))
+        )
+    if record.get("route") == "critic_full":
+        arbiter = record.get("arbiter")
+        if _mapping(arbiter) and _text(arbiter.get("id")):
+            expected_seat_ids.add(arbiter["id"])
+
+    observed_seat_ids: list[str] = []
+    for index, review in enumerate(reviews):
+        if not _mapping(review):
+            errors.append(f"closure review {index} must be an object")
+            continue
+        if set(review) - {"seatId", "snapshotId", "evidenceLocator", "sha256"}:
+            errors.append(f"closure review {index} has unknown fields")
+        seat_id = review.get("seatId")
+        if not _text(seat_id):
+            errors.append(f"closure review {index} needs seatId")
+        else:
+            observed_seat_ids.append(seat_id)
+        if not _text(review.get("snapshotId")):
+            errors.append(f"closure review {index} needs snapshotId")
+        elif final_snapshot_id and review["snapshotId"] != final_snapshot_id:
+            errors.append(f"closure review {index} must reference the final snapshot")
+        if not _text(review.get("evidenceLocator")):
+            errors.append(f"closure review {index} needs evidenceLocator")
+        sha256 = review.get("sha256")
+        if not _text(sha256) or not re.fullmatch(r"[0-9a-fA-F]{64}", sha256):
+            errors.append(f"closure review {index} needs a 64-hex sha256")
+
+    if len(observed_seat_ids) != len(set(observed_seat_ids)):
+        errors.append("closure.reviews seatId values must be unique")
+    if set(observed_seat_ids) != expected_seat_ids:
+        errors.append("closure.reviews must cover exactly every critic and arbiter seat")
+    return errors
+
+
 
 def _validate_state_record(record: dict[str, Any]) -> list[str]:
     """Validate schema 1.1 lifecycle states without inventing dispatch evidence."""
@@ -82,6 +234,10 @@ def _validate_state_record(record: dict[str, Any]) -> list[str]:
         "output/mission-center-critique/"
     ):
         errors.append("chairRecordLocator must use output/mission-center-critique/")
+    loop_policy_errors, _ = _validate_loop_policy(record)
+    errors.extend(loop_policy_errors)
+    if status != "completed" and record.get("outcome") == "passed":
+        errors.append("incomplete critic records cannot be passed")
     if record.get("requiredByPolicy") is True and status in {"skipped", "not_dispatched"}:
         errors.append("requiredByPolicy records must be completed")
     if status in {"skipped", "not_dispatched"}:
@@ -116,6 +272,15 @@ def validate_critic_record(record: Any) -> list[str]:
         ):
             errors.append("chairRecordLocator must use output/mission-center-critique/")
 
+        loop_policy_errors, loop_mode = _validate_loop_policy(record)
+        errors.extend(loop_policy_errors)
+        convergence = loop_mode == "converge"
+        policy = record.get("loopPolicy")
+        closure = policy.get("closure", {}) if _mapping(policy) else {}
+        closure_snapshot_id = (
+            closure.get("snapshotId") if _mapping(closure) else None
+        )
+
         entries = _manifest_entries(record.get("artifactManifest"))
         manifest_lane_ids: list[str] = []
         if not entries:
@@ -142,32 +307,21 @@ def validate_critic_record(record: Any) -> list[str]:
                 ):
                     errors.append(f"artifactManifest entry {index} needs sha256, version, or archiveLocator")
 
-        snapshots = record.get("snapshots")
-        if not isinstance(snapshots, list) or not 1 <= len(snapshots) <= 2:
-            errors.append("snapshots must contain one or two snapshots")
-        elif all(_mapping(snapshot) for snapshot in snapshots):
-            first = snapshots[0]
-            if first.get("parent") not in (None, ""):
-                errors.append("first snapshot must not have a parent")
-            first_id = first.get("id", first.get("snapshotId"))
-            snapshot_ids: set[str] = set()
-            for index, snapshot in enumerate(snapshots):
-                snapshot_id = snapshot.get("id", snapshot.get("snapshotId"))
-                if not _text(snapshot_id) or snapshot_id in snapshot_ids:
-                    errors.append(f"snapshot {index} needs a unique id")
-                else:
-                    snapshot_ids.add(snapshot_id)
-                for field in ("revision", "hash", "evidenceLinks"):
-                    if field == "evidenceLinks":
-                        valid = isinstance(snapshot.get(field), list) and bool(snapshot[field])
-                    else:
-                        valid = _text(snapshot.get(field))
-                    if not valid:
-                        errors.append(f"snapshot {index} needs {field}")
-            if len(snapshots) == 2 and snapshots[1].get("parent") != first_id:
-                errors.append("delta snapshot parent must reference first snapshot")
-        else:
-            errors.append("each snapshot must be an object")
+        errors.extend(
+            _validate_snapshots(
+                record.get("snapshots"),
+                convergence=convergence,
+                closure_snapshot_id=closure_snapshot_id,
+            )
+        )
+        if convergence and record.get("outcome") == "passed" and _mapping(closure):
+            snapshots = record.get("snapshots")
+            final_snapshot_id = None
+            if isinstance(snapshots, list) and snapshots and _mapping(snapshots[-1]):
+                final_snapshot_id = snapshots[-1].get(
+                    "id", snapshots[-1].get("snapshotId")
+                )
+            errors.extend(_validate_closure_reviews(record, closure, final_snapshot_id))
 
         if route in {"critic_lite", "critic_full"}:
             authorization = record.get("authorization")
@@ -279,6 +433,8 @@ def validate_critic_record(record: Any) -> list[str]:
             errors.append("council evidence cannot be smoke evidence")
 
         findings = record.get("findings", [])
+        if convergence and "findings" not in record:
+            errors.append("converge loopPolicy requires an explicit findings list")
         if not isinstance(findings, list):
             errors.append("findings must be a list")
         else:
@@ -317,14 +473,46 @@ def validate_critic_record(record: Any) -> list[str]:
                 disposition = finding.get("chairFinalDisposition")
                 if disposition not in DISPOSITIONS:
                     errors.append(f"finding {index} has invalid chairFinalDisposition")
+                if convergence and disposition == "accepted":
+                    errors.append(f"finding {index}: converge findings cannot be accepted")
+                if disposition == "rejected-with-counterevidence":
+                    counterevidence = finding.get("counterevidence", finding.get("counterEvidenceRefs"))
+                    if not (_text(counterevidence) or (isinstance(counterevidence, list) and counterevidence)):
+                        errors.append(f"finding {index}: rejected-with-counterevidence needs counterevidence")
+                interrupted_convergence = convergence and record.get("outcome") in {
+                    "limited",
+                    "blocked",
+                }
                 if severity == "Critical" and disposition == "accepted":
                     errors.append(f"finding {index}: Critical cannot be human accepted")
-                if severity == "Critical" and disposition not in {"fixed", "rejected-with-counterevidence"}:
+                if (
+                    not interrupted_convergence
+                    and severity == "Critical"
+                    and disposition not in {"fixed", "rejected-with-counterevidence"}
+                ):
                     errors.append(f"finding {index}: unresolved Critical finding")
-                if severity == "High" and disposition == "deferred" and not _valid_acceptance(finding.get("humanAcceptance")):
+                if (
+                    severity == "High"
+                    and disposition == "deferred"
+                    and not interrupted_convergence
+                    and not _valid_acceptance(finding.get("humanAcceptance"))
+                ):
                     errors.append(f"finding {index}: deferred High finding needs complete humanAcceptance")
                 if _requires_human_acceptance(finding) and not _valid_acceptance(finding.get("humanAcceptance")):
                     errors.append(f"finding {index}: accepted finding needs complete humanAcceptance")
+            if convergence and record.get("outcome") == "passed":
+                unresolved = [
+                    index
+                    for index, finding in enumerate(findings)
+                    if _mapping(finding)
+                    and finding.get("chairFinalDisposition")
+                    not in {"fixed", "rejected-with-counterevidence"}
+                ]
+                if unresolved:
+                    errors.append(
+                        "convergence passed requires every finding to be fixed or "
+                        "rejected-with-counterevidence"
+                    )
         return errors
     except Exception:
         return ["record could not be validated"]

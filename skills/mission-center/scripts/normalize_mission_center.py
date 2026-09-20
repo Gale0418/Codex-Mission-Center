@@ -64,6 +64,11 @@ def normalize_status(value: str) -> str:
     return STATUS_MAP.get(lower, value.strip() or "Backlog")
 
 
+def escape_cell(value: str) -> str:
+    """Escape one logical cell value for the Markdown table writer."""
+    return value.replace("\\", "\\\\").replace("|", "\\|")
+
+
 def find_header(headers: list[str], canonical: str) -> str | None:
     for header in headers:
         if HEADER_ALIASES.get(header, header) == canonical:
@@ -102,7 +107,9 @@ def normalize_tasks(path: Path) -> bool:
             normalized = normalize_labels(row[labels_header])
             changed |= normalized != row[labels_header]
             row[labels_header] = normalized
-        lines[line_number - 1] = "| " + " | ".join(row.get(header, "") for header in headers) + " |"
+        lines[line_number - 1] = "| " + " | ".join(
+            escape_cell(row.get(header, "")) for header in headers
+        ) + " |"
     if changed:
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return changed

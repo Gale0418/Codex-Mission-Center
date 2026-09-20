@@ -3,6 +3,9 @@
 
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static PYTHON_INPUT_ID: AtomicU64 = AtomicU64::new(0);
 
 fn repo_root() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -79,8 +82,9 @@ fn rust_run(command: &str, mode: Option<&str>, input: &str, files: &[(&str, &str
 
 fn python_run(module: &str, expression: &str, input: &str) -> i32 {
     let path = std::env::temp_dir().join(format!(
-        "mission-center-wave3-python-{}.json",
-        std::process::id()
+        "mission-center-wave3-python-{}-{}.json",
+        std::process::id(),
+        PYTHON_INPUT_ID.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::write(&path, input).unwrap();
     let script_dir = repo_root()
@@ -100,6 +104,107 @@ fn python_run(module: &str, expression: &str, input: &str) -> i32 {
         .unwrap();
     let _ = std::fs::remove_file(path);
     status.code().unwrap_or(1)
+}
+
+#[test]
+fn critic_convergence_matches_python_through_cli() {
+    use serde_json::json;
+    let base = json!({
+        "schemaVersion":"1.0", "route":"critic_lite", "taskId":"T1",
+        "chairRecordLocator":"output/mission-center-critique/T1.json",
+        "artifactManifest":[{"locator":"artifact.zip","sha256":"a".repeat(64),"laneId":"main"}],
+        "snapshots":[
+            {"id":"s1","revision":"r1","hash":"h1","evidenceLinks":["e1.log"]},
+            {"id":"s2","parent":"s1","revision":"r2","hash":"h2","evidenceLinks":["e2.log"]},
+            {"id":"s3","parent":"s2","revision":"r3","hash":"h3","evidenceLinks":["e3.log"]}
+        ],
+        "loopPolicy":{"mode":"converge","stopCondition":"all_findings_resolved",
+            "closure":{"snapshotId":"s3","evidenceLocator":"closure.log","reviews":[
+                {"seatId":"a","snapshotId":"s3","evidenceLocator":"a.log","sha256":"b".repeat(64)},
+                {"seatId":"b","snapshotId":"s3","evidenceLocator":"b.log","sha256":"c".repeat(64)}
+            ]}},
+        "authorization":{"explicitApproval":true},
+        "budgets":{"total":10,"perSeat":3,"tool":2,"wallClock":60},
+        "critics":[{"id":"a"},{"id":"b"}], "outcome":"passed",
+        "lanes":[{"id":"main","kind":"CLI/API/library","required":true,
+            "seatId":"a","evidenceLocator":"review.log","coverageStatus":"covered"}],
+        "findings":[]
+    });
+    for (name, expected) in [
+        ("valid", 0),
+        ("broken_chain", 1),
+        ("stale_closure", 1),
+        ("missing_ledger", 1),
+        ("legacy_bound", 1),
+        ("completed_v11", 0),
+        ("interrupted_stale_closure", 1),
+        ("interrupted_low_deferred", 0),
+        ("interrupted_low_accepted", 1),
+        ("legacy_non_dispatch_passed", 1),
+        ("unknown_policy_field", 1),
+        ("unknown_closure_field", 1),
+        ("unknown_review_field", 1),
+    ] {
+        let mut record = base.clone();
+        match name {
+            "broken_chain" => record["snapshots"][2]["parent"] = json!("s1"),
+            "unknown_policy_field" => record["loopPolicy"]["maxWaves"] = json!(2),
+            "unknown_closure_field" => record["loopPolicy"]["closure"]["clean"] = json!(true),
+            "unknown_review_field" => {
+                record["loopPolicy"]["closure"]["reviews"][0]["clean"] = json!(true)
+            }
+            "stale_closure" => record["loopPolicy"]["closure"]["snapshotId"] = json!("s2"),
+            "missing_ledger" => {
+                record.as_object_mut().unwrap().remove("findings");
+            }
+            "legacy_bound" => {
+                record.as_object_mut().unwrap().remove("loopPolicy");
+            }
+            "completed_v11" => {
+                record["schemaVersion"] = json!("1.1");
+                record["selectedRoute"] = json!("critic_lite");
+                record["executionStatus"] = json!("completed");
+                record["requiredByPolicy"] = json!(true);
+                record.as_object_mut().unwrap().remove("route");
+            }
+            "interrupted_stale_closure" => {
+                record["outcome"] = json!("blocked");
+                record["loopPolicy"]["closure"]["snapshotId"] = json!("s1");
+            }
+            "interrupted_low_deferred" | "interrupted_low_accepted" => {
+                record["outcome"] = json!("blocked");
+                record["loopPolicy"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("closure");
+                let disposition = if name.ends_with("accepted") {
+                    "accepted"
+                } else {
+                    "deferred"
+                };
+                record["findings"] = json!([{
+                    "id":"CACC-T1-quality-1234abcd-1", "severity":"Low", "category":"quality",
+                    "observation":"defect", "evidenceLocator":"artifact:3", "reproOrReadPath":"read line 3",
+                    "impact":"incorrect result", "confidence":"high", "unknown":"none",
+                    "recommendation":"repair", "criticProposedDisposition":disposition,
+                    "chairFinalDisposition":disposition,
+                    "humanAcceptance":{"approverIdentity":"reviewer", "approvalTime":"2026-09-20T12:00:00Z",
+                        "scope":"finding", "reason":"test", "expiry":"2026-10-20T12:00:00Z", "reopenTrigger":"new evidence"}
+                }]);
+            }
+            "legacy_non_dispatch_passed" => {
+                record = json!({"schemaVersion":"1.1", "selectedRoute":"skip", "executionStatus":"skipped",
+                    "requiredByPolicy":false, "taskId":"T1", "chairRecordLocator":"output/mission-center-critique/pending.json",
+                    "reason":"not applicable", "outcome":"passed"});
+            }
+            _ => {}
+        }
+        let input = record.to_string();
+        let rust_status = rust_run("critic", None, &input, &[("converge.json", &input)]);
+        let python_status = python_run("critic_contract", "validate_critic_record(value)", &input);
+        assert_eq!(rust_status, expected, "Rust: {name}");
+        assert_eq!(python_status, expected, "Python: {name}");
+    }
 }
 
 #[test]

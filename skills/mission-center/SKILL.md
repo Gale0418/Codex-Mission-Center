@@ -34,7 +34,7 @@ Project Map 與 RuntimeState 分離；task transition 每次只前進一格、�
 
 每項任務須有低成本可重複驗證，依 [煙霧測試模式](references/smoke-test-patterns.md) 與 [目錄](references/smoke-test-catalog.md) 記錄指令／動作、預期、觀察、結果、日期、task ID；無通過證據不得 Done。收尾依 [快照格式](references/snapshot-format.md) 產生 checkpoint，依 [收尾格式](references/closeout-format.md) 保存結果／未完成工作。
 
-實作後且本地驗證最新，僅高風險、大變更或使用者要求時走 [CodeRabbit 閘門](references/coderabbit-review-gate.md)；需要時依 [完成對抗評論](references/completion-critic-council.md) 做受預算限制的評論。發現須查證，修正後重跑受影響驗證；不可把不可用外部審查說成通過。
+實作驗證後，高風險、大變更或使用者要求才走 [CodeRabbit 閘門](references/coderabbit-review-gate.md)；依 [完成對抗評論](references/completion-critic-council.md) 評論。預設 `converge`，不限輪數；無 P0/P1 即停挑剔，已知問題全修後驗收，受阻則存檔。依[專家提詞](references/critic-prompts.md)分工。發現須查證，修正後重跑受影響驗證；不可把不可用外部審查說成通過。
 
 ## 維護者 Hook
 

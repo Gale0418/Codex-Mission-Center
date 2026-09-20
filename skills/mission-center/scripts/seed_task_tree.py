@@ -116,6 +116,11 @@ def table_header(columns: list[str]) -> list[str]:
     ]
 
 
+def escape_table_cell(value: str) -> str:
+    """Escape one logical cell value for a Markdown table row."""
+    return value.replace("\\", "\\\\").replace("|", "\\|")
+
+
 def _extract_summary_value(line: str, label: str) -> str | None:
     stripped = line.strip()
     for marker in (f"- {label}:", f"- {label}："):
@@ -183,7 +188,7 @@ def main() -> int:
         f"# {labels['tasks_title']}",
         "",
         *table_header(labels["columns"]),
-        f"| {args.prefix}-E1 | {args.goal} | Epic |  | P0 | Backlog |  |  | {labels['clarify']} | {labels['acceptance']} | 8 | intake, plan |  |",
+        f"| {args.prefix}-E1 | {escape_table_cell(args.goal)} | Epic |  | P0 | Backlog |  |  | {labels['clarify']} | {labels['acceptance']} | 8 | intake, plan |  |",
         f"| {args.prefix}-R1 | {labels['research']} | Task | {args.prefix}-E1 | P0 | Ready |  |  | {labels['research_next']} | {labels['research_done']} | 2 | intake, research |  |",
         f"| {args.prefix}-M1 | {labels['milestone']} | Task | {args.prefix}-E1 | P1 | Backlog |  | {args.prefix}-R1 | {labels['milestone_next']} | {labels['milestone_done']} | 5 | plan, execution |  |",
         f"| {args.prefix}-V1 | {labels['verification_closeout']} | Task | {args.prefix}-E1 | P1 | Backlog |  | {args.prefix}-M1 | {labels['verification_next']} | {labels['recorded']} | 3 | verification, closeout |  |",
