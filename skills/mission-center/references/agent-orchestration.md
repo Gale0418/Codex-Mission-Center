@@ -28,9 +28,11 @@ Before opening a new wave:
 
 Keep the active set small. Do not dispatch a pile of overlapping experts or use subagents merely to make the process look busy.
 
-For completion critics, use at most an initial review phase and one delta wave; never continue until clean. When slots are constrained, the initial phase may queue blind critic batches: close each completed seat, seal its draft, and dispatch the separate evidence arbiter only after all critic drafts are sealed. Initial critic drafts are mutually blind. The chair deduplicates, preserves material dissent, and verifies claims against the frozen evidence and available capabilities.
+For completion critics, follow the selected loop policy in [completion-critic-council.md](completion-critic-council.md): legacy bounded reviews allow an initial wave and one delta wave; new reviews default to explicit convergence with no fixed wave count, but require all verified in-scope defects repaired and current coverage before success. Budget exhaustion or lack of progress produces an incomplete checkpoint, not a clean result. When slots are constrained, queue blind critic batches: seal each completed draft and dispatch the separate evidence arbiter only after all critic drafts are sealed. Use an available close/release API when supported; interruption alone does not release a slot. Initial critic drafts are mutually blind. The chair deduplicates, preserves material dissent, and verifies claims against the frozen evidence and available capabilities.
 
 ## Task Packet
+
+For convergence, stop dispatching new adversarial waves when no unresolved P0/P1 remains. Finish known defects and targeted verification in cleanup; P2/P3 alone cannot trigger another broad review. Reopen only for a P0/P1 revealed during cleanup. Final seat reports confirm repairs and agreed coverage rather than restart discovery.
 
 Every dispatched subagent receives exact scope, goal, constraints, expected evidence, and acceptance criteria. The main agent remains responsible for integration and verification.
 

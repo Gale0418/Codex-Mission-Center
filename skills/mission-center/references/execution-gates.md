@@ -22,9 +22,13 @@ Implement one bounded slice. Keep changes small, update task state when facts ch
 
 ## Gate 6: Review
 
-After local verification, run applicable CodeRabbit technical review first, verify its findings, repair real defects, and re-verify locally. Then route the resulting artifact through the [Completion Adversarial Critic Council Gate](completion-critic-council.md) before `Done` or Closeout. Low-risk non-perceptual work may skip only with a recorded reason; perceptual work uses `critic_lite`, while games, releases, and high-impact work use `critic_full`. Critic-driven code repairs receive only the affected focused CodeRabbit review before the one allowed critic delta wave. Before `Done`, require recorded smoke verification, resolved or documented blockers and critic dispositions, and task state that matches reality. The council is advisory evidence, not passing smoke evidence.
+After local verification, run applicable CodeRabbit technical review first, verify its findings, repair real defects, and re-verify locally. Then route the resulting artifact through the [Completion Adversarial Critic Council Gate](completion-critic-council.md) before `Done` or Closeout. Low-risk non-perceptual work may skip only with a recorded reason; perceptual work uses `critic_lite`, while games, releases, and high-impact work use `critic_full`. Critic-driven code repairs receive the affected focused CodeRabbit review within its separate quota. Follow the selected bounded or convergence loop policy; convergence has no fixed wave count and cannot finish with accepted or deferred defects. Before `Done`, require recorded smoke verification, resolved or documented blockers and critic dispositions, and task state that matches reality. The council is advisory evidence, not passing smoke evidence.
 
 ## Gate 7: Closeout
+
+Stop dispatching new adversarial waves once no unresolved P0/P1 remains. Repair the known P2/P3 backlog and verify the affected paths during cleanup; only a newly revealed P0/P1 reopens adversarial review. Final closure verification is not another unrestricted defect-hunting wave.
+
+For a `converge` critic loop, `Done` and clean Closeout require `outcome: passed`, validated final closure evidence, and all required lanes covered. `limited` or `blocked` permits only an unfinished checkpoint in Review/Blocked; documenting an unresolved blocker never satisfies convergence.
 
 After applicable CodeRabbit and Critic Council review, summarize outcomes, preserve smoke-test and advisory evidence separately, record unfinished Backlog work, and capture the next reopenable checkpoint.
 

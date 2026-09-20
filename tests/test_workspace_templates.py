@@ -18,6 +18,8 @@ SNAPSHOT = SCRIPT_ROOT / "snapshot_mission_center.py"
 CLOSEOUT = SCRIPT_ROOT / "closeout_mission_center_cycle.py"
 sys.path.insert(0, str(SCRIPT_ROOT))
 
+from common.markdown_table import split_cells
+
 
 def run_script(script: Path, *args: str) -> None:
     environment = os.environ.copy()
@@ -142,6 +144,21 @@ class WorkspaceTemplateTests(unittest.TestCase):
             self.assertIn("Hair Dryer", project)
             self.assertIn("Create a better hair dryer", project)
             self.assertIn("First experiment", project)
+
+    def test_seed_escapes_goal_when_writing_task_table(self):
+        with workspace_tempdir("workspace-templates-") as temporary:
+            workspace = Path(temporary) / "workspace"
+            run_script(BOOTSTRAP, workspace, "--language", "en")
+            goal = r"Keep the C:\path | stable"
+            run_script(SEED, workspace, "--goal", goal, "--language", "en")
+
+            tasks = (workspace / "MissionCenter" / "tasks.md").read_text(
+                encoding="utf-8"
+            )
+            epic = next(line for line in tasks.splitlines() if line.startswith("| MC-E1"))
+            cells = split_cells(epic)
+            self.assertEqual(len(cells), 13)
+            self.assertEqual(cells[1], goal)
 
     def test_bootstrap_without_force_preserves_existing_files(self):
         with workspace_tempdir("workspace-templates-") as temporary:

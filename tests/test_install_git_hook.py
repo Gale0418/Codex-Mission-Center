@@ -2,23 +2,15 @@ import importlib.util
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
+from tests import workspace_tempdir
+
 
 ROOT = Path(__file__).parents[1]
-TEST_TMP_ROOT = Path(tempfile.gettempdir()) / "codex-mission-center-hook-tests"
-TEST_TMP_ROOT.mkdir(parents=True, exist_ok=True)
-
-
-def fresh_test_dir(name: str) -> Path:
-    path = TEST_TMP_ROOT / name
-    if path.exists():
-        shutil.rmtree(path)
-    path.mkdir(parents=True)
-    return path
 MODULE_PATH = ROOT / "scripts" / "install_git_hook.py"
+POWERSHELL_MODULE_PATH = ROOT / "scripts" / "install_git_hook.ps1"
 
 
 def load_installer():
@@ -29,10 +21,38 @@ def load_installer():
 
 
 class InstallGitHookTests(unittest.TestCase):
+    def test_powershell_installer_generates_python_installer_contract(self):
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 unavailable")
+        installer = load_installer()
+        with workspace_tempdir("hook-powershell-contract-") as temporary:
+            repo = Path(temporary)
+            (repo / ".git" / "hooks").mkdir(parents=True)
+            result = subprocess.run(
+                [
+                    powershell,
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-File",
+                    str(POWERSHELL_MODULE_PATH),
+                    "-TargetRepoPath",
+                    str(repo),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            hook = repo / ".git" / "hooks" / "pre-commit"
+            self.assertEqual(hook.read_bytes(), installer.PRE_COMMIT_HOOK_SCRIPT.encode("utf-8"))
+            self.assertTrue(installer.install_git_hook(repo))
+
     def test_existing_non_tool_hook_is_preserved_and_fails(self):
         installer = load_installer()
-        repo = fresh_test_dir("hook-non-tool")
-        try:
+        with workspace_tempdir("hook-non-tool-") as temporary:
+            repo = Path(temporary)
             hook = repo / ".git" / "hooks" / "pre-commit"
             hook.parent.mkdir(parents=True)
             hook.write_text("#!/bin/sh\necho user-hook\n", encoding="utf-8")
@@ -46,31 +66,25 @@ class InstallGitHookTests(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(hook.read_text(encoding="utf-8"), "#!/bin/sh\necho user-hook\n")
-        finally:
-            shutil.rmtree(repo)
 
     def test_existing_post_commit_is_never_changed(self):
-        repo = fresh_test_dir("hook-post-commit-preserved")
-        try:
+        with workspace_tempdir("hook-post-commit-preserved-") as temporary:
+            repo = Path(temporary)
             post_commit = repo / ".git" / "hooks" / "post-commit"
             post_commit.parent.mkdir(parents=True)
             post_commit.write_text("#!/bin/sh\necho user-post-commit\n", encoding="utf-8")
             self.assertTrue(load_installer().install_git_hook(repo))
             self.assertEqual(post_commit.read_text(encoding="utf-8"), "#!/bin/sh\necho user-post-commit\n")
             self.assertTrue((repo / ".git" / "hooks" / "pre-commit").exists())
-        finally:
-            shutil.rmtree(repo)
 
     def test_existing_tool_hook_is_idempotent(self):
         installer = load_installer()
-        repo = fresh_test_dir("hook-tool")
-        try:
+        with workspace_tempdir("hook-tool-") as temporary:
+            repo = Path(temporary)
             hook = repo / ".git" / "hooks" / "pre-commit"
             hook.parent.mkdir(parents=True)
             hook.write_text(installer.PRE_COMMIT_HOOK_SCRIPT, encoding="utf-8")
             self.assertTrue(installer.install_git_hook(repo))
-        finally:
-            shutil.rmtree(repo)
 
     def test_generated_hook_selects_python_fallbacks_and_fails_without_python(self):
         installer = load_installer()
@@ -82,8 +96,8 @@ class InstallGitHookTests(unittest.TestCase):
         if not sh:
             self.skipTest("POSIX shell unavailable")
 
-        root = fresh_test_dir("hook-python-fallbacks")
-        try:
+        with workspace_tempdir("hook-python-fallbacks-") as temporary:
+            root = Path(temporary)
             fake_bin = root / "bin"
             fake_bin.mkdir()
             hook = root / "pre-commit"
@@ -148,22 +162,18 @@ class InstallGitHookTests(unittest.TestCase):
             invocation = log.read_text(encoding="utf-8")
             self.assertIn("/python ", invocation.replace("\\", "/"))
             self.assertNotIn("/python3 ", invocation.replace("\\", "/"))
-        finally:
-            shutil.rmtree(root)
 
     def test_git_file_is_rejected_without_creating_hooks(self):
-        repo = fresh_test_dir("hook-git-file")
-        try:
+        with workspace_tempdir("hook-git-file-") as temporary:
+            repo = Path(temporary)
             (repo / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
             self.assertFalse(load_installer().install_git_hook(repo))
             self.assertFalse((repo / ".git" / "hooks").exists())
-        finally:
-            shutil.rmtree(repo)
 
     def test_existing_generated_crlf_hook_is_upgraded_to_lf(self):
         installer = load_installer()
-        repo = fresh_test_dir("hook-tool-crlf")
-        try:
+        with workspace_tempdir("hook-tool-crlf-") as temporary:
+            repo = Path(temporary)
             hook = repo / ".git" / "hooks" / "pre-commit"
             hook.parent.mkdir(parents=True)
             legacy = (
@@ -182,8 +192,6 @@ class InstallGitHookTests(unittest.TestCase):
             self.assertNotIn(b"\r\n", hook.read_bytes())
             if sys.platform != "win32":
                 self.assertTrue(hook.stat().st_mode & 0o100)
-        finally:
-            shutil.rmtree(repo)
 
 
 if __name__ == "__main__":

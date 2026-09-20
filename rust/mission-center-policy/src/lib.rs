@@ -2541,9 +2541,38 @@ pub fn validate_critic_record(record: &Value) -> Vec<String> {
     };
     let mut errors = scan_forbidden_content(record);
     let version = strv(r.get("schemaVersion")).unwrap_or("");
-    let route = strv(r.get("route"))
-        .or_else(|| strv(r.get("selectedRoute")))
+    let route = strv(r.get("selectedRoute"))
+        .or_else(|| strv(r.get("route")))
         .unwrap_or("");
+    let state = strv(r.get("executionStatus")).unwrap_or("");
+    let mut loop_mode = "bounded";
+    let mut closure: Option<&Map<String, Value>> = None;
+    if let Some(policy_value) = r.get("loopPolicy") {
+        if let Some(policy) = obj(policy_value) {
+            push_unknown(&mut errors, policy, &["mode", "stopCondition", "closure"]);
+            let mode = strv(policy.get("mode")).unwrap_or("");
+            if !["bounded", "converge"].contains(&mode) {
+                errors.push("loopPolicy.mode must be bounded or converge".to_owned());
+            } else {
+                loop_mode = mode;
+                if mode == "converge" {
+                    if strv(policy.get("stopCondition")) != Some("all_findings_resolved") {
+                        errors.push(
+                            "converge loopPolicy requires stopCondition all_findings_resolved"
+                                .to_owned(),
+                        );
+                    }
+                    if route == "skip" {
+                        errors.push("skip route cannot select converge loopPolicy".to_owned());
+                    }
+                    closure = policy.get("closure").and_then(obj);
+                }
+            }
+        } else {
+            errors.push("loopPolicy must be an object".to_owned());
+        }
+    }
+    let convergence = loop_mode == "converge";
     if version == "1.1" {
         push_unknown(
             &mut errors,
@@ -2557,6 +2586,19 @@ pub fn validate_critic_record(record: &Value) -> Vec<String> {
                 "chairRecordLocator",
                 "reason",
                 "route",
+                "loopPolicy",
+                "artifactManifest",
+                "snapshots",
+                "authorization",
+                "budgets",
+                "critics",
+                "outcome",
+                "lanes",
+                "arbiter",
+                "smokePassedByCouncil",
+                "findings",
+                "notDispatched",
+                "dispatchStatus",
             ],
         );
         if !["skip", "critic_lite", "critic_full"].contains(&route) {
@@ -2582,7 +2624,9 @@ pub fn validate_critic_record(record: &Value) -> Vec<String> {
         {
             errors.push("chairRecordLocator must use output/mission-center-critique/".to_owned());
         }
-        let state = strv(r.get("executionStatus")).unwrap_or("");
+        if state != "completed" && strv(r.get("outcome")) == Some("passed") {
+            errors.push("incomplete critic records cannot be passed".to_owned());
+        }
         if boolv(r.get("requiredByPolicy")) == Some(true) && state != "completed" {
             errors.push("requiredByPolicy records must be completed".to_owned());
         }
@@ -2626,6 +2670,7 @@ pub fn validate_critic_record(record: &Value) -> Vec<String> {
             "findings",
             "notDispatched",
             "dispatchStatus",
+            "loopPolicy",
         ],
     );
     if version != "1.0" {
@@ -2692,10 +2737,17 @@ pub fn validate_critic_record(record: &Value) -> Vec<String> {
         }
     }
     let snapshots = arr(r.get("snapshots"));
-    if snapshots.is_none_or(|v| v.is_empty() || v.len() > 2) {
-        errors.push("snapshots must contain one or two snapshots".to_owned());
+    let mut final_snapshot_id = None;
+    let max_snapshots = if convergence { usize::MAX } else { 2 };
+    if snapshots.is_none_or(|v| v.is_empty() || v.len() > max_snapshots) {
+        errors.push(if convergence {
+            "snapshots must contain one or more snapshots".to_owned()
+        } else {
+            "snapshots must contain one or two snapshots".to_owned()
+        });
     } else if snapshots.unwrap().iter().all(|v| obj(v).is_some()) {
-        let first = obj(&snapshots.unwrap()[0]).unwrap();
+        let snapshots = snapshots.unwrap();
+        let first = obj(&snapshots[0]).unwrap();
         if first
             .get("parent")
             .is_some_and(|v| !v.is_null() && strv(Some(v)) != Some(""))
@@ -2703,8 +2755,8 @@ pub fn validate_critic_record(record: &Value) -> Vec<String> {
             errors.push("first snapshot must not have a parent".to_owned());
         }
         let mut seen = HashSet::new();
-        let first_id = strv(first.get("id")).or_else(|| strv(first.get("snapshotId")));
-        for (i, v) in snapshots.unwrap().iter().enumerate() {
+        let mut previous_id = None;
+        for (i, v) in snapshots.iter().enumerate() {
             let s = obj(v).unwrap();
             push_unknown(
                 &mut errors,
@@ -2730,14 +2782,40 @@ pub fn validate_critic_record(record: &Value) -> Vec<String> {
             if arr(s.get("evidenceLinks")).is_none_or(Vec::is_empty) {
                 errors.push(format!("snapshot {i} needs evidenceLinks"));
             }
-        }
-        if snapshots.unwrap().len() == 2
-            && strv(obj(&snapshots.unwrap()[1]).unwrap().get("parent")) != first_id
-        {
-            errors.push("delta snapshot parent must reference first snapshot".to_owned());
+            if i > 0 && strv(s.get("parent")) != previous_id {
+                errors.push(if convergence {
+                    format!("snapshot {i} parent must reference the previous snapshot")
+                } else {
+                    "delta snapshot parent must reference first snapshot".to_owned()
+                });
+            }
+            previous_id = id;
+            final_snapshot_id = id;
         }
     } else {
         errors.push("each snapshot must be an object".to_owned());
+    }
+
+    if convergence && strv(r.get("outcome")) == Some("passed") {
+        if closure.is_none() {
+            errors.push("converge passed requires closure evidence".to_owned());
+        } else if let Some(closure_map) = closure {
+            if strv(closure_map.get("snapshotId")).is_none() {
+                errors.push("loopPolicy.closure needs snapshotId".to_owned());
+            }
+            if strv(closure_map.get("evidenceLocator")).is_none() {
+                errors.push("loopPolicy.closure needs evidenceLocator".to_owned());
+            }
+        }
+    }
+    if convergence
+        && let (Some(expected), Some(actual)) = (
+            closure.and_then(|value| strv(value.get("snapshotId"))),
+            final_snapshot_id,
+        )
+        && expected != actual
+    {
+        errors.push("loopPolicy.closure.snapshotId must reference the final snapshot".to_owned());
     }
     if route != "skip" {
         if boolv(
@@ -2856,8 +2934,80 @@ pub fn validate_critic_record(record: &Value) -> Vec<String> {
             errors.push("critic routes cannot be notDispatched".to_owned());
         }
     }
+    if convergence
+        && strv(r.get("outcome")) == Some("passed")
+        && let Some(closure_map) = closure
+    {
+        push_unknown(
+            &mut errors,
+            closure_map,
+            &["snapshotId", "evidenceLocator", "reviews"],
+        );
+        let mut expected_review_ids = HashSet::new();
+        if let Some(critics) = arr(r.get("critics")) {
+            for critic in critics {
+                if let Some(id) = obj(critic).and_then(|critic| strv(critic.get("id"))) {
+                    expected_review_ids.insert(id.to_owned());
+                }
+            }
+        }
+        if route == "critic_full"
+            && let Some(id) = obj(r.get("arbiter").unwrap_or(&Value::Null))
+                .and_then(|arbiter| strv(arbiter.get("id")))
+        {
+            expected_review_ids.insert(id.to_owned());
+        }
+        let reviews = arr(closure_map.get("reviews"));
+        if let Some(reviews) = reviews {
+            let mut review_ids = HashSet::new();
+            for (i, review) in reviews.iter().enumerate() {
+                let Some(review) = obj(review) else {
+                    errors.push(format!("closure review {i} must be an object"));
+                    continue;
+                };
+                push_unknown(
+                    &mut errors,
+                    review,
+                    &["seatId", "snapshotId", "evidenceLocator", "sha256"],
+                );
+                let seat_id = strv(review.get("seatId"));
+                if seat_id.is_none_or(|id| !review_ids.insert(id.to_owned())) {
+                    errors.push(format!("closure review {i} needs a unique seatId"));
+                }
+                if seat_id.is_none_or(|id| !expected_review_ids.contains(id)) {
+                    errors.push(format!("closure review {i} references an unknown seat"));
+                }
+                if strv(review.get("snapshotId")).is_none() {
+                    errors.push(format!("closure review {i} needs snapshotId"));
+                } else if final_snapshot_id.is_some()
+                    && strv(review.get("snapshotId")) != final_snapshot_id
+                {
+                    errors.push(format!(
+                        "closure review {i} snapshotId must reference the final snapshot"
+                    ));
+                }
+                if strv(review.get("evidenceLocator")).is_none() {
+                    errors.push(format!("closure review {i} needs evidenceLocator"));
+                }
+                let sha256 = strv(review.get("sha256"));
+                if sha256.is_none_or(|hash| {
+                    hash.len() != 64 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+                }) {
+                    errors.push(format!("closure review {i} needs a 64-character sha256"));
+                }
+            }
+            if review_ids != expected_review_ids {
+                errors.push("closure reviews must cover every critic seat and arbiter".to_owned());
+            }
+        } else {
+            errors.push("converge passed closure requires reviews".to_owned());
+        }
+    }
     if boolv(r.get("smokePassedByCouncil")) == Some(true) {
         errors.push("council evidence cannot be smoke evidence".to_owned());
+    }
+    if convergence && !r.contains_key("findings") {
+        errors.push("converge loopPolicy requires an explicit findings list".to_owned());
     }
     if let Some(findings) = arr(r.get("findings")) {
         let mut seen = HashSet::new();
@@ -2934,13 +3084,28 @@ pub fn validate_critic_record(record: &Value) -> Vec<String> {
                 errors.push(format!("finding {i} has invalid chairFinalDisposition"));
             }
             let severity = strv(f.get("severity")).unwrap_or("");
+            if convergence && disposition == "accepted" {
+                errors.push(format!("finding {i}: converge findings cannot be accepted"));
+            }
+            let interrupted_convergence = convergence
+                && ["limited", "blocked"].contains(&strv(r.get("outcome")).unwrap_or(""));
             if severity == "Critical" && disposition == "accepted" {
                 errors.push(format!("finding {i}: Critical cannot be human accepted"));
             }
-            if severity == "Critical"
+            if !interrupted_convergence
+                && severity == "Critical"
                 && !["fixed", "rejected-with-counterevidence"].contains(&disposition)
             {
                 errors.push(format!("finding {i}: unresolved Critical finding"));
+            }
+            if convergence
+                && strv(r.get("outcome")) == Some("passed")
+                && !["fixed", "rejected-with-counterevidence"].contains(&disposition)
+            {
+                errors.push(
+                    "convergence passed requires every finding to be fixed or rejected-with-counterevidence"
+                        .to_owned(),
+                );
             }
             if disposition == "rejected-with-counterevidence"
                 && f.get("counterevidence")
@@ -2955,7 +3120,8 @@ pub fn validate_critic_record(record: &Value) -> Vec<String> {
                     "finding {i}: rejected-with-counterevidence needs counterevidence"
                 ));
             }
-            if severity == "High"
+            if !interrupted_convergence
+                && severity == "High"
                 && disposition == "deferred"
                 && !valid_human_acceptance(f.get("humanAcceptance"))
             {
