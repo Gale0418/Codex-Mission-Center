@@ -1,9 +1,9 @@
 <!-- Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files. -->
-<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=3624982d1638b84faf596f219295d3d210993a53afe784f7db044b6b822c7bb5 -->
+<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=8b0f0ad8de8636ee1cdcbeb855528be9b394b3147b557b0522b7ae7468db551f -->
 # 任務簡報
 
 - 最後整理: 2026-09-21
-- 來源指紋: `3624982d1638b84faf596f219295d3d210993a53afe784f7db044b6b822c7bb5`
+- 來源指紋: `8b0f0ad8de8636ee1cdcbeb855528be9b394b3147b557b0522b7ae7468db551f`
 - 唯一真實來源: `tasks.md`
 - 專案: Codex Mission Center
 - 北極星: 將 Mission Center 升級為研究驅動的自適應 Project OS，並提供可選的本機 Live Agent HUD
@@ -22,7 +22,7 @@
 - GR-007
 
 ## 需要時再讀
-- 目前工作（1 項）→ `working-set.md`
+- 目前工作（0 項）→ `working-set.md`
 - 修改任務生命週期／順序 → `tasks.md`
 - 查閱理由／證據 → `decisions.md`、`notes.md`、`smoke-tests.md`
 - 簡報／工作集過期或截斷 → 執行 `mission_maintenance.py sync` 後再讀 canonical files
