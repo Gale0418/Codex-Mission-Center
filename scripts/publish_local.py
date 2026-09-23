@@ -85,6 +85,8 @@ def load_strict_json_bytes(content: bytes, description: str) -> dict:
 
 def validate_semver(version: object) -> str:
     value = str(version)
+    if len(value) > 128:
+        raise ValueError("Plugin version must be SemVer and at most 128 characters")
     if not SEMVER_PATTERN.fullmatch(value):
         raise ValueError(f"Plugin version must be SemVer: {value!r}")
     return value
