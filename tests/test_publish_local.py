@@ -178,10 +178,15 @@ class PublishLocalTests(unittest.TestCase):
 
     def test_semver_normalization_discards_arbitrary_build_metadata(self):
         self.assertEqual(normalized_version("1.2.3-beta.2+vendor.build"), "1.2.3-beta.2")
+        self.assertEqual(normalized_version("1.2.3-0+001"), "1.2.3-0")
         with self.assertRaises(ValueError):
             normalized_version("1.2")
+        with self.assertRaises(ValueError):
+            normalized_version("1.2.3-01")
         with self.assertRaisesRegex(ValueError, "at most 128 characters"):
             normalized_version("1.2.3-" + "a" * 129 + "!")
+        with self.assertRaises(ValueError):
+            normalized_version("0.0.0-0." + "--." * 39 + "!")
 
     def test_stable_rust_publish_requires_release_package_before_writing(self):
         with workspace_tempdir("publish-local-") as temporary:

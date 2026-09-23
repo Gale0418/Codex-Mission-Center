@@ -48,13 +48,6 @@ PLATFORM_SPECS = {
     "macos-x86_64": ("macos", "x86_64", "bin/macos-x86_64/mission-center"),
     "macos-aarch64": ("macos", "aarch64", "bin/macos-aarch64/mission-center"),
 }
-SEMVER_PATTERN = re.compile(
-    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
-    r"(?:-((?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?"
-    r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
-)
-
-
 def is_excluded(relative: Path) -> bool:
     return any(part in EXCLUDED_DIRS for part in relative.parts) or (
         relative.suffix.lower() in EXCLUDED_SUFFIXES
@@ -87,7 +80,40 @@ def validate_semver(version: object) -> str:
     value = str(version)
     if len(value) > 128:
         raise ValueError("Plugin version must be SemVer and at most 128 characters")
-    if not SEMVER_PATTERN.fullmatch(value):
+
+    core_and_prerelease, build_separator, build = value.partition("+")
+    core, prerelease_separator, prerelease = core_and_prerelease.partition("-")
+    core_parts = core.split(".")
+    valid_core = len(core_parts) == 3 and all(
+        part
+        and all("0" <= char <= "9" for char in part)
+        and (len(part) == 1 or part[0] != "0")
+        for part in core_parts
+    )
+
+    def valid_identifiers(text: str, *, allow_numeric_leading_zero: bool) -> bool:
+        if not text:
+            return False
+        for identifier in text.split("."):
+            if not identifier or any(
+                char not in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-"
+                for char in identifier
+            ):
+                return False
+            if (
+                not allow_numeric_leading_zero
+                and len(identifier) > 1
+                and identifier[0] == "0"
+                and all("0" <= char <= "9" for char in identifier)
+            ):
+                return False
+        return True
+
+    if (
+        not valid_core
+        or (prerelease_separator and not valid_identifiers(prerelease, allow_numeric_leading_zero=False))
+        or (build_separator and not valid_identifiers(build, allow_numeric_leading_zero=True))
+    ):
         raise ValueError(f"Plugin version must be SemVer: {value!r}")
     return value
 
