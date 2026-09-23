@@ -180,6 +180,8 @@ class PublishLocalTests(unittest.TestCase):
         self.assertEqual(normalized_version("1.2.3-beta.2+vendor.build"), "1.2.3-beta.2")
         with self.assertRaises(ValueError):
             normalized_version("1.2")
+        with self.assertRaisesRegex(ValueError, "at most 128 characters"):
+            normalized_version("1.2.3-" + "a" * 129 + "!")
 
     def test_stable_rust_publish_requires_release_package_before_writing(self):
         with workspace_tempdir("publish-local-") as temporary:
