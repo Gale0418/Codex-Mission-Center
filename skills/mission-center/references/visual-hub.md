@@ -16,7 +16,11 @@ When expanded, Live Agents may group cards by verified `parentAgentId` into a bo
 
 An interactive repository Code Map is a separate optional artifact, not Runtime telemetry. If implemented, keep a human HTML view, a machine-readable JSON view, and a fingerprint/lock that marks stale modules after source changes. Caller, dependency, flow, test, and source-evidence edges must come from verified analysis; unsupported languages or ambiguous edges stay unknown. Do not merge this artifact into `RuntimeState` or make it a canonical Task source.
 
-Serve the HUD through `mission_runtime.py serve`, bound to `127.0.0.1`, when live JSON is needed. First-version controls are read-only. Future approve, reject, or focus actions appear only when declared by provider capabilities, require a random session token, `POST`, and Origin validation, and must retain the provider's native permission flow.
+Serve the HUD through the verified Rust hook or `mission-center hud launch --foreground`, bound to `127.0.0.1`. The CLI reads only the current workspace's canonical `MissionCenter/tasks.md` in one bounded background worker every 15 seconds. It pushes a separate Task snapshot into the server's memory; HTTP requests do not read NAS files. Static presentation assets remain embedded. Runtime telemetry never supplies task status.
+
+The Task snapshot reports full row totals, visible/hidden card counts, and separate leaf totals. The progress bar is the completed-row percentage, including parents; it is not the leaf percentage or a fixed sprint denominator. Initial source failure is `UNAVAILABLE`, never a valid empty demo. Read/parse failure retains the last valid snapshot as `STALE`; a snapshot older than 90 seconds is also marked stale on the next browser poll. A stalled OS-level read cannot be forcibly cancelled safely; it occupies only the single source worker, leaves HTTP responsive, and must not trigger replacement-worker loops.
+
+First-version controls are read-only. Future approve, reject, or focus actions appear only when declared by provider capabilities, require a random session token, `POST`, and Origin validation, and must retain the provider's native permission flow.
 
 明確呼叫 Mission Center 時可自動開啟本機 HUD；Hook 需由使用者信任，並以缺少工作區資產、無法健康檢查、無頭環境或瀏覽器失敗為正常 fail-safe，不阻塞核心任務。
 

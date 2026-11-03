@@ -12,7 +12,7 @@ Steelman Evolution is a bounded advisory artifact, never a task lifecycle source
 
 Every non-skip artifact records `trueGoal`, `currentBest`, `strongestOpposition`, `thirdRoute`, `flipVariables`, `smallestDiscriminatingTest`, `materialDissent`, `reopenConditions`, `qualityContract`, `architectureContract`, `evidenceRefs`, `unknowns`, `selectedRoute`, and `maxRounds`. Material dissent and reopen conditions may not be empty.
 
-Perspectives must be labelled `simulated` or `real_subagent`. Simulated perspectives are reasoning aids and do not imply independent execution. `realSubagentsCompleted` is accepted only when at least one real perspective is marked completed and the artifact contains `authorization.explicitAuthorization: true` plus positive `budgets.total`, `perSeat`, `tool`, and `wallClock`. Missing authorization or any budget fails closed; the router never dispatches or claims a subagent completed.
+Perspectives must be labelled `simulated` or `real_subagent`. Simulated perspectives are reasoning aids and do not imply independent execution. `realSubagentsCompleted` is accepted only when at least one real perspective is marked completed and the artifact contains `authorization.explicitAuthorization: true` plus positive `budgets.total`, `perSeat`, `tool`, and `wallClock`. Apply the [standing resource policy](agent-orchestration.md#standing-authorization-and-resource-policy): reuse task-first approval and let the chair supply finite per-slice envelopes, without asking for numeric caps. Missing actual authorization or any machine-required envelope fails closed; the router never dispatches or claims a subagent completed.
 
 ```bash
 python skills/mission-center/scripts/steelman_contract.py route . MC-048 --risk high

@@ -2,7 +2,7 @@
 
 ## Gate 1: Intake
 
-Ask one question at a time until the mission completeness checklist passes. Do not scaffold or publish tasks while the goal is unclear.
+Ask at most one blocking question at a time only when the mission completeness checklist has a material gap. Reuse standing resource authorization under [Agent Orchestration](agent-orchestration.md#standing-authorization-and-resource-policy); do not require numeric budget or time estimates to pass intake. Do not scaffold or publish tasks while the goal is unclear.
 
 ## Gate 2: Research, Expert Deliberation, Adaptive Optimization, and Design
 

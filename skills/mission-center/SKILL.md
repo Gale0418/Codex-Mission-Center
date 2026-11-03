@@ -7,7 +7,15 @@ description: Use when a high-impact or multi-step goal needs clarification, rese
 
 Mission Center 僅處理 `./MissionCenter/`，不掃描、註冊、監控或合併其他 repo；依語言生成（繁中 zh-TW）。`tasks.md` 是唯一真實來源。
 
-正式 Plugin 的 `<mission-center>` 是已驗證 Rust binary：POSIX 用 `bin/mission-center`，Windows 用 `bin/mission-center.ps1`；不下載、不編譯、不 fallback 到 Python（Python 僅 oracle/compat）。
+正式 Plugin 使用已驗證 Rust `<mission-center>`：POSIX `bin/mission-center`、Windows `bin/mission-center.ps1`；不下載、編譯或 fallback 到 Python。
+
+## 記錄與大小界線
+
+`MissionCenter/tasks.md` 是唯一生命週期與排序真實來源；daily-log、brief、working-set、focus 與 archive 都不得推導或覆寫 task 狀態。`tasks.md` 不施加固定檔案大小上限。每項任務以精簡易懂的目標、狀態、必要下一步與驗證為主；必要阻礙與證據用連結補充，不貼入冗長或無關的對話。
+
+近期 `MissionCenter/daily-log.md` 是 bounded hot log：`sync` 將活躍記錄維持在 128 KiB 內；移出舊記錄前，必須先以內容雜湊命名的 immutable archive 完整保存，並驗證 archive 的 bytes 與雜湊。archive 只保存歷史，不是第二個 task truth source；不得誤認 `tasks.md` 可以還原完整日誌。
+
+使用 Rust selector 進行維護與診斷：`mission-center status --root <path> [--date <YYYY-MM-DD>]`、`mission-center resume --root <path> [--date <YYYY-MM-DD>]`、`mission-center sync --root <path> --operation-id <id> --timestamp <RFC3339>` 與 `mission-center doctor --root <path>`。
 
 ## 先判斷意圖
 
@@ -20,11 +28,11 @@ Mission Center 僅處理 `./MissionCenter/`，不掃描、註冊、監控或合�
 
 先查本地證據；新依賴、高成本架構、現行規範或相容性風險才依 [研究](references/research-protocol.md) 做 Prior Art／主要來源／授權／Clean-room 判斷。
 
-開放式發想才用 [創意智囊](references/intake-council.md)；重大決策依 [動態專家智囊](references/dynamic-expert-council.md) 選 skip／lite／full。真實子代理、Shadow 試驗與額外預算均須使用者核准。有指標、硬限制、預算與停止規則才做 [最佳化](references/optimization-protocol.md)／實驗；否則研究／決策，不偽造數值最佳解。
+開放式發想才用 [創意智囊](references/intake-council.md)；重大決策依 [動態專家智囊](references/dynamic-expert-council.md) 選 skip／lite／full。真實子代理與 Shadow 試驗依[協作授權](references/agent-orchestration.md)沿用既有授權；不重問額度或時間。有指標、硬限制、預算與停止規則才做 [最佳化](references/optimization-protocol.md)／實驗；否則研究／決策，不偽造數值最佳解。
 
 ## 任務與 Runtime 分離
 
-HUD helper 一對一 task，來源永遠是 `tasks.md`，依 [視覺 HUD](references/visual-hub.md) 同步；Runtime 僅可選遙測，依 [Runtime 協定](references/runtime-agent-protocol.md) 顯示在獨立 Live Agents 面板，不改任務狀態、排序或唯一真實來源。
+HUD helper 一對一 task，依 [視覺 HUD](references/visual-hub.md) 從 `tasks.md` 同步；[Runtime](references/runtime-agent-protocol.md) 僅可選遙測，顯示於獨立 Live Agents 面板，不改任務狀態或排序。
 
 開 HUD：`<mission-center> hud launch --root . --foreground`；僅 loopback；宿主不支援時回報 unsupported，不開外部瀏覽器。
 
@@ -34,7 +42,7 @@ Project Map 與 RuntimeState 分離；task transition 每次只前進一格、�
 
 每項任務須有低成本可重複驗證，依 [煙霧測試模式](references/smoke-test-patterns.md) 與 [目錄](references/smoke-test-catalog.md) 記錄指令／動作、預期、觀察、結果、日期、task ID；無通過證據不得 Done。收尾依 [快照格式](references/snapshot-format.md) 產生 checkpoint，依 [收尾格式](references/closeout-format.md) 保存結果／未完成工作。
 
-實作驗證後，高風險、大變更或使用者要求才走 [CodeRabbit 閘門](references/coderabbit-review-gate.md)；依 [完成對抗評論](references/completion-critic-council.md) 評論。預設 `converge`，不限輪數；無 P0/P1 即停挑剔，已知問題全修後驗收，受阻則存檔。依[專家提詞](references/critic-prompts.md)分工。發現須查證，修正後重跑受影響驗證；不可把不可用外部審查說成通過。
+實作驗證後，高風險、大變更或使用者要求才走 [CodeRabbit 閘門](references/coderabbit-review-gate.md)；依 [完成對抗評論](references/completion-critic-council.md) 評論。預設 `converge` 不限輪數；多位獨立專家各有提詞，有 P0/P1 就修復再審；清零後全修已知問題並驗收，受阻存檔。依[專家提詞](references/critic-prompts.md)分工。發現須查證，修正後重跑受影響驗證；不可把不可用外部審查說成通過。
 
 ## 維護者 Hook
 

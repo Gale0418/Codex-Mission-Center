@@ -1,8 +1,10 @@
 {
-  "status": "Intake",
+  "status": "Unknown",
   "goal": "MissionCenter task",
   "progress": 0,
   "active": [],
   "blocked": [],
-  "agents": []
+  "agents": [],
+  "freshness": "UNAVAILABLE",
+  "observedAtMs": 0
 }

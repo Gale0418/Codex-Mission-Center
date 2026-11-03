@@ -11,7 +11,7 @@ Metrics with different units remain separate. Compute composite loss only when t
 - read-only sandbox and network disabled
 - maximum concurrency `2`
 - at most one retry per trial
-- positive trial, token, and wall-clock limits are mandatory
+- positive trial, token, and wall-clock limits are mandatory technical execution envelopes; the chair selects them under the [standing resource policy](agent-orchestration.md#standing-authorization-and-resource-policy), without requiring user estimates or renewed budget approval
 - early stop on budget exhaustion, hard-constraint failure, or declared stopping rule
 - winning candidates enter `Review`; they are never adopted automatically
 

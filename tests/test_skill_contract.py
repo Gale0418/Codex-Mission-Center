@@ -99,7 +99,7 @@ class SkillContractTests(unittest.TestCase):
         council = (SKILL_ROOT / "references" / "intake-council.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("Ask exactly one question", intake)
+        self.assertIn("Ask at most one blocking question", intake)
         self.assertIn("Stop only when", intake)
         self.assertIn("Diverge", council)
         self.assertIn("Converge", council)
@@ -151,7 +151,7 @@ class SkillContractTests(unittest.TestCase):
             "real subagents, never simulated perspectives",
             "at least two independent critic subagents",
             "at least three independent critic subagents plus a separate evidence-arbiter subagent",
-            "explicitly approved the total budget, per-seat budget, tool budget, and wall-clock budget",
+            "explicit task-first authorization",
             "cannot reach `done` or a clean closeout",
             "do not auto-downgrade to `skip`",
             "immutable snapshot",

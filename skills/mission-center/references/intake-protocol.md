@@ -11,7 +11,7 @@ For every intake turn:
 1. Restate the current understanding in one sentence.
 2. Name the most important missing fact or blind spot.
 3. Offer one concise recommendation when it helps the user decide.
-4. Ask exactly one question that most reduces uncertainty.
+4. Ask at most one blocking question when necessary information is missing; otherwise proceed using safe, reversible assumptions. Never ask for resource caps or time estimates already covered by standing authorization.
 
 Do not follow a fixed questionnaire when another question would clarify the mission faster.
 
