@@ -155,6 +155,14 @@ impl Platform {
             _ => "x86_64",
         }
     }
+    pub const fn canonical_path(self) -> &'static str {
+        match self {
+            Self::WindowsX86_64 => "bin/windows-x86_64/mission-center.exe",
+            Self::LinuxX86_64 => "bin/linux-x86_64/mission-center",
+            Self::MacosX86_64 => "bin/macos-x86_64/mission-center",
+            Self::MacosAarch64 => "bin/macos-aarch64/mission-center",
+        }
+    }
 
     /// Parse the only platform identifiers accepted by the release manifest.
     /// Keeping this conversion in the publish crate prevents callers from
@@ -341,6 +349,12 @@ impl PlatformArtifact {
             return Err(PublishError::stable(
                 ErrorCode::InvalidManifest,
                 "artifact path 與 executable 必須指向同一檔案。",
+            ));
+        }
+        if self.path != self.platform.canonical_path() {
+            return Err(PublishError::stable(
+                ErrorCode::WrongPlatform,
+                "artifact path 與平台 canonical path 不一致。",
             ));
         }
         if self.version != version || semver(&self.version).is_err() {

@@ -2241,10 +2241,10 @@ fn read_unbounded(path: &Path) -> Result<Vec<u8>, WorkspaceError> {
     })?;
     let mut bytes = Vec::new();
     bytes.try_reserve(capacity).map_err(|_| {
-        WorkspaceError::Io(io::Error::new(
-            io::ErrorKind::Other,
-            format!("unable to allocate memory for {}", path.display()),
-        ))
+        WorkspaceError::Io(io::Error::other(format!(
+            "unable to allocate memory for {}",
+            path.display()
+        )))
     })?;
     file.read_to_end(&mut bytes)?;
     Ok(bytes)

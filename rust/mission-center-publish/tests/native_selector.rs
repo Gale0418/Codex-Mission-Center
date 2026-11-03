@@ -32,22 +32,28 @@ fn fixture() -> FrozenPackage {
     let specs = [
         (
             Platform::WindowsX86_64,
-            "bin/win",
+            Platform::WindowsX86_64.canonical_path(),
             pe(),
             "windows",
             "x86_64",
         ),
-        (Platform::LinuxX86_64, "bin/linux", elf(), "linux", "x86_64"),
+        (
+            Platform::LinuxX86_64,
+            Platform::LinuxX86_64.canonical_path(),
+            elf(),
+            "linux",
+            "x86_64",
+        ),
         (
             Platform::MacosX86_64,
-            "bin/mac",
+            Platform::MacosX86_64.canonical_path(),
             macho(0x01000007),
             "macos",
             "x86_64",
         ),
         (
             Platform::MacosAarch64,
-            "bin/mac-arm",
+            Platform::MacosAarch64.canonical_path(),
             macho(0x0100000c),
             "macos",
             "aarch64",
@@ -105,7 +111,7 @@ fn selector_rejects_missing_binary_and_bad_checksum_before_any_mutation() {
         package
             .files()
             .iter()
-            .filter(|file| file.relative_path != "bin/linux")
+            .filter(|file| file.relative_path != Platform::LinuxX86_64.canonical_path())
             .cloned()
             .collect(),
     )
@@ -121,7 +127,7 @@ fn selector_rejects_missing_binary_and_bad_checksum_before_any_mutation() {
     let mut files = package.files().to_vec();
     let binary = files
         .iter_mut()
-        .find(|file| file.relative_path == "bin/linux")
+        .find(|file| file.relative_path == Platform::LinuxX86_64.canonical_path())
         .unwrap();
     binary.bytes[20] ^= 1;
     let corrupt = FrozenPackage::new(files).unwrap();
@@ -132,6 +138,26 @@ fn selector_rejects_missing_binary_and_bad_checksum_before_any_mutation() {
             .code(),
         ErrorCode::CorruptChecksum
     );
+}
+
+#[test]
+fn manifest_rejects_noncanonical_artifact_path_for_each_platform() {
+    let package = fixture();
+    let manifest_file = package
+        .files()
+        .iter()
+        .find(|file| file.relative_path == PLATFORM_MANIFEST_FILE)
+        .expect("platform manifest");
+    let manifest: serde_json::Value = serde_json::from_slice(&manifest_file.bytes).unwrap();
+
+    for (index, platform) in Platform::ALL.iter().enumerate() {
+        let mut invalid = manifest.clone();
+        invalid["artifacts"][index]["path"] = serde_json::json!("bin/wrong-path");
+        invalid["artifacts"][index]["executable"] = serde_json::json!("bin/wrong-path");
+        let error = PlatformManifest::from_json(&serde_json::to_vec(&invalid).unwrap())
+            .expect_err("noncanonical path must be rejected");
+        assert_eq!(error.code(), ErrorCode::WrongPlatform, "{platform:?}");
+    }
 }
 
 #[test]

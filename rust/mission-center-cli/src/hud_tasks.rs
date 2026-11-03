@@ -1,5 +1,5 @@
 use mission_center_core::{Task, TaskStatus, sha256_digest};
-use mission_center_runtime::HudServer;
+use mission_center_runtime::{HudServer, MAX_FIELD_BYTES, MAX_LIST_ITEMS};
 use mission_center_workspace::MissionWorkspace;
 use serde_json::{Value, json};
 use std::{
@@ -8,6 +8,29 @@ use std::{
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+const HUD_TITLE_MAX_BYTES: usize = 256;
+const HUD_TASK_MAX_BYTES: usize = 400;
+const HUD_TRUNCATION_MARKER: &str = "…";
+
+fn clip_utf8(value: &str, max_bytes: usize) -> String {
+    if value.len() <= max_bytes {
+        return value.to_owned();
+    }
+    let marker_bytes = HUD_TRUNCATION_MARKER.len();
+    debug_assert!(max_bytes > marker_bytes);
+    let mut end = max_bytes.saturating_sub(marker_bytes);
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut clipped = value[..end].to_owned();
+    clipped.push_str(HUD_TRUNCATION_MARKER);
+    clipped
+}
+
+fn task_id_is_publishable(task: &Task) -> bool {
+    task.id.len() <= MAX_FIELD_BYTES
+}
 
 fn now_millis() -> u64 {
     SystemTime::now()
@@ -44,9 +67,14 @@ fn snapshot(tasks: &[Task], source: &str) -> Value {
             .take(5)
             .map(|task| task.id.as_str()),
     );
-    let helpers: Vec<_> = tasks
+    let omitted_long_id = tasks
         .iter()
         .filter(|task| selected.contains(task.id.as_str()))
+        .filter(|task| !task_id_is_publishable(task))
+        .count();
+    let helpers: Vec<_> = tasks
+        .iter()
+        .filter(|task| selected.contains(task.id.as_str()) && task_id_is_publishable(task))
         .map(|task| {
             let status = task.status.as_str();
             let zone = if matches!(task.status, TaskStatus::Backlog | TaskStatus::Ready) {
@@ -54,9 +82,21 @@ fn snapshot(tasks: &[Task], source: &str) -> Value {
             } else {
                 status
             };
-            json!({"id":task.id,"name":task.title,"task":format!("{} {}",task.id,task.title),
+            let title = clip_utf8(&task.title, HUD_TITLE_MAX_BYTES);
+            let task_label = clip_utf8(&format!("{} {}", task.id, title), HUD_TASK_MAX_BYTES);
+            let mut dependencies = Vec::new();
+            let mut omitted_dependencies = 0usize;
+            for dependency in &task.dependencies {
+                if dependencies.len() >= MAX_LIST_ITEMS || dependency.len() > MAX_FIELD_BYTES {
+                    omitted_dependencies += 1;
+                } else {
+                    dependencies.push(dependency.clone());
+                }
+            }
+            json!({"id":task.id,"name":title,"task":task_label,
             "status":status,"zone":zone,"active":task.status != TaskStatus::Done,
-            "dependencies":task.dependencies})
+            "dependencies":dependencies,
+            "dependencyCounts":{"visible":dependencies.len(),"total":task.dependencies.len(),"omitted":omitted_dependencies}})
         })
         .collect();
     let blocked: Vec<_> = tasks
@@ -81,10 +121,10 @@ fn snapshot(tasks: &[Task], source: &str) -> Value {
         "status":status,
         "goal":format!("任務列完成 {done}/{}（含父項）；末端任務完成 {leaf_done}/{}",tasks.len(),leaves.len()),
         "progress":if tasks.is_empty() { 0 } else { (done * 100 + tasks.len() / 2) / tasks.len() },
-        "active":tasks.iter().filter(|task| task.status == TaskStatus::InProgress).take(15).map(|task| &task.title).collect::<Vec<_>>(),
-        "blocked":blocked.iter().take(15).map(|task| format!("{} {}",task.id,task.title)).collect::<Vec<_>>(),
+        "active":tasks.iter().filter(|task| task.status == TaskStatus::InProgress).take(15).map(|task| clip_utf8(&task.title, HUD_TITLE_MAX_BYTES)).collect::<Vec<_>>(),
+        "blocked":blocked.iter().filter(|task| task_id_is_publishable(task)).take(15).map(|task| clip_utf8(&format!("{} {}",task.id,task.title), HUD_TASK_MAX_BYTES)).collect::<Vec<_>>(),
         "blockedCount":blocked.len(),
-        "taskCounts":{"visible":helpers.len(),"total":tasks.len(),"hidden":tasks.len()-helpers.len()},
+        "taskCounts":{"visible":helpers.len(),"total":tasks.len(),"hidden":tasks.len()-helpers.len(),"omittedLongId":omitted_long_id},
         "leafCounts":{"done":leaf_done,"total":leaves.len()},
         "agents":helpers,"freshness":"VALID","observedAtMs":now_millis(),
         "source":{"path":"MissionCenter/tasks.md","sha256":sha256_digest(source.as_bytes())}
@@ -93,7 +133,7 @@ fn snapshot(tasks: &[Task], source: &str) -> Value {
 
 fn unavailable() -> Value {
     json!({"status":"Unknown","goal":"Canonical task source unavailable","progress":0,
-        "active":[],"blocked":[],"agents":[],"taskCounts":{"visible":0,"total":0,"hidden":0},
+        "active":[],"blocked":[],"agents":[],"taskCounts":{"visible":0,"total":0,"hidden":0,"omittedLongId":0},
         "freshness":"UNAVAILABLE","observedAtMs":0})
 }
 
@@ -142,6 +182,7 @@ pub fn start(root: PathBuf, server: HudServer) {
 mod tests {
     use super::*;
     use mission_center_core::parse_tasks;
+    use mission_center_runtime::{HUD_MANAGED_ASSETS, HudLauncher, HudServerConfig};
 
     #[test]
     fn task_snapshot_counts_parents_separately_and_preserves_canonical_selection() {
@@ -161,6 +202,90 @@ mod tests {
         assert_eq!(state["agents"], json!([]));
         assert_eq!(state["taskCounts"]["total"], 0);
         assert_eq!(unavailable()["freshness"], "UNAVAILABLE");
+    }
+
+    #[test]
+    fn hud_projection_is_bounded_and_set_task_state_preserves_canonical_source() {
+        let ascii_title = "A".repeat(600);
+        let cjk_title = "界".repeat(200);
+        let long_id = "I".repeat(MAX_FIELD_BYTES + 1);
+        let collision_id = format!("prefix-{}", "x".repeat(MAX_FIELD_BYTES - "prefix-".len()));
+        let collision_dependency = format!("{collision_id}y");
+        let mut dependencies = (0..64)
+            .map(|index| format!("dependency-{index}"))
+            .collect::<Vec<_>>();
+        dependencies.push("界".repeat(200));
+        dependencies.push(collision_dependency);
+        dependencies.push("dependency-overflow".to_owned());
+        let canonical = format!(
+            "| ID | Title | Status | Dependencies |\n| --- | --- | --- | --- |\n| ASCII | {ascii_title} | In Progress | {} |\n| {collision_id} | {cjk_title} | Blocked | |\n| {long_id} | Long ID | In Progress | |\n",
+            dependencies.join(", ")
+        );
+        let root = std::env::temp_dir().canonicalize().unwrap().join(format!(
+            "mission-center-hud-bounds-{}-{}",
+            std::process::id(),
+            now_millis()
+        ));
+        std::fs::create_dir_all(root.join("MissionCenter")).unwrap();
+        std::fs::create_dir_all(root.join("output/mission-center-assets")).unwrap();
+        for asset in HUD_MANAGED_ASSETS {
+            std::fs::write(root.join("output/mission-center-assets").join(asset), asset).unwrap();
+        }
+        let tasks_path = root.join("MissionCenter/tasks.md");
+        std::fs::write(&tasks_path, &canonical).unwrap();
+        let canonical_before = std::fs::read(&tasks_path).unwrap();
+
+        let workspace = MissionWorkspace::new(&root);
+        let state = refresh(&workspace, &None);
+        assert_eq!(state["freshness"], "VALID");
+        assert_eq!(state["taskCounts"]["omittedLongId"], 1);
+        assert_eq!(state["taskCounts"]["visible"], 2);
+        assert_eq!(state["taskCounts"]["hidden"], 1);
+        assert!(
+            state["agents"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|agent| agent["id"] != long_id)
+        );
+
+        let ascii_agent = &state["agents"][0];
+        assert!(ascii_agent["name"].as_str().unwrap().ends_with('…'));
+        assert!(ascii_agent["task"].as_str().unwrap().ends_with('…'));
+        assert!(ascii_agent["name"].as_str().unwrap().len() <= HUD_TITLE_MAX_BYTES);
+        assert!(ascii_agent["task"].as_str().unwrap().len() <= HUD_TASK_MAX_BYTES);
+        let dependencies = ascii_agent["dependencies"].as_array().unwrap();
+        assert_eq!(dependencies.len(), MAX_LIST_ITEMS);
+        assert!(
+            dependencies
+                .iter()
+                .all(|dependency| dependency.as_str().unwrap().len() <= MAX_FIELD_BYTES)
+        );
+        assert_eq!(
+            ascii_agent["dependencyCounts"],
+            json!({"visible":64,"total":67,"omitted":3})
+        );
+        assert!(
+            !dependencies
+                .iter()
+                .any(|dependency| dependency == &collision_id)
+        );
+        assert!(state["active"][0].as_str().unwrap().ends_with('…'));
+        assert!(state["blocked"][0].as_str().unwrap().ends_with('…'));
+        assert_eq!(state["blockedCount"], 1);
+
+        let launcher = HudLauncher::new();
+        let server = launcher
+            .launch(HudServerConfig::new(&root), false)
+            .unwrap()
+            .server;
+        server
+            .set_task_state(&serde_json::to_vec(&state).unwrap())
+            .unwrap();
+        launcher.shutdown_all().unwrap();
+
+        assert_eq!(std::fs::read(&tasks_path).unwrap(), canonical_before);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

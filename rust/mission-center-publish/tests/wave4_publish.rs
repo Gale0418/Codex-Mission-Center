@@ -51,8 +51,8 @@ fn fixture(label: &str) -> (PathBuf, PlatformArtifact) {
     let root = temp_root(label);
     fs::create_dir_all(root.join(".codex-plugin")).unwrap();
     let binary = pe_x64(0x8664);
-    let artifact_path = "bin/mission-center.exe";
-    fs::create_dir_all(root.join("bin")).unwrap();
+    let artifact_path = Platform::WindowsX86_64.canonical_path();
+    fs::create_dir_all(root.join(artifact_path).parent().unwrap()).unwrap();
     fs::write(root.join(artifact_path), &binary).unwrap();
     #[cfg(unix)]
     {
@@ -66,21 +66,21 @@ fn fixture(label: &str) -> (PathBuf, PlatformArtifact) {
     let others = [
         (
             Platform::LinuxX86_64,
-            "bin/mission-center-linux",
+            Platform::LinuxX86_64.canonical_path(),
             elf_x64(),
             "linux",
             "x86_64",
         ),
         (
             Platform::MacosX86_64,
-            "bin/mission-center-macos",
+            Platform::MacosX86_64.canonical_path(),
             macho(0x01000007),
             "macos",
             "x86_64",
         ),
         (
             Platform::MacosAarch64,
-            "bin/mission-center-macos-arm",
+            Platform::MacosAarch64.canonical_path(),
             macho(0x0100000c),
             "macos",
             "aarch64",
@@ -88,6 +88,7 @@ fn fixture(label: &str) -> (PathBuf, PlatformArtifact) {
     ];
     let mut artifacts = Vec::new();
     for (platform, path, bytes, os, arch) in others {
+        fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
         fs::write(root.join(path), &bytes).unwrap();
         artifacts.push(PlatformArtifact {
             platform,
@@ -138,28 +139,28 @@ fn frozen_fixture() -> (FrozenPackage, PlatformArtifact) {
     let specs = [
         (
             Platform::WindowsX86_64,
-            "bin/mission-center.exe",
+            Platform::WindowsX86_64.canonical_path(),
             windows.clone(),
             "windows",
             "x86_64",
         ),
         (
             Platform::LinuxX86_64,
-            "bin/mission-center-linux",
+            Platform::LinuxX86_64.canonical_path(),
             linux,
             "linux",
             "x86_64",
         ),
         (
             Platform::MacosX86_64,
-            "bin/mission-center-macos",
+            Platform::MacosX86_64.canonical_path(),
             mac_x86,
             "macos",
             "x86_64",
         ),
         (
             Platform::MacosAarch64,
-            "bin/mission-center-macos-arm",
+            Platform::MacosAarch64.canonical_path(),
             mac_arm,
             "macos",
             "aarch64",
@@ -311,6 +312,8 @@ fn manifest_is_strict_four_platform_and_semver_two() {
     )
     .unwrap();
     duplicate["artifacts"][3]["platform"] = json!("windows-x86_64");
+    duplicate["artifacts"][3]["path"] = json!(Platform::WindowsX86_64.canonical_path());
+    duplicate["artifacts"][3]["executable"] = json!(Platform::WindowsX86_64.canonical_path());
     duplicate["artifacts"][3]["os"] = json!("windows");
     duplicate["artifacts"][3]["arch"] = json!("x86_64");
     assert_eq!(
@@ -350,7 +353,7 @@ fn frozen_package_rejects_corrupt_missing_wrong_arch_and_nonexec() {
     let mut corrupt_other = package.files().to_vec();
     corrupt_other
         .iter_mut()
-        .find(|file| file.relative_path == "bin/mission-center-linux")
+        .find(|file| file.relative_path == Platform::LinuxX86_64.canonical_path())
         .unwrap()
         .bytes = vec![0xde, 0xad, 0xbe, 0xef];
     let corrupt_other = FrozenPackage::new(corrupt_other).unwrap();
@@ -365,7 +368,7 @@ fn frozen_package_rejects_corrupt_missing_wrong_arch_and_nonexec() {
         package
             .files()
             .iter()
-            .filter(|file| file.relative_path != "bin/mission-center-linux")
+            .filter(|file| file.relative_path != Platform::LinuxX86_64.canonical_path())
             .cloned()
             .collect(),
     )

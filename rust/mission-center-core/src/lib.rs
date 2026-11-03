@@ -1,6 +1,6 @@
 //! Mission Center 的純資料核心：任務模型、Markdown 表格與穩定 digest。
 
-use std::{error::Error, fmt};
+use std::{collections::HashSet, error::Error, fmt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskStatus {
@@ -423,6 +423,7 @@ fn is_task_continuation(line: Option<&str>, headers: &[String]) -> Result<bool, 
 
 fn parse_task_rows(lines: &[&str], headers: &[String]) -> Result<Vec<Task>, CoreError> {
     let mut tasks = Vec::new();
+    let mut seen_ids = HashSet::new();
     for (row_index, line) in lines.iter().enumerate() {
         let cells = split_cells(line).map_err(|e| match e {
             CoreError::MalformedRow { reason, .. } => CoreError::MalformedRow {
@@ -455,7 +456,7 @@ fn parse_task_rows(lines: &[&str], headers: &[String]) -> Result<Vec<Task>, Core
                 field: "ID",
             });
         }
-        if tasks.iter().any(|task: &Task| task.id == id) {
+        if !seen_ids.insert(id.clone()) {
             return Err(CoreError::DuplicateTaskId(id));
         }
         let status = TaskStatus::parse(&value("Status"))?;
@@ -765,6 +766,20 @@ mod tests {
     fn parses_unicode_and_escapes() {
         let tasks = parse_tasks_markdown("# 任務\r\n| ID | 標題 | 狀態 |\r\n| --- | --- | --- |\r\n| MC-1 | A \\| B \\\\ C | In Progress |").unwrap();
         assert_eq!(tasks[0].title, "A | B \\ C");
+    }
+
+    #[test]
+    fn duplicate_task_id_preserves_error_semantics_at_reasonable_scale() {
+        let mut source = String::from("| ID | Title | Status |\n| --- | --- | --- |\n");
+        for index in 0..4_096 {
+            source.push_str(&format!("| MC-{index} | Task {index} | Ready |\n"));
+        }
+        source.push_str("| MC-2048 | Duplicate | Review |\n");
+
+        assert_eq!(
+            parse_tasks_markdown(&source),
+            Err(CoreError::DuplicateTaskId("MC-2048".to_owned()))
+        );
     }
 
     #[test]
