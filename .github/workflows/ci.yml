@@ -78,7 +78,14 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then
             rustup_bin="${rustup_bin}.exe"
           fi
-          test -f "$rustup_bin"
+          if [ ! -x "$rustup_bin" ]; then
+            rustup_bin="$(command -v rustup || true)"
+          fi
+          if [ ! -x "$rustup_bin" ] && command -v brew >/dev/null 2>&1; then
+            brew_rustup_bin="$(brew --prefix rustup 2>/dev/null || true)/bin/rustup"
+            if [ -x "$brew_rustup_bin" ]; then rustup_bin="$brew_rustup_bin"; fi
+          fi
+          test -x "$rustup_bin"
           "$rustup_bin" toolchain install 1.98.1 --profile minimal --component rustfmt,clippy
           echo "RUSTUP_BIN=$rustup_bin" >> "$GITHUB_ENV"
       - name: Audit vendored Cargo.lock sources
@@ -284,7 +291,14 @@ jobs:
           set -euo pipefail
           rustup_bin="$HOME/.cargo/bin/rustup"
           if [ "$RUNNER_OS" = "Windows" ]; then rustup_bin="${rustup_bin}.exe"; fi
-          test -f "$rustup_bin"
+          if [ ! -x "$rustup_bin" ]; then
+            rustup_bin="$(command -v rustup || true)"
+          fi
+          if [ ! -x "$rustup_bin" ] && command -v brew >/dev/null 2>&1; then
+            brew_rustup_bin="$(brew --prefix rustup 2>/dev/null || true)/bin/rustup"
+            if [ -x "$brew_rustup_bin" ]; then rustup_bin="$brew_rustup_bin"; fi
+          fi
+          test -x "$rustup_bin"
           "$rustup_bin" toolchain install 1.98.1 --profile minimal
           echo "RUSTUP_BIN=$rustup_bin" >> "$GITHUB_ENV"
       - name: Check target availability without pretending to cross-build

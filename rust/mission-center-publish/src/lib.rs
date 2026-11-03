@@ -3630,8 +3630,29 @@ mod tests {
     };
     use std::{
         fs,
-        time::{SystemTime, UNIX_EPOCH},
+        path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering},
     };
+
+    static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    fn temp_root(label: &str) -> PathBuf {
+        let temp = std::env::temp_dir();
+        #[cfg(target_os = "macos")]
+        let temp = temp.canonicalize().expect("canonical temporary directory");
+        loop {
+            let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let root = temp.join(format!(
+                "mission-center-{label}-{}-{sequence}",
+                std::process::id()
+            ));
+            match fs::create_dir(&root) {
+                Ok(()) => return root,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => panic!("create test temporary root: {error}"),
+            }
+        }
+    }
 
     #[test]
     fn nested_plugin_manifest_duplicate_and_unknown_fields_are_rejected() {
@@ -3650,14 +3671,7 @@ mod tests {
 
     #[test]
     fn prepared_restore_preserves_existing_destination() {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir()
-            .canonicalize()
-            .unwrap()
-            .join(format!("mission-center-restore-{nonce}"));
+        let root = temp_root("restore-prepared");
         let destination = root.join("destination");
         let temp = root.join("temp");
         let backup = root.join("backup");
@@ -3685,11 +3699,7 @@ mod tests {
 
     #[test]
     fn in_memory_backed_up_restore_fails_closed_for_existing_destination() {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("mission-center-restore-{nonce}"));
+        let root = temp_root("restore-backed-up");
         let destination = root.join("destination");
         let backup = root.join("backup");
         fs::create_dir_all(&destination).unwrap();
@@ -3713,11 +3723,7 @@ mod tests {
 
     #[test]
     fn in_memory_swapped_restore_refuses_changed_destination() {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("mission-center-restore-{nonce}"));
+        let root = temp_root("restore-swapped-tampered");
         let destination = root.join("destination");
         fs::create_dir_all(&destination).unwrap();
         fs::write(destination.join("tampered"), b"external change").unwrap();
@@ -3738,19 +3744,11 @@ mod tests {
 
     #[test]
     fn in_memory_multi_target_restore_preserves_prepared_destination() {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir()
-            .canonicalize()
-            .unwrap()
-            .join(format!("mission-center-multi-restore-{nonce}"));
+        let root = temp_root("restore-multi-target");
         let first = root.join("first");
         let first_backup = root.join("first.backup");
         let second = root.join("second");
         let second_temp = root.join("second.temp");
-        fs::create_dir_all(&root).unwrap();
         fs::create_dir_all(&first).unwrap();
         fs::create_dir_all(&first_backup).unwrap();
         fs::create_dir_all(&second).unwrap();

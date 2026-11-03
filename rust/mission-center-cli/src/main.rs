@@ -13,8 +13,8 @@ use mission_center_runtime::{
     stdio_command, validate_health_payload,
 };
 use mission_center_workspace::{
-    DAILY_LOG_RECOVERY_MAX_BYTES, ExternalOperationRecord, MissionWorkspace, OperationOutcome,
-    SyncOptions, read_bounded_file, read_bounded_utf8,
+    CLOSEOUT_FINGERPRINT_FORMAT, DAILY_LOG_RECOVERY_MAX_BYTES, ExternalOperationRecord,
+    MissionWorkspace, OperationOutcome, SyncOptions, read_bounded_file, read_bounded_utf8,
 };
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
@@ -3143,20 +3143,44 @@ fn reconcile_workspace_checks(
                             "closeout task contradiction: completed_not_done={completed_not_done:?}; unfinished_done={unfinished_done:?}; overlap={overlap:?}"
                         ),
                     )
-                } else if let Some(source) = closeout_field(&text, &["Source fingerprint"]) {
-                    let expected = ws
-                        .canonical_snapshot_fingerprint()
-                        .map_err(|e| e.to_string())?;
-                    if source != expected {
-                        ("stale", "closeout source fingerprint is stale".to_owned())
-                    } else {
-                        ("pass", "closeout is current".to_owned())
-                    }
                 } else {
-                    (
-                        "pass",
-                        "closeout has no source fingerprint; legacy evidence accepted".to_owned(),
-                    )
+                    let source = closeout_field(&text, &["Source fingerprint"]);
+                    let format = closeout_field(&text, &["Fingerprint format", "指紋格式"]);
+                    match (format, source) {
+                        (Some(format), Some(source)) if format == CLOSEOUT_FINGERPRINT_FORMAT => {
+                            let expected = ws
+                                .canonical_closeout_fingerprint()
+                                .map_err(|e| e.to_string())?;
+                            if source != expected {
+                                ("stale", "closeout source fingerprint is stale".to_owned())
+                            } else {
+                                ("pass", "closeout is current".to_owned())
+                            }
+                        }
+                        (Some(_), Some(_)) => (
+                            "corrupt",
+                            "closeout fingerprint format is unsupported".to_owned(),
+                        ),
+                        (Some(_), None) => (
+                            "corrupt",
+                            "closeout fingerprint format has no source fingerprint".to_owned(),
+                        ),
+                        (None, Some(source)) => {
+                            let expected = ws
+                                .canonical_snapshot_fingerprint()
+                                .map_err(|e| e.to_string())?;
+                            if source != expected {
+                                ("stale", "closeout source fingerprint is stale".to_owned())
+                            } else {
+                                ("pass", "closeout is current".to_owned())
+                            }
+                        }
+                        (None, None) => (
+                            "pass",
+                            "closeout has no source fingerprint; legacy evidence accepted"
+                                .to_owned(),
+                        ),
+                    }
                 }
             }
         }
@@ -6089,6 +6113,84 @@ mod envelope_schema_tests {
             error_code("recovery unknown: claim restore failed"),
             "recovery_unknown"
         );
+    }
+}
+
+#[cfg(test)]
+mod closeout_reconcile_tests {
+    use super::*;
+
+    fn closeout_fixture(label: &str) -> (PathBuf, MissionWorkspace, Vec<Task>) {
+        let root = std::env::temp_dir().canonicalize().unwrap().join(format!(
+            "mission-center-closeout-{label}-{}",
+            unique_nonce()
+        ));
+        fs::create_dir_all(root.join("MissionCenter")).unwrap();
+        fs::write(
+            root.join("MissionCenter/tasks.md"),
+            "| ID | Title | Status |\n| --- | --- | --- |\n| MC-1 | Task | Review |\n",
+        )
+        .unwrap();
+        let workspace = MissionWorkspace::new(&root);
+        let (_, tasks) = workspace.read_tasks().unwrap();
+        (root, workspace, tasks)
+    }
+
+    fn closeout_status(report: &Value) -> &str {
+        report["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|check| check["name"] == "closeout")
+            .and_then(|check| check["status"].as_str())
+            .unwrap()
+    }
+
+    #[test]
+    fn closeout_reconcile_requires_known_format_and_source_pair() {
+        let (root, workspace, tasks) = closeout_fixture("format");
+        let path = workspace.mission_dir().join("closeout.md");
+        fs::write(
+            &path,
+            "# Closeout\n\n- Completed: None\n- Unfinished: None\n- Fingerprint format: unknown-v9\n- Source fingerprint: 0000000000000000000000000000000000000000000000000000000000000000\n",
+        )
+        .unwrap();
+        let report = reconcile_workspace_checks(&workspace, &tasks, "2026-08-29").unwrap();
+        assert_eq!(closeout_status(&report), "corrupt");
+
+        fs::write(
+            &path,
+            "# Closeout\n\n- Completed: None\n- Unfinished: None\n- Fingerprint format: mission-center-closeout-v2\n",
+        )
+        .unwrap();
+        let report = reconcile_workspace_checks(&workspace, &tasks, "2026-08-29").unwrap();
+        assert_eq!(closeout_status(&report), "corrupt");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn closeout_reconcile_keeps_legacy_source_comparison() {
+        let (root, workspace, tasks) = closeout_fixture("legacy");
+        let path = workspace.mission_dir().join("closeout.md");
+        let legacy = workspace.canonical_snapshot_fingerprint().unwrap();
+        fs::write(
+            &path,
+            format!(
+                "# Closeout\n\n- Completed: None\n- Unfinished: None\n- Source fingerprint: {legacy}\n"
+            ),
+        )
+        .unwrap();
+        let report = reconcile_workspace_checks(&workspace, &tasks, "2026-08-29").unwrap();
+        assert_eq!(closeout_status(&report), "pass");
+
+        fs::write(
+            &path,
+            "# Closeout\n\n- Completed: None\n- Unfinished: None\n- Source fingerprint: 0000000000000000000000000000000000000000000000000000000000000000\n",
+        )
+        .unwrap();
+        let report = reconcile_workspace_checks(&workspace, &tasks, "2026-08-29").unwrap();
+        assert_eq!(closeout_status(&report), "stale");
+        let _ = fs::remove_dir_all(root);
     }
 }
 

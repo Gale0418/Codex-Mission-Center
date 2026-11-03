@@ -1,13 +1,14 @@
 # Closeout
 
 - Schema: 1.0
-- Cycle: v0.5.2
-- Closed at: 2026-09-13T09:20:00+08:00
-- Source fingerprint: 9fb56ad9d3d0ddd759b9ae04f20feeeaf0b048dae11ddf60fd5d9460c89db39a
-- Tasks: 78
-- 摘要: 0.5.2 B/C/D 能力、審查、四平台 package、main 與本機安裝完成
-- 已完成: MC-072, MC-073, MC-074, MC-075, MC-076, MC-077, MC-078
-- 未完成: none
-- 風險: 歷史 MC-001～MC-060 completion passports 仍保留明示 legacy warning；外部結果未知時必須重新對帳
-- 冒煙測試: Rust 194；Python 508（20 capability skips）；GitHub 四平台與 stable gate；installed 0.5.2 status/resume/Doctor pass
-- 回顧: 以 bounded source、opaque commitment、receipt-bound reconciliation 與可驗證 provenance 避免 false green
+- Cycle: mc-079-review-v2
+- Closed at: 2026-11-04T03:52:00+08:00
+- Fingerprint format: mission-center-closeout-v2
+- Source fingerprint: 738100cb61aadc55457729a33bb141907313b61e688b44630dbf642bbf833d19
+- Tasks: 79
+- 摘要: 修復任務記錄與安裝回復；跨平台驗證進行中。
+- 已完成: MC-078
+- 未完成: MC-079
+- 風險: GitHub CI 與 main 同步尚待確認。
+- 冒煙測試: Rust、CodeRabbit 與本機工作區驗證已執行。
+- 回顧: 保留歷史結案；新版指紋綁定任務與專案內容。

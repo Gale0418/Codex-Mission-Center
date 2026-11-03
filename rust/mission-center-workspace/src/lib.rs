@@ -30,6 +30,7 @@ pub const DAILY_LOG_ROLLOVER_TARGET_BYTES: u64 = 112 * 1024;
 pub const DAILY_LOG_RECOVERY_MAX_BYTES: u64 = 8 * 1024 * 1024;
 pub const SNAPSHOT_MAX_BYTES: u64 = 64 * 1024;
 pub const COMPLETION_PASSPORT_MAX_BYTES: u64 = 256 * 1024;
+pub const CLOSEOUT_FINGERPRINT_FORMAT: &str = "mission-center-closeout-v2";
 const MAX_RECENT_ATTEMPTS: usize = 5;
 const EXTERNAL_OPERATION_MAX_BYTES: u64 = 16 * 1024;
 const EXTERNAL_OPERATION_MAX_FILES: u64 = 256;
@@ -280,6 +281,30 @@ impl MissionWorkspace {
     pub fn canonical_snapshot_fingerprint(&self) -> Result<String, WorkspaceError> {
         let (_, tasks) = self.read_tasks()?;
         Ok(self.canonical_snapshot_facts(&tasks)?.fingerprint)
+    }
+
+    /// Return the closeout fingerprint for canonical task/project content.
+    ///
+    /// Unlike execution snapshots, a closeout is a content claim about the
+    /// workspace.  Its digest must therefore be stable across a later Git
+    /// commit and across a source archive without `.git` metadata.
+    pub fn canonical_closeout_fingerprint(&self) -> Result<String, WorkspaceError> {
+        let tasks = canonicalize_hash_bytes(&read_unbounded(&self.tasks_path())?);
+        let project = read_optional(self.mission_dir().join("project.md"), PROJECT_MAX_BYTES)?
+            .map(|bytes| canonicalize_hash_bytes(&bytes));
+        let mut input = b"mission-center-closeout-fingerprint:v2".to_vec();
+        for (name, content) in [
+            ("tasks.md", Some(tasks.as_slice())),
+            ("project.md", project.as_deref()),
+        ] {
+            input.extend_from_slice(&(name.len() as u64).to_be_bytes());
+            input.extend_from_slice(name.as_bytes());
+            input.push(u8::from(content.is_some()));
+            let content = content.unwrap_or_default();
+            input.extend_from_slice(&(content.len() as u64).to_be_bytes());
+            input.extend_from_slice(content);
+        }
+        Ok(sha256_digest(&input))
     }
 
     pub fn progress_expectations(&self, tasks: &[Task]) -> (u32, String, Vec<String>, Vec<String>) {
@@ -2299,6 +2324,13 @@ fn ensure_no_reparse(path: &Path) -> Result<(), WorkspaceError> {
     let mut current = PathBuf::new();
     for component in path.components() {
         current.push(component.as_os_str());
+        // On Windows canonicalize() may return an extended-length path such as
+        // `\\\\?\\C:\\...`.  The prefix and root are path syntax, not independent
+        // filesystem entries; querying the prefix alone reports NotFound and
+        // makes every canonical temporary workspace unreadable.
+        if matches!(component, Component::Prefix(_) | Component::RootDir) {
+            continue;
+        }
         match fs::symlink_metadata(&current) {
             Ok(metadata) if metadata.file_type().is_symlink() || is_reparse_point(&metadata) => {
                 return Err(WorkspaceError::UnsafePath {
@@ -3924,7 +3956,7 @@ impl MissionWorkspace {
         let lock = self.acquire_writer_lock(&format!("closeout:{operation_id}"))?;
         let result = (|| {
             let (_, tasks) = self.read_tasks()?;
-            let fingerprint = self.canonical_snapshot_facts(&tasks)?.fingerprint;
+            let fingerprint = self.canonical_closeout_fingerprint()?;
             if details.iter().any(|(key, value)| {
                 key.is_empty()
                     || value.len() > 4096
@@ -3958,9 +3990,10 @@ impl MissionWorkspace {
                 })
                 .collect::<String>();
             let body = format!(
-                "# Closeout\n\n- Schema: 1.0\n- Cycle: {}\n- Closed at: {}\n- Source fingerprint: {}\n- Tasks: {}\n",
+                "# Closeout\n\n- Schema: 1.0\n- Cycle: {}\n- Closed at: {}\n- Fingerprint format: {}\n- Source fingerprint: {}\n- Tasks: {}\n",
                 cycle,
                 timestamp,
+                CLOSEOUT_FINGERPRINT_FORMAT,
                 fingerprint,
                 tasks.len()
             ) + &detail_lines;
@@ -6046,6 +6079,149 @@ mod tests {
             ws.tasks_path(),
             PathBuf::from("demo/MissionCenter/tasks.md")
         );
+    }
+
+    #[test]
+    fn closeout_fingerprint_is_git_independent_and_content_bound() {
+        use std::process::Command;
+
+        fn write_inputs(root: &Path) {
+            fs::create_dir_all(root.join(MISSION_DIRECTORY)).unwrap();
+            fs::write(
+                root.join(MISSION_DIRECTORY).join(TASKS_FILE),
+                "| ID | Title | Status |\n| --- | --- | --- |\n| MC-1 | Task | Review |\n",
+            )
+            .unwrap();
+            fs::write(
+                root.join(MISSION_DIRECTORY).join("project.md"),
+                "# Project\nGoal\n",
+            )
+            .unwrap();
+        }
+
+        fn git(root: &Path, args: &[&str]) {
+            let output = Command::new("git")
+                .args(["-C", root.to_str().unwrap()])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        let tracked_root = test_temp_root("closeout-fingerprint-git");
+        let archive_root = test_temp_root("closeout-fingerprint-archive");
+        write_inputs(&tracked_root);
+        write_inputs(&archive_root);
+        git(&tracked_root, &["init", "--quiet"]);
+        git(&tracked_root, &["add", "."]);
+        git(
+            &tracked_root,
+            &[
+                "-c",
+                "user.name=Mission Center Test",
+                "-c",
+                "user.email=mission-center@example.invalid",
+                "commit",
+                "--quiet",
+                "-m",
+                "initial",
+            ],
+        );
+
+        let tracked = MissionWorkspace::new(&tracked_root);
+        let archive = MissionWorkspace::new(&archive_root);
+        let initial = tracked.canonical_closeout_fingerprint().unwrap();
+        assert_eq!(initial, archive.canonical_closeout_fingerprint().unwrap());
+        git(
+            &tracked_root,
+            &[
+                "-c",
+                "user.name=Mission Center Test",
+                "-c",
+                "user.email=mission-center@example.invalid",
+                "commit",
+                "--quiet",
+                "--allow-empty",
+                "-m",
+                "revision-only",
+            ],
+        );
+        assert_eq!(initial, tracked.canonical_closeout_fingerprint().unwrap());
+
+        let project_path = archive_root.join(MISSION_DIRECTORY).join("project.md");
+        fs::remove_file(&project_path).unwrap();
+        let missing_project = archive.canonical_closeout_fingerprint().unwrap();
+        fs::write(&project_path, b"<missing>").unwrap();
+        let literal_missing_project = archive.canonical_closeout_fingerprint().unwrap();
+        assert_ne!(missing_project, literal_missing_project);
+        fs::write(&project_path, "# Project\nGoal\n").unwrap();
+
+        fs::write(
+            archive_root.join(MISSION_DIRECTORY).join(TASKS_FILE),
+            "| ID | Title | Status |\n| --- | --- | --- |\n| MC-1 | Changed | Review |\n",
+        )
+        .unwrap();
+        assert_ne!(initial, archive.canonical_closeout_fingerprint().unwrap());
+        fs::write(
+            archive_root.join(MISSION_DIRECTORY).join(TASKS_FILE),
+            "| ID | Title | Status |\n| --- | --- | --- |\n| MC-1 | Task | Review |\n",
+        )
+        .unwrap();
+        fs::write(
+            archive_root.join(MISSION_DIRECTORY).join("project.md"),
+            "# Project\nChanged goal\n",
+        )
+        .unwrap();
+        assert_ne!(initial, archive.canonical_closeout_fingerprint().unwrap());
+        let _ = fs::remove_dir_all(tracked_root);
+        let _ = fs::remove_dir_all(archive_root);
+    }
+
+    #[test]
+    fn closeout_writes_explicit_fingerprint_format() {
+        let fixture = fixture();
+        let workspace = &fixture.workspace;
+        let expected = workspace.canonical_closeout_fingerprint().unwrap();
+        assert_eq!(
+            workspace
+                .closeout_with_details(
+                    "closeout-format",
+                    "2026-08-29T00:00:00Z",
+                    "v2-test",
+                    false,
+                    &[("Summary", "content-bound closeout")],
+                )
+                .unwrap(),
+            OperationOutcome::Committed
+        );
+        let body = fs::read_to_string(workspace.mission_dir().join("closeout.md")).unwrap();
+        assert!(body.contains(&format!(
+            "- Fingerprint format: {CLOSEOUT_FINGERPRINT_FORMAT}"
+        )));
+        assert!(body.contains(&format!("- Source fingerprint: {expected}")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn canonical_windows_workspace_path_reads_tasks() {
+        let uncanonical = test_temp_root("windows-prefix");
+        fs::create_dir_all(uncanonical.join(MISSION_DIRECTORY)).unwrap();
+        let root = uncanonical.canonicalize().unwrap();
+        fs::write(
+            root.join(MISSION_DIRECTORY).join(TASKS_FILE),
+            "| ID | Title | Status |\n| --- | --- | --- |\n| MC-1 | Windows | Review |\n",
+        )
+        .unwrap();
+
+        let (_, tasks) = MissionWorkspace::new(root.clone()).read_tasks().unwrap();
+
+        assert_eq!(tasks[0].status, TaskStatus::Review);
+        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(uncanonical);
     }
 
     #[test]
