@@ -258,7 +258,7 @@ mission-center commitments --root .
 mission-center external-operation list --root .
 ```
 
-The optional `MissionCenter/context-manifest.json` names only source-backed `MissionCenter/` files with anchors and SHA-256 digests. Recall and preflight are bounded and read-only; missing coverage is `unknown`, never approval. Commitment state is derived from canonical `Verification` cells and current evidence envelopes. External operations retain explicit `pending / confirmed / failed / unknown` results and never claim exactly-once provider side effects.
+The optional `MissionCenter/context-manifest.json` names only source-backed `MissionCenter/` files with anchors and SHA-256 digests. Recall and preflight are bounded and read-only; missing coverage is `unknown`, never approval. Commitment state is derived from canonical `Verification` cells and current evidence envelopes. Envelope JSON is limited to 64 KiB; referenced evidence files share an 8 MiB aggregate budget, and missing historical evidence is summarized as `unknown`. External operations retain explicit `pending / confirmed / failed / unknown` results and never claim exactly-once provider side effects.
 
 ### Adaptive optimization and bounded evaluation
 

@@ -44,6 +44,7 @@ const STATUS_TASKS_MAX_BYTES: usize = MAX_OUTPUT_BYTES - (STATUS_ID_LIST_MAX_BYT
 const MAX_JSON_INPUT_BYTES: usize = 8 * 1024 * 1024;
 const CLI_ENVELOPE_SCHEMA: &str = include_str!("../schemas/cli-envelope.schema.json");
 const RESUME_MAX_BYTES: usize = 16 * 1024;
+// Envelope JSON remains bounded independently from referenced evidence files.
 const EVIDENCE_MAX_BYTES: u64 = 64 * 1024;
 const RESUME_TRUNCATED_MARKER: &str = "[TRUNCATED]";
 const MAX_EVIDENCE_FILES: usize = 256;
@@ -2393,18 +2394,33 @@ fn read_cached_evidence_locator(
         return result.clone();
     }
     let result = match evidence_path(root, locator) {
-        Some(path) => match read_bounded_file(&path, EVIDENCE_MAX_BYTES) {
-            Ok(bytes) => match aggregate_bytes.checked_add(bytes.len() as u64) {
-                Some(total) if total <= MAX_EVIDENCE_TOTAL_BYTES => {
-                    *aggregate_bytes = total;
-                    Ok(bytes)
+        Some(path) => {
+            // Scope/artifact locators may exceed the envelope JSON bound, but
+            // only within the existing aggregate budget.
+            let remaining = MAX_EVIDENCE_TOTAL_BYTES.saturating_sub(*aggregate_bytes);
+            match read_bounded_file(&path, remaining) {
+                Ok(bytes) => match aggregate_bytes.checked_add(bytes.len() as u64) {
+                    Some(total) if total <= MAX_EVIDENCE_TOTAL_BYTES => {
+                        *aggregate_bytes = total;
+                        Ok(bytes)
+                    }
+                    _ => Err(format!(
+                        "evidence aggregate exceeds {MAX_EVIDENCE_TOTAL_BYTES} bytes"
+                    )),
+                },
+                Err(error)
+                    if matches!(
+                        &error,
+                        mission_center_workspace::WorkspaceError::TooLarge { .. }
+                    ) =>
+                {
+                    Err(format!(
+                        "evidence locator exceeds remaining aggregate budget ({remaining} bytes): {error}"
+                    ))
                 }
-                _ => Err(format!(
-                    "evidence aggregate exceeds {MAX_EVIDENCE_TOTAL_BYTES} bytes"
-                )),
-            },
-            Err(error) => Err(error.to_string()),
-        },
+                Err(error) => Err(error.to_string()),
+            }
+        }
         None => Err(format!("unsafe evidence locator: {locator}")),
     };
     cache.insert(locator.to_owned(), result.clone());
@@ -2972,14 +2988,15 @@ fn inspect_evidence(root: &Path, tasks: &[Task]) -> EvidenceInspection {
                 .flatten()
         })
         .collect();
-    for task in tasks {
-        if !covered.contains(&task.id) {
-            statuses.push("unknown");
-            errors.push(format!(
-                "task has no current evidence envelope: {}",
-                task.id
-            ));
-        }
+    let missing_current_count = tasks
+        .iter()
+        .filter(|task| !covered.contains(&task.id))
+        .count();
+    if missing_current_count > 0 {
+        statuses.push("unknown");
+        errors.push(format!(
+            "{missing_current_count} task(s) have no current evidence envelope"
+        ));
     }
     if statuses.is_empty() {
         return EvidenceInspection {

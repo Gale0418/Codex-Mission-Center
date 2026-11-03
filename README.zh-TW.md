@@ -236,7 +236,7 @@ mission-center commitments --root .
 mission-center external-operation list --root .
 ```
 
-可選的 `MissionCenter/context-manifest.json` 只列出具 anchor 與 SHA-256 的 `MissionCenter/` 來源。召回與 preflight 有界且唯讀；沒有 coverage 是 `unknown`，絕不是批准。承諾狀態由 canonical `Verification` cell 與 current evidence envelope 衍生。外部操作明確保留 `pending / confirmed / failed / unknown`，不宣稱 provider 副作用 exactly-once。
+可選的 `MissionCenter/context-manifest.json` 只列出具 anchor 與 SHA-256 的 `MissionCenter/` 來源。召回與 preflight 有界且唯讀；沒有 coverage 是 `unknown`，絕不是批准。承諾狀態由 canonical `Verification` cell 與 current evidence envelope 衍生。證據 JSON 上限為 64 KiB，引用檔案共用 8 MiB 總預算；缺少歷史證據時以 `unknown` 數量摘要呈現。外部操作明確保留 `pending / confirmed / failed / unknown`，不宣稱 provider 副作用 exactly-once。
 
 ### 自適應最佳化與受控評估
 

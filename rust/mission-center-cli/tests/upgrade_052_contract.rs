@@ -826,7 +826,210 @@ fn reconcile_evidence_budget_caches_duplicate_nested_locators() {
         })
         .and_then(|check| check["message"].as_str())
         .expect("nested aggregate limit message");
-    assert!(message.contains("aggregate exceeds"));
+    assert!(message.contains("aggregate budget"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn reconcile_accepts_large_scope_and_marks_source_mutation_stale() {
+    let root = workspace();
+    initialize(&root, "reconcile-large-scope-init");
+    let mission = root.join("MissionCenter");
+    fs::write(
+        mission.join("tasks.md"),
+        format!("{TASK_HEADER}{}", task_row("MC-052", "In Progress")),
+    )
+    .expect("write tasks");
+    sync(&root, "reconcile-large-scope-sync");
+
+    let evidence = root.join("output/mission-center-evidence");
+    let source_dir = root.join("source");
+    fs::create_dir_all(&evidence).expect("create evidence");
+    fs::create_dir_all(&source_dir).expect("create source");
+    let locator = "source/main.rs";
+    let source = vec![b'r'; 290 * 1024];
+    fs::write(root.join(locator), &source).expect("write large source");
+    let digest = mission_center_publish::scope_digest_files(&[(locator, source.as_slice())]);
+    let envelope = serde_json::json!({
+        "schemaVersion":"1.0","artifactType":"evidence-envelope",
+        "envelopeId":"large-scope-1","taskId":"MC-052","checkId":"source",
+        "scope":[locator],"scopeDigest":digest,"result":"pass","status":"current",
+        "artifactLocators":[locator],"recordedAt":"2026-09-12T08:00:00Z"
+    });
+    assert!(
+        envelope.to_string().len() < 64 * 1024,
+        "the envelope JSON must remain below the 64 KiB bound"
+    );
+    fs::write(evidence.join("current.json"), envelope.to_string()).expect("write envelope");
+
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "evidence_envelope"), Some("pass"));
+
+    let mut changed = source;
+    changed[0] = b'c';
+    fs::write(root.join(locator), changed).expect("mutate source");
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "evidence_envelope"), Some("stale"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn reconcile_accepts_zero_length_locator_at_aggregate_boundary() {
+    let root = workspace();
+    initialize(&root, "reconcile-zero-length-scope-init");
+    let mission = root.join("MissionCenter");
+    fs::write(
+        mission.join("tasks.md"),
+        format!("{TASK_HEADER}{}", task_row("MC-052", "In Progress")),
+    )
+    .expect("write tasks");
+    sync(&root, "reconcile-zero-length-scope-sync");
+
+    let evidence = root.join("output/mission-center-evidence");
+    let source_dir = root.join("source");
+    fs::create_dir_all(&evidence).expect("create evidence");
+    fs::create_dir_all(&source_dir).expect("create source");
+    let locator = "source/empty.bin";
+    fs::write(root.join(locator), []).expect("write empty source");
+    let digest = mission_center_publish::scope_digest_files(&[(locator, &[])]);
+    let envelope = serde_json::json!({
+        "schemaVersion":"1.0","artifactType":"evidence-envelope",
+        "envelopeId":"zero-length-scope-1","taskId":"MC-052","checkId":"source",
+        "scope":[locator],"scopeDigest":digest,"result":"pass","status":"current",
+        "artifactLocators":[locator],"recordedAt":"2026-09-12T08:00:00Z"
+    })
+    .to_string();
+    let filler_size = 8 * 1024 * 1024 - envelope.len();
+    fs::write(evidence.join("filler.bin"), vec![b'f'; filler_size]).expect("fill aggregate budget");
+    fs::write(evidence.join("current.json"), envelope).expect("write envelope");
+
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "evidence_envelope"), Some("pass"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn reconcile_fails_closed_when_scope_exceeds_remaining_aggregate_budget() {
+    let root = workspace();
+    initialize(&root, "reconcile-large-scope-overflow-init");
+    let mission = root.join("MissionCenter");
+    fs::write(
+        mission.join("tasks.md"),
+        format!("{TASK_HEADER}{}", task_row("MC-052", "In Progress")),
+    )
+    .expect("write tasks");
+    sync(&root, "reconcile-large-scope-overflow-sync");
+
+    let evidence = root.join("output/mission-center-evidence");
+    let source_dir = root.join("source");
+    fs::create_dir_all(&evidence).expect("create evidence");
+    fs::create_dir_all(&source_dir).expect("create source");
+    let locator = "source/over-aggregate.bin";
+    fs::write(root.join(locator), vec![b'x'; 8 * 1024 * 1024 + 1]).expect("write oversized source");
+    let envelope = serde_json::json!({
+        "schemaVersion":"1.0","artifactType":"evidence-envelope",
+        "envelopeId":"large-scope-overflow-1","taskId":"MC-052","checkId":"source",
+        "scope":[locator],"scopeDigest":"0".repeat(64),"result":"pass","status":"current",
+        "artifactLocators":[locator],"recordedAt":"2026-09-12T08:00:00Z"
+    });
+    fs::write(evidence.join("current.json"), envelope.to_string()).expect("write envelope");
+
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "evidence_envelope"), Some("corrupt"));
+    let message = payload["data"]["checks"]
+        .as_array()
+        .and_then(|checks| {
+            checks
+                .iter()
+                .find(|check| check["name"] == "evidence_envelope")
+        })
+        .and_then(|check| check["message"].as_str())
+        .expect("aggregate overflow message");
+    assert!(message.contains("aggregate budget"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn reconcile_keeps_envelope_json_limit_for_large_scope_files() {
+    let root = workspace();
+    initialize(&root, "reconcile-evidence-json-limit-init");
+    let mission = root.join("MissionCenter");
+    fs::write(
+        mission.join("tasks.md"),
+        format!("{TASK_HEADER}{}", task_row("MC-052", "In Progress")),
+    )
+    .expect("write tasks");
+    sync(&root, "reconcile-evidence-json-limit-sync");
+    let evidence = root.join("output/mission-center-evidence");
+    let source_dir = root.join("source");
+    fs::create_dir_all(&evidence).expect("create evidence");
+    fs::create_dir_all(&source_dir).expect("create source");
+    let locator = "source/main.rs";
+    let source = vec![b's'; 290 * 1024];
+    fs::write(root.join(locator), &source).expect("write large source");
+    let digest = mission_center_publish::scope_digest_files(&[(locator, source.as_slice())]);
+    let oversized = serde_json::json!({
+        "schemaVersion":"1.0","artifactType":"evidence-envelope",
+        "envelopeId":"oversized-json-1","taskId":"MC-052","checkId":"source",
+        "scope":[locator],"scopeDigest":digest,"result":"pass","status":"current",
+        "artifactLocators":[locator],"recordedAt":"2026-09-12T08:00:00Z",
+        "padding":"x".repeat(64 * 1024)
+    });
+    assert!(oversized.to_string().len() > 64 * 1024);
+    fs::write(evidence.join("current.json"), oversized.to_string()).expect("write oversized JSON");
+
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "evidence_envelope"), Some("corrupt"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn reconcile_summarizes_missing_current_evidence_without_promoting_unknown() {
+    let root = workspace();
+    initialize(&root, "reconcile-evidence-missing-summary-init");
+    let mission = root.join("MissionCenter");
+    fs::write(
+        mission.join("tasks.md"),
+        format!(
+            "{TASK_HEADER}{}{}{}",
+            task_row("MC-052", "In Progress"),
+            task_row("MC-053", "Ready"),
+            task_row("MC-054", "Ready")
+        ),
+    )
+    .expect("write tasks");
+    sync(&root, "reconcile-evidence-missing-summary-sync");
+    let evidence = root.join("output/mission-center-evidence");
+    fs::create_dir_all(&evidence).expect("create evidence");
+    let scope = "MissionCenter/tasks.md";
+    let task_bytes = fs::read(mission.join("tasks.md")).expect("read tasks");
+    let digest = mission_center_publish::scope_digest_files(&[(scope, task_bytes.as_slice())]);
+    fs::write(
+        evidence.join("current.json"),
+        serde_json::json!({
+            "schemaVersion":"1.0","artifactType":"evidence-envelope",
+            "envelopeId":"missing-summary-1","taskId":"MC-052","checkId":"source",
+            "scope":[scope],"scopeDigest":digest,"result":"pass","status":"current",
+            "artifactLocators":[scope],"recordedAt":"2026-09-12T08:00:00Z"
+        })
+        .to_string(),
+    )
+    .expect("write envelope");
+
+    let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
+    assert_eq!(check_status(&payload, "evidence_envelope"), Some("unknown"));
+    let message = payload["data"]["checks"]
+        .as_array()
+        .and_then(|checks| {
+            checks
+                .iter()
+                .find(|check| check["name"] == "evidence_envelope")
+        })
+        .and_then(|check| check["message"].as_str())
+        .expect("missing evidence summary");
+    assert!(message.contains("2 task(s) have no current evidence envelope"));
+    assert!(!message.contains("MC-053"));
+    assert!(!message.contains("MC-054"));
     let _ = fs::remove_dir_all(root);
 }
 
