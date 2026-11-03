@@ -66,7 +66,7 @@ Mission Center is deliberately narrow:
 > differential tests and migration diagnostics; they are not included in the
 > stable Plugin package and are never a runtime fallback.
 
-- **Per-project and local:** `MissionCenter/tasks.md` is the only task lifecycle truth. `brief.md` and `working-set.md` are rebuildable views; `focus.md`, when present, is a deprecated compatibility view.
+- **Per-project and local:** `MissionCenter/tasks.md` is the only task lifecycle and ordering truth. It has no fixed file-size or word-count cap; keep each row concise with the goal, status, next action, verification, and necessary blocker, and link to detailed evidence instead of pasting conversation. `brief.md` and `working-set.md` are rebuildable views; `focus.md`, when present, is a deprecated compatibility view.
 - **Runtime is separate:** the optional Runtime/HUD observes an explicitly launched or connected endpoint. It never edits `tasks.md`, task order, status, or the lifecycle source.
 - **No global service:** Mission Center is per-project only. Use it inside the current repo/workspace. It creates or reads `./MissionCenter/`. It does not monitor all repositories. It does not merge tasks across projects.
 - **Approval is real:** external research, real agent dispatch, LLM classification, and additional budgets are opt-in. Local fixtures and synthetic evaluations are not measurements of production performance.
@@ -196,7 +196,7 @@ MissionCenter/
 └── visual-hub.md
 ```
 
-`brief.md` and `working-set.md` are content-fingerprinted materialized views and may be rebuilt. `critical-lessons.md` keeps active lessons bounded (6 KiB) and points to detailed incident evidence. Guardrail changes require explicit human approval. The repository's own dogfood workspace is intentionally trackable and is checked by CI.
+`brief.md` and `working-set.md` are content-fingerprinted materialized views and may be rebuilt. `daily-log.md` is a 128 KiB bounded hot window: `sync` preserves older bytes verbatim in an immutable, content-addressed archive before rolling the active log. Rust `status` and `resume` can read oversized recovery input and large canonical task tables while bounding their response payloads and explicitly reporting truncation. `critical-lessons.md` keeps active lessons bounded (6 KiB) and points to detailed incident evidence. Guardrail changes require explicit human approval. The repository's own dogfood workspace is intentionally trackable and is checked by CI.
 
 ## Optional capabilities
 

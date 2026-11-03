@@ -5,17 +5,9 @@ description: Use when a high-impact or multi-step goal needs clarification, rese
 
 # Mission Center｜意圖／風險路由
 
-Mission Center 僅處理 `./MissionCenter/`，不掃描、註冊、監控或合併其他 repo；依語言生成（繁中 zh-TW）。`tasks.md` 是唯一真實來源。
+Mission Center 僅處理 `./MissionCenter/`，不掃描、註冊、監控或合併其他 repo；依語言生成（繁中 zh-TW）。`tasks.md` 唯一真實來源，不限大小、逐列精簡；日誌滾動並先封存。
 
 正式 Plugin 使用已驗證 Rust `<mission-center>`：POSIX `bin/mission-center`、Windows `bin/mission-center.ps1`；不下載、編譯或 fallback 到 Python。
-
-## 記錄與大小界線
-
-`MissionCenter/tasks.md` 是唯一生命週期與排序真實來源；daily-log、brief、working-set、focus 與 archive 都不得推導或覆寫 task 狀態。`tasks.md` 不施加固定檔案大小上限。每項任務以精簡易懂的目標、狀態、必要下一步與驗證為主；必要阻礙與證據用連結補充，不貼入冗長或無關的對話。
-
-近期 `MissionCenter/daily-log.md` 是 bounded hot log：`sync` 將活躍記錄維持在 128 KiB 內；移出舊記錄前，必須先以內容雜湊命名的 immutable archive 完整保存，並驗證 archive 的 bytes 與雜湊。archive 只保存歷史，不是第二個 task truth source；不得誤認 `tasks.md` 可以還原完整日誌。
-
-使用 Rust selector 進行維護與診斷：`mission-center status --root <path> [--date <YYYY-MM-DD>]`、`mission-center resume --root <path> [--date <YYYY-MM-DD>]`、`mission-center sync --root <path> --operation-id <id> --timestamp <RFC3339>` 與 `mission-center doctor --root <path>`。
 
 ## 先判斷意圖
 

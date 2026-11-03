@@ -163,10 +163,11 @@ pub fn start(root: PathBuf, server: HudServer) {
             let mut last_valid: Option<Value> = None;
             while server.is_running() {
                 let state = refresh(&workspace, &last_valid);
-                if let Ok(bytes) = serde_json::to_vec(&state) {
-                    if server.set_task_state(&bytes).is_ok() && state["freshness"] == "VALID" {
-                        last_valid = Some(state);
-                    }
+                if let Ok(bytes) = serde_json::to_vec(&state)
+                    && server.set_task_state(&bytes).is_ok()
+                    && state["freshness"] == "VALID"
+                {
+                    last_valid = Some(state);
                 }
                 for _ in 0..30 {
                     if !server.is_running() {

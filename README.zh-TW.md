@@ -55,7 +55,7 @@ Mission Center 故意保持狹窄：
 > scripts 只供 differential test／migration diagnostics 使用，不會放入
 > stable Plugin，也不會作為 runtime fallback。
 
-- **只限單一專案：** `MissionCenter/tasks.md` 是唯一的任務生命週期真實來源。`brief.md` 與 `working-set.md` 是可重建視圖；若存在，`focus.md` 是已棄用的相容視圖。
+- **只限單一專案：** `MissionCenter/tasks.md` 是唯一的任務生命週期與排序真實來源。不設固定檔案大小或字數上限；每列應保持精簡，只保留目標、狀態、下一步、驗證與必要阻礙，詳細證據以連結保存，不貼入對話。`brief.md` 與 `working-set.md` 是可重建視圖；若存在，`focus.md` 是已棄用的相容視圖。
 - **Runtime 與任務分離：** 可選的 Runtime／HUD 只觀察明確啟動或連接的 endpoint，絕不修改 `tasks.md`、任務順序、狀態或生命週期真實來源。
 - **沒有全域服務：** Mission Center is per-project only. Use it inside the current repo/workspace. It creates or reads `./MissionCenter/`. It does not monitor all repositories. It does not merge tasks across projects.
 - **核准是真正的閘門：** 外部研究、真實 Agent 派遣、LLM 分類與額外預算都是 opt-in。本地 fixture 與合成評估不是生產效能測量。
@@ -176,7 +176,7 @@ MissionCenter/
 └── visual-hub.md
 ```
 
-`brief.md` 與 `working-set.md` 是有內容指紋的 materialized view，可以重建。`critical-lessons.md` 的 Active Lessons 上限為 6 KiB，詳細事故證據放在 incidents。護欄變更需要人工明確核准。本 repository 自己的 dogfood 工作區也可被追蹤，並由 CI 檢查。
+`brief.md` 與 `working-set.md` 是有內容指紋的 materialized view，可以重建。`daily-log.md` 是 128 KiB 的有界活躍視窗：`sync` 會先將舊內容逐字保存至 immutable、content-addressed archive，再滾動目前日誌。Rust `status` 與 `resume` 可讀取大型恢復輸入與大型 canonical task table，同時限制回應封包大小並明確回報截斷。`critical-lessons.md` 的 Active Lessons 上限為 6 KiB，詳細事故證據放在 incidents。護欄變更需要人工明確核准。本 repository 自己的 dogfood 工作區也可被追蹤，並由 CI 檢查。
 
 ## 可選能力
 
