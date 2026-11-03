@@ -312,15 +312,16 @@ def recall_context(
 
 def preflight(manifest: dict[str, Any], workspace: Path, context: str, scope: dict[str, str] | None = None) -> dict[str, Any]:
     recalled = recall_context(manifest, workspace, context, scope)
+    truncated = recalled.get("truncated") is True
     covered = [card for card in recalled["cards"] if card.get("status") == "covered"]
     required = sorted({item for card in covered for item in card.get("requiredVerification", [])})
-    if recalled["status"] in {"corrupt", "stale"}:
+    if truncated or recalled["status"] in {"corrupt", "stale"}:
         coverage, decision = "unknown", "blocked"
     elif not covered:
         coverage, decision = "not-covered", "unknown"
     else:
         coverage, decision = "covered", "advisory-only"
-    return {"status": recalled["status"], "context": context, "coverage": coverage, "decision": decision, "requiredVerification": required, "cards": recalled["cards"], "readOnly": True}
+    return {"status": recalled["status"], "context": context, "coverage": coverage, "decision": decision, "requiredVerification": required, "cards": recalled["cards"], "truncated": truncated, "readOnly": True}
 
 
 def _main() -> int:

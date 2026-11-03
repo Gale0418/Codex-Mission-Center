@@ -50,6 +50,7 @@ class ContextualRecallTests(unittest.TestCase):
             self.assertEqual(recalled["cards"][0]["status"], "covered")
             decision = preflight(record, root, "before-deploy", {"component": "release"})
             self.assertEqual((decision["coverage"], decision["decision"]), ("covered", "advisory-only"))
+            self.assertFalse(decision["truncated"])
             self.assertEqual((mission / "guardrails.md").read_bytes(), before)
 
     def test_digest_anchor_and_missing_coverage_fail_closed(self):
@@ -106,6 +107,23 @@ class ContextualRecallTests(unittest.TestCase):
             encoded = json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode()
             self.assertLessEqual(len(encoded), 512)
             self.assertEqual(result["bytes"], len(encoded))
+
+    def test_truncated_preflight_reports_unknown_and_blocks(self):
+        with workspace_tempdir("context-preflight-truncated-") as temporary:
+            root = Path(temporary)
+            mission = root / "MissionCenter"
+            mission.mkdir()
+            content = ("# Guardrails\n\n## Deploy\n" + "x" * 20_000 + "\n").encode()
+            (mission / "guardrails.md").write_bytes(content)
+            record = manifest(content)
+
+            recalled = recall_context(record, root, "before-deploy", {"component": "release"})
+            self.assertTrue(recalled["truncated"])
+            self.assertEqual(recalled["status"], "pass")
+
+            decision = preflight(record, root, "before-deploy", {"component": "release"})
+            self.assertEqual((decision["coverage"], decision["decision"]), ("unknown", "blocked"))
+            self.assertTrue(decision["truncated"])
 
     def test_superseded_card_is_reported_as_stale(self):
         with workspace_tempdir("context-superseded-") as temporary:

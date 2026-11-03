@@ -226,6 +226,10 @@ pub fn preflight(
         .get("status")
         .and_then(Value::as_str)
         .unwrap_or("corrupt");
+    let truncated = recalled
+        .get("truncated")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let covered = recalled
         .get("cards")
         .and_then(Value::as_array)
@@ -246,7 +250,7 @@ pub fn preflight(
         .collect::<Vec<_>>();
     required.sort();
     required.dedup();
-    let (coverage, decision) = if matches!(status, "corrupt" | "stale") {
+    let (coverage, decision) = if truncated || matches!(status, "corrupt" | "stale") {
         ("unknown", "blocked")
     } else if covered.is_empty() {
         ("not-covered", "unknown")
@@ -260,6 +264,7 @@ pub fn preflight(
         "decision":decision,
         "requiredVerification":required,
         "cards":recalled.get("cards").cloned().unwrap_or_else(|| json!([])),
+        "truncated":truncated,
         "readOnly":true,
     }))
 }

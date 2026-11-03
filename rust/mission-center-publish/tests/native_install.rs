@@ -321,6 +321,116 @@ fn native_reconcile_rolls_back_started_receipt_after_crash() {
 }
 
 #[test]
+fn native_rollback_preserves_destination_for_stale_prepared_receipt() {
+    let root = temp_root("stale-prepared");
+    let package_root = root.join("package");
+    package(&package_root);
+    let destination = root.join("installed");
+    let platform = Platform::host().expect("test host must be supported");
+    native_install_package(
+        &package_root,
+        std::slice::from_ref(&destination),
+        "native-stale-prepared",
+        platform,
+        "0.5.1",
+    )
+    .unwrap();
+    let receipt_path = root
+        .join(".mission-center-transactions")
+        .join("native-stale-prepared.json");
+    let mut json: serde_json::Value =
+        serde_json::from_slice(&fs::read(&receipt_path).unwrap()).unwrap();
+    json["status"] = serde_json::Value::String("started".into());
+    json["targets"][0]["phase"] = serde_json::Value::String("prepared".into());
+    fs::write(&receipt_path, serde_json::to_vec(&json).unwrap()).unwrap();
+
+    let restored = native_rollback_transaction(&receipt_path).unwrap();
+
+    assert_eq!(restored.status, TransactionStatus::Aborted);
+    assert!(destination.join(PLATFORM_MANIFEST_FILE).is_file());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn native_rollback_handles_stale_backed_up_receipt_for_new_destination() {
+    let root = temp_root("stale-backed-up");
+    let package_root = root.join("package");
+    package(&package_root);
+    let destination = root.join("installed");
+    let platform = Platform::host().expect("test host must be supported");
+    native_install_package(
+        &package_root,
+        std::slice::from_ref(&destination),
+        "native-stale-backed-up",
+        platform,
+        "0.5.1",
+    )
+    .unwrap();
+    let receipt_path = root
+        .join(".mission-center-transactions")
+        .join("native-stale-backed-up.json");
+    let mut json: serde_json::Value =
+        serde_json::from_slice(&fs::read(&receipt_path).unwrap()).unwrap();
+    json["status"] = serde_json::Value::String("started".into());
+    json["targets"][0]["phase"] = serde_json::Value::String("backedup".into());
+    fs::write(&receipt_path, serde_json::to_vec(&json).unwrap()).unwrap();
+
+    let restored = native_rollback_transaction(&receipt_path).unwrap();
+
+    assert_eq!(restored.status, TransactionStatus::Aborted);
+    assert!(!destination.exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn native_rollback_preserves_prepared_target_after_prior_target_swapped() {
+    let root = temp_root("multi-target-phase");
+    let package_root = root.join("package");
+    package(&package_root);
+    let first = root.join("first");
+    let second = root.join("second");
+    fs::create_dir_all(&first).unwrap();
+    fs::write(first.join("first-old.txt"), b"first old").unwrap();
+    fs::create_dir_all(&second).unwrap();
+    fs::write(second.join("second-old.txt"), b"second old").unwrap();
+    let platform = Platform::host().expect("test host must be supported");
+    native_install_package(
+        &package_root,
+        &[first.clone(), second.clone()],
+        "native-multi-target-phase",
+        platform,
+        "0.5.1",
+    )
+    .unwrap();
+    let receipt_path = root
+        .join(".mission-center-transactions")
+        .join("native-multi-target-phase.json");
+    let mut json: serde_json::Value =
+        serde_json::from_slice(&fs::read(&receipt_path).unwrap()).unwrap();
+    let backup_paths = json["backups"].as_array().unwrap();
+    let second_backup = PathBuf::from(backup_paths[1].as_str().unwrap());
+    fs::remove_dir_all(&second).unwrap();
+    fs::create_dir_all(&second).unwrap();
+    fs::write(second.join("second-sentinel.txt"), b"untouched user data").unwrap();
+    fs::remove_dir_all(second_backup).unwrap();
+    json["status"] = serde_json::Value::String("started".into());
+    json["targets"][0]["phase"] = serde_json::Value::String("swapped".into());
+    json["targets"][1]["phase"] = serde_json::Value::String("prepared".into());
+    fs::write(&receipt_path, serde_json::to_vec(&json).unwrap()).unwrap();
+
+    let restored = native_rollback_transaction(&receipt_path).unwrap();
+
+    assert_eq!(restored.status, TransactionStatus::Aborted);
+    assert!(first.join("first-old.txt").is_file());
+    assert!(!first.join(PLATFORM_MANIFEST_FILE).exists());
+    assert_eq!(
+        fs::read(second.join("second-sentinel.txt")).unwrap(),
+        b"untouched user data"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn native_install_rejects_replay_of_non_committed_receipt() {
     let root = temp_root("replay-started");
     let package_root = root.join("package");

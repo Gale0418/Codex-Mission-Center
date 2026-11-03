@@ -204,6 +204,50 @@ fn context_recall_and_preflight_are_bounded_source_backed_and_read_only() {
 }
 
 #[test]
+fn truncated_context_preflight_blocks_and_reports_truncation() {
+    let root = workspace(
+        "| ID | Title | Status |\n| --- | --- | --- |\n| MC-CONTEXT-TRUNCATED | Context | Ready |\n",
+    );
+    let source = format!("# Guardrails\n\n## Deploy\n{}\n", "x".repeat(20_000));
+    fs::write(root.join("MissionCenter/guardrails.md"), source.as_bytes()).expect("context source");
+    fs::write(
+        root.join("MissionCenter/context-manifest.json"),
+        serde_json::json!({
+            "schemaVersion":"1.0",
+            "artifactType":"context-manifest",
+            "manifestId":"cli-context-truncated",
+            "cards":[{
+                "id":"CTX-deploy-truncated",
+                "context":"before-deploy",
+                "reason":"preserve ambiguity",
+                "scope":{},
+                "source":{
+                    "locator":"MissionCenter/guardrails.md",
+                    "anchor":"## Deploy",
+                    "digest":mission_center_core::sha256_digest(source.as_bytes()),
+                },
+                "validity":"active",
+                "requiredVerification":["reconcile the original operation id"]
+            }]
+        })
+        .to_string(),
+    )
+    .expect("context manifest");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_mission-center"))
+        .args(["preflight", "--root"])
+        .arg(&root)
+        .args(["--context", "before-deploy"])
+        .output()
+        .expect("truncated preflight");
+    let payload = assert_machine_envelope(&output, "preflight", 1);
+    assert_eq!(payload["data"]["coverage"], "unknown");
+    assert_eq!(payload["data"]["decision"], "blocked");
+    assert_eq!(payload["data"]["truncated"], true);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn bare_context_defaults_to_recall_without_panicking() {
     let root = workspace(
         "| ID | Title | Status |\n| --- | --- | --- |\n| MC-CONTEXT | Context | Ready |\n",

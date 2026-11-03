@@ -276,8 +276,12 @@ mod tests {
         assert_eq!(state["blockedCount"], 1);
 
         let launcher = HudLauncher::new();
+        let assets = crate::frozen_hud_assets(&crate::unavailable_runtime_state()).unwrap();
         let server = launcher
-            .launch(HudServerConfig::new(&root), false)
+            .launch(
+                HudServerConfig::new(&root).with_frozen_assets(assets),
+                false,
+            )
             .unwrap()
             .server;
         server

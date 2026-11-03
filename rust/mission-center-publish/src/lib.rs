@@ -1805,7 +1805,7 @@ pub fn native_install_package(
         Ok::<(), PublishError>(())
     })();
     if let Err(error) = swap_result {
-        restore_native_targets(&receipt.targets)?;
+        restore_native_targets(&receipt.targets, Some(&receipt.digest))?;
         receipt.status = TransactionStatus::Aborted;
         for target in &mut receipt.targets {
             target.phase = TargetPhase::Restored;
@@ -2666,16 +2666,70 @@ fn remove_native_temps(targets: &[TargetReceipt]) {
     }
 }
 
-fn restore_native_targets(targets: &[TargetReceipt]) -> Result<(), PublishError> {
+fn restore_native_targets(
+    targets: &[TargetReceipt],
+    expected_digest: Option<&str>,
+) -> Result<(), PublishError> {
+    restore_native_targets_with_policy(targets, false, expected_digest)
+}
+
+fn restore_native_targets_with_policy(
+    targets: &[TargetReceipt],
+    allow_verified_destination: bool,
+    expected_digest: Option<&str>,
+) -> Result<(), PublishError> {
     for target in targets.iter().rev() {
         let destination = Path::new(&target.destination);
         let temp = Path::new(&target.temp);
         let backup = Path::new(&target.backup);
-        if destination.exists() {
-            remove_native_tree(destination)?;
-        }
-        if backup.exists() {
-            fs::rename(backup, destination).map_err(native_io)?;
+        match target.phase {
+            TargetPhase::Prepared => {
+                if destination.exists() && backup.exists() {
+                    return Err(PublishError::stable(
+                        ErrorCode::TransactionConflict,
+                        "prepared target 同時存在 destination 與 backup，拒絕猜測哪份資料可覆寫。",
+                    ));
+                }
+                if !destination.exists() && backup.exists() {
+                    fs::rename(backup, destination).map_err(native_io)?;
+                }
+            }
+            TargetPhase::BackedUp => {
+                if destination.exists() && !allow_verified_destination {
+                    return Err(PublishError::stable(
+                        ErrorCode::TransactionConflict,
+                        "backed-up target 仍存在 destination，拒絕刪除未驗證資料。",
+                    ));
+                }
+                if destination.exists() {
+                    remove_native_tree(destination)?;
+                }
+                if backup.exists() {
+                    fs::rename(backup, destination).map_err(native_io)?;
+                }
+            }
+            TargetPhase::Swapped => {
+                if temp.exists() {
+                    return Err(PublishError::stable(
+                        ErrorCode::TransactionConflict,
+                        "swapped target 仍存在 temp，拒絕在不確定狀態下刪除 destination。",
+                    ));
+                }
+                if destination.exists() {
+                    let expected_digest = expected_digest.ok_or_else(|| {
+                        PublishError::stable(
+                            ErrorCode::TransactionConflict,
+                            "swapped target 缺少 expected digest，拒絕刪除 destination。",
+                        )
+                    })?;
+                    verify_native_destination_digest(destination, expected_digest)?;
+                    remove_native_tree(destination)?;
+                }
+                if backup.exists() {
+                    fs::rename(backup, destination).map_err(native_io)?;
+                }
+            }
+            TargetPhase::Restored => {}
         }
         if temp.exists() {
             remove_native_tree(temp)?;
@@ -2690,23 +2744,51 @@ fn restore_native_targets_checked(
 ) -> Result<(), PublishError> {
     for target in targets {
         let destination = Path::new(&target.destination);
-        if !destination.exists() {
-            continue;
-        }
-        let current = load_frozen_directory(destination).map_err(|_| {
-            PublishError::stable(
-                ErrorCode::TransactionConflict,
-                "destination 已被修改，拒絕無法驗證的 rollback。",
-            )
-        })?;
-        if digest_frozen(current.files()) != expected_digest {
-            return Err(PublishError::stable(
-                ErrorCode::TransactionConflict,
-                "destination digest 與 install receipt 不一致，拒絕覆寫外部變更。",
-            ));
+        let temp = Path::new(&target.temp);
+        let backup = Path::new(&target.backup);
+        match target.phase {
+            TargetPhase::Prepared => {
+                if destination.exists() && backup.exists() {
+                    return Err(PublishError::stable(
+                        ErrorCode::TransactionConflict,
+                        "prepared target 同時存在 destination 與 backup，拒絕猜測哪份資料可覆寫。",
+                    ));
+                }
+            }
+            TargetPhase::BackedUp | TargetPhase::Swapped => {
+                if destination.exists() {
+                    if temp.exists() {
+                        return Err(PublishError::stable(
+                            ErrorCode::TransactionConflict,
+                            "rollback target 同時存在 destination 與 temp，拒絕不確定的覆寫。",
+                        ));
+                    }
+                    verify_native_destination_digest(destination, expected_digest)?;
+                }
+            }
+            TargetPhase::Restored => {}
         }
     }
-    restore_native_targets(targets)
+    restore_native_targets_with_policy(targets, true, Some(expected_digest))
+}
+
+fn verify_native_destination_digest(
+    destination: &Path,
+    expected_digest: &str,
+) -> Result<(), PublishError> {
+    let current = load_frozen_directory(destination).map_err(|_| {
+        PublishError::stable(
+            ErrorCode::TransactionConflict,
+            "destination 已被修改，拒絕無法驗證的 rollback。",
+        )
+    })?;
+    if digest_frozen(current.files()) != expected_digest {
+        return Err(PublishError::stable(
+            ErrorCode::TransactionConflict,
+            "destination digest 與 install receipt 不一致，拒絕覆寫外部變更。",
+        ));
+    }
+    Ok(())
 }
 
 fn remove_native_tree(path: &Path) -> Result<(), PublishError> {
@@ -3542,7 +3624,14 @@ pub fn publish(write_requested: bool) -> Result<&'static str, &'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ErrorCode, PlatformManifest, plugin_manifest_bytes};
+    use super::{
+        ErrorCode, PlatformManifest, TargetPhase, TargetReceipt, digest_frozen,
+        load_frozen_directory, plugin_manifest_bytes, restore_native_targets,
+    };
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[test]
     fn nested_plugin_manifest_duplicate_and_unknown_fields_are_rejected() {
@@ -3557,5 +3646,144 @@ mod tests {
         let platform = br#"{"schemaVersion":"1.0","pluginName":"mission-center","version":"0.5.1","artifacts":[{"platform":"windows-x86_64","platform":"linux-x86_64","path":"bin/x","sha256":"0000000000000000000000000000000000000000000000000000000000000000","version":"0.5.1","os":"linux","arch":"x86_64","executable":"bin/x"}]}"#;
         let error = PlatformManifest::from_json(platform).unwrap_err();
         assert_eq!(error.code(), ErrorCode::InvalidManifest);
+    }
+
+    #[test]
+    fn prepared_restore_preserves_existing_destination() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir()
+            .canonicalize()
+            .unwrap()
+            .join(format!("mission-center-restore-{nonce}"));
+        let destination = root.join("destination");
+        let temp = root.join("temp");
+        let backup = root.join("backup");
+        fs::create_dir_all(&destination).unwrap();
+        fs::create_dir_all(&temp).unwrap();
+        fs::write(destination.join("sentinel"), b"user data").unwrap();
+        fs::write(temp.join("staged"), b"package data").unwrap();
+        let target = TargetReceipt {
+            destination: destination.to_string_lossy().into_owned(),
+            temp: temp.to_string_lossy().into_owned(),
+            backup: backup.to_string_lossy().into_owned(),
+            phase: TargetPhase::Prepared,
+        };
+
+        restore_native_targets(&[target], None).unwrap();
+
+        assert_eq!(
+            fs::read(destination.join("sentinel")).unwrap(),
+            b"user data"
+        );
+        assert!(!temp.exists());
+        assert!(!backup.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn in_memory_backed_up_restore_fails_closed_for_existing_destination() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mission-center-restore-{nonce}"));
+        let destination = root.join("destination");
+        let backup = root.join("backup");
+        fs::create_dir_all(&destination).unwrap();
+        fs::write(destination.join("sentinel"), b"user data").unwrap();
+        let target = TargetReceipt {
+            destination: destination.to_string_lossy().into_owned(),
+            temp: root.join("temp").to_string_lossy().into_owned(),
+            backup: backup.to_string_lossy().into_owned(),
+            phase: TargetPhase::BackedUp,
+        };
+
+        let error = restore_native_targets(&[target], None).unwrap_err();
+
+        assert_eq!(error.code(), ErrorCode::TransactionConflict);
+        assert_eq!(
+            fs::read(destination.join("sentinel")).unwrap(),
+            b"user data"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn in_memory_swapped_restore_refuses_changed_destination() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mission-center-restore-{nonce}"));
+        let destination = root.join("destination");
+        fs::create_dir_all(&destination).unwrap();
+        fs::write(destination.join("tampered"), b"external change").unwrap();
+        let target = TargetReceipt {
+            destination: destination.to_string_lossy().into_owned(),
+            temp: root.join("temp").to_string_lossy().into_owned(),
+            backup: root.join("backup").to_string_lossy().into_owned(),
+            phase: TargetPhase::Swapped,
+        };
+        let expected_digest = "0".repeat(64);
+
+        let error = restore_native_targets(&[target], Some(&expected_digest)).unwrap_err();
+
+        assert_eq!(error.code(), ErrorCode::TransactionConflict);
+        assert!(destination.join("tampered").is_file());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn in_memory_multi_target_restore_preserves_prepared_destination() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir()
+            .canonicalize()
+            .unwrap()
+            .join(format!("mission-center-multi-restore-{nonce}"));
+        let first = root.join("first");
+        let first_backup = root.join("first.backup");
+        let second = root.join("second");
+        let second_temp = root.join("second.temp");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&first_backup).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        fs::create_dir_all(&second_temp).unwrap();
+        fs::write(first.join("artifact"), b"package").unwrap();
+        fs::write(first_backup.join("old"), b"first old").unwrap();
+        fs::write(second.join("sentinel"), b"second user data").unwrap();
+        fs::write(second_temp.join("staged"), b"second package").unwrap();
+        let expected_digest = digest_frozen(load_frozen_directory(&first).unwrap().files());
+        let targets = [
+            TargetReceipt {
+                destination: first.to_string_lossy().into_owned(),
+                temp: root.join("first.temp").to_string_lossy().into_owned(),
+                backup: first_backup.to_string_lossy().into_owned(),
+                phase: TargetPhase::Swapped,
+            },
+            TargetReceipt {
+                destination: second.to_string_lossy().into_owned(),
+                temp: second_temp.to_string_lossy().into_owned(),
+                backup: root.join("second.backup").to_string_lossy().into_owned(),
+                phase: TargetPhase::Prepared,
+            },
+        ];
+
+        restore_native_targets(&targets, Some(&expected_digest)).unwrap();
+
+        assert!(first.join("old").is_file());
+        assert!(!first.join("artifact").exists());
+        assert_eq!(
+            fs::read(second.join("sentinel")).unwrap(),
+            b"second user data"
+        );
+        assert!(!second_temp.exists());
+        let _ = fs::remove_dir_all(root);
     }
 }

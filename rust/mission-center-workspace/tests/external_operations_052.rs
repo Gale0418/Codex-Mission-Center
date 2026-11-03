@@ -15,8 +15,9 @@ fn fixture() -> (MissionWorkspace, PathBuf) {
         .unwrap()
         .as_nanos();
     static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let root = PathBuf::from(format!(
-        "./.mission-center-external-{suffix}-{}",
+    let root = std::env::temp_dir().canonicalize().unwrap().join(format!(
+        "mission-center-external-{}-{suffix}-{}",
+        std::process::id(),
         COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
     let workspace = MissionWorkspace::new(&root);
