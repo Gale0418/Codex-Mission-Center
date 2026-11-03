@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1.0",
+  "artifactType": "completion-passport",
+  "taskId": "MC-079",
+  "taskDigest": "f6d547e2823864e3d9a2ee32854c2dcdb534e8636f7795df6e331e5405abe220",
+  "status": "current",
+  "verification": {
+    "result": "pass",
+    "evidenceRefs": [
+      "MissionCenter/smoke-tests.md",
+      "README.md",
+      ".github/workflows/ci.yml"
+    ]
+  },
+  "findings": [
+    {
+      "id": "CR-HUD",
+      "severity": "Low",
+      "disposition": "fixed"
+    },
+    {
+      "id": "CR-PREFLIGHT",
+      "severity": "Low",
+      "disposition": "fixed"
+    },
+    {
+      "id": "CR-WINDOWS-TEST",
+      "severity": "High",
+      "disposition": "fixed"
+    },
+    {
+      "id": "CR-TEMP-FIXTURE",
+      "severity": "Low",
+      "disposition": "fixed"
+    },
+    {
+      "id": "CR-ROLLBACK",
+      "severity": "High",
+      "disposition": "fixed"
+    },
+    {
+      "id": "CR-SUPERSEDED",
+      "severity": "High",
+      "disposition": "rejected-with-counterevidence"
+    }
+  ]
+}
