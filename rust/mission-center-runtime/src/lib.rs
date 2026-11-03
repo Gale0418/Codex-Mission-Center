@@ -1631,6 +1631,85 @@ impl FrozenHudAssets {
     }
 }
 
+fn validate_task_state(bytes: &[u8]) -> RuntimeResult<()> {
+    if bytes.len() > MAX_HTTP_BODY_BYTES {
+        return Err(RuntimeError::new(
+            ErrorCode::EventTooLarge,
+            "task state 超過 HTTP body 大小上限",
+        ));
+    }
+    let value: Value = serde_json::from_slice(bytes)
+        .map_err(|_| RuntimeError::new(ErrorCode::InvalidJson, "task state JSON 無效"))?;
+    check_bounds(&value)?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| RuntimeError::new(ErrorCode::Schema, "task state 必須是 JSON object"))?;
+    let status = object
+        .get("status")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| RuntimeError::new(ErrorCode::Schema, "task state 缺少 status"))?;
+    let goal = object
+        .get("goal")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| RuntimeError::new(ErrorCode::Schema, "task state 缺少 goal"))?;
+    let _ = (status, goal);
+    let progress = object
+        .get("progress")
+        .and_then(Value::as_u64)
+        .filter(|value| *value <= 100)
+        .ok_or_else(|| RuntimeError::new(ErrorCode::Schema, "task state progress 必須為 0..100"))?;
+    let _ = progress;
+
+    for field in ["active", "blocked"] {
+        let items = object
+            .get(field)
+            .and_then(Value::as_array)
+            .ok_or_else(|| RuntimeError::new(ErrorCode::Schema, "task state 清單欄位無效"))?;
+        if items.iter().any(|item| item.as_str().is_none()) {
+            return Err(RuntimeError::new(
+                ErrorCode::Schema,
+                "task state 清單項目必須是文字",
+            ));
+        }
+    }
+    let agents = object
+        .get("agents")
+        .and_then(Value::as_array)
+        .ok_or_else(|| RuntimeError::new(ErrorCode::Schema, "task state 缺少 agents"))?;
+    if agents.iter().any(|agent| !agent.is_object()) {
+        return Err(RuntimeError::new(
+            ErrorCode::Schema,
+            "task state agents 項目必須是 object",
+        ));
+    }
+
+    let task_counts = object
+        .get("taskCounts")
+        .and_then(Value::as_object)
+        .ok_or_else(|| RuntimeError::new(ErrorCode::Schema, "task state 缺少 taskCounts"))?;
+    let visible = task_counts
+        .get("visible")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| RuntimeError::new(ErrorCode::Schema, "taskCounts.visible 無效"))?;
+    let total = task_counts
+        .get("total")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| RuntimeError::new(ErrorCode::Schema, "taskCounts.total 無效"))?;
+    let hidden = task_counts
+        .get("hidden")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| RuntimeError::new(ErrorCode::Schema, "taskCounts.hidden 無效"))?;
+    if visible > total || hidden > total {
+        return Err(RuntimeError::new(
+            ErrorCode::Schema,
+            "taskCounts 數值關係無效",
+        ));
+    }
+    Ok(())
+}
+
 /// Load the complete serving snapshot before the listener starts. Once this
 /// returns, request handling has no filesystem dependency at all.
 #[cfg(not(windows))]
@@ -1865,6 +1944,7 @@ struct ServerInner {
     version: String,
     assets: Arc<HashMap<String, Vec<u8>>>,
     runtime_state: Arc<Vec<u8>>,
+    task_state: Mutex<Option<Vec<u8>>>,
     join: Mutex<Option<JoinHandle<()>>>,
     last_launch: Mutex<Instant>,
     cooldown: Duration,
@@ -1906,6 +1986,21 @@ impl HudServer {
     }
     pub fn version(&self) -> &str {
         &self.0.version
+    }
+    /// Replace the last valid task HUD payload in memory.
+    ///
+    /// Validation happens before acquiring the snapshot lock, and HTTP only
+    /// reads this memory-backed copy. Invalid updates therefore leave the
+    /// previous valid state (or the bundled fallback) untouched.
+    pub fn set_task_state(&self, bytes: &[u8]) -> RuntimeResult<()> {
+        validate_task_state(bytes)?;
+        let mut state = self
+            .0
+            .task_state
+            .lock()
+            .map_err(|_| RuntimeError::new(ErrorCode::Io, "task state lock 已 poisoned"))?;
+        *state = Some(bytes.to_vec());
+        Ok(())
     }
     pub fn is_running(&self) -> bool {
         self.0.running.load(Ordering::Acquire) && !self.0.stop.load(Ordering::Acquire)
@@ -2140,6 +2235,7 @@ fn start_server(
         version: config.version.clone(),
         assets: Arc::new(loaded.files),
         runtime_state: Arc::new(loaded.runtime_state),
+        task_state: Mutex::new(None),
         join: Mutex::new(None),
         last_launch: Mutex::new(Instant::now()),
         cooldown: config.cooldown,
@@ -2656,11 +2752,21 @@ fn hud_http_response(
             "HTTP path 不在 allowlist",
         ));
     };
-    let body = server
-        .assets
-        .get(name)
-        .cloned()
-        .ok_or_else(|| RuntimeError::new(ErrorCode::AssetUnavailable, "HUD asset 不存在"))?;
+    let body = if name == "visual-state.json" {
+        server
+            .task_state
+            .lock()
+            .map_err(|_| RuntimeError::new(ErrorCode::Io, "task state lock 已 poisoned"))?
+            .clone()
+            .or_else(|| server.assets.get(name).cloned())
+            .ok_or_else(|| RuntimeError::new(ErrorCode::AssetUnavailable, "HUD asset 不存在"))?
+    } else {
+        server
+            .assets
+            .get(name)
+            .cloned()
+            .ok_or_else(|| RuntimeError::new(ErrorCode::AssetUnavailable, "HUD asset 不存在"))?
+    };
     Ok(("200 OK", content_type, body, None))
 }
 

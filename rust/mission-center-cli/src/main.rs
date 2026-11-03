@@ -1,4 +1,5 @@
 mod contextual;
+mod hud_tasks;
 
 use mission_center_core::{Task, TaskStatus, canonicalize_hash_bytes, sha256_digest};
 use mission_center_policy::validate_tasks;
@@ -12,8 +13,8 @@ use mission_center_runtime::{
     stdio_command, validate_health_payload,
 };
 use mission_center_workspace::{
-    DAILY_LOG_MAX_BYTES, ExternalOperationRecord, MissionWorkspace, OperationOutcome, SyncOptions,
-    read_bounded_file, read_bounded_utf8,
+    DAILY_LOG_RECOVERY_MAX_BYTES, ExternalOperationRecord, MissionWorkspace, OperationOutcome,
+    SyncOptions, read_bounded_file, read_bounded_utf8,
 };
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
@@ -38,6 +39,8 @@ use std::{
 
 const SCHEMA: &str = "1.0";
 const MAX_OUTPUT_BYTES: usize = 512 * 1024;
+const STATUS_ID_LIST_MAX_BYTES: usize = 32 * 1024;
+const STATUS_TASKS_MAX_BYTES: usize = MAX_OUTPUT_BYTES - (STATUS_ID_LIST_MAX_BYTES * 3) - 16 * 1024;
 const MAX_JSON_INPUT_BYTES: usize = 8 * 1024 * 1024;
 const CLI_ENVELOPE_SCHEMA: &str = include_str!("../schemas/cli-envelope.schema.json");
 const RESUME_MAX_BYTES: usize = 16 * 1024;
@@ -1545,6 +1548,40 @@ fn task_json(task: &mission_center_core::Task) -> String {
     )
 }
 
+fn bounded_status_tasks(tasks: &[Task]) -> (String, usize, bool) {
+    let mut values = String::new();
+    let mut included = 0;
+    for task in tasks {
+        let value = task_json(task);
+        let separator = usize::from(included > 0);
+        if values.len() + separator + value.len() > STATUS_TASKS_MAX_BYTES {
+            return (values, included, true);
+        }
+        if included > 0 {
+            values.push(',');
+        }
+        values.push_str(&value);
+        included += 1;
+    }
+    (values, included, false)
+}
+
+fn bounded_status_ids(ids: &[String]) -> (String, bool) {
+    let mut values = String::new();
+    for (index, id) in ids.iter().enumerate() {
+        let value = json_quote(id);
+        let separator = usize::from(index > 0);
+        if values.len() + separator + value.len() > STATUS_ID_LIST_MAX_BYTES {
+            return (format!("[{values}]"), true);
+        }
+        if index > 0 {
+            values.push(',');
+        }
+        values.push_str(&value);
+    }
+    (format!("[{values}]"), false)
+}
+
 fn date_arg(args: &[String]) -> Option<String> {
     optional_arg(args, "--date")
 }
@@ -1608,20 +1645,7 @@ fn civil_date(days_since_epoch: i64) -> (i64, i64, i64) {
     (year + i64::from(month <= 2), month, day)
 }
 fn organized_date(text: &str) -> Option<String> {
-    text.lines().find_map(|line| {
-        let line = line.trim();
-        [
-            "- 最後整理：",
-            "- 最後整理:",
-            "- Last organized:",
-            "- Last organized：",
-        ]
-        .iter()
-        .find_map(|prefix| {
-            line.strip_prefix(prefix)
-                .map(|value| value.trim().to_owned())
-        })
-    })
+    mission_center_workspace::daily_log_organized_date(text)
 }
 
 fn bounded_utf8_prefix(value: &str, max_bytes: usize) -> String {
@@ -1756,7 +1780,7 @@ fn resume_packet(ws: &MissionWorkspace, _tasks: &[Task], date: &str) -> Result<V
     let daily = read_optional_context(
         ws,
         "daily-log.md",
-        DAILY_LOG_MAX_BYTES,
+        DAILY_LOG_RECOVERY_MAX_BYTES,
         &mut files_read,
         &mut read_next,
     );
@@ -3179,18 +3203,19 @@ fn reconcile_workspace_checks(
         "status":derived_status,
         "message":derived_messages.join("; ")
     }));
-    let date_status = match read_bounded_utf8(&mission.join("daily-log.md"), DAILY_LOG_MAX_BYTES) {
-        Ok(text) => {
-            organized_date(&text).map_or(
-                "stale",
-                |value| {
-                    if value == date { "pass" } else { "stale" }
-                },
-            )
-        }
-        Err(mission_center_workspace::WorkspaceError::NotFound { .. }) => "unknown",
-        Err(_) => "corrupt",
-    };
+    let date_status =
+        match read_bounded_utf8(&mission.join("daily-log.md"), DAILY_LOG_RECOVERY_MAX_BYTES) {
+            Ok(text) => {
+                organized_date(&text).map_or(
+                    "stale",
+                    |value| {
+                        if value == date { "pass" } else { "stale" }
+                    },
+                )
+            }
+            Err(mission_center_workspace::WorkspaceError::NotFound { .. }) => "unknown",
+            Err(_) => "corrupt",
+        };
     checks.push(
         json!({"name":"derived_date","status":date_status,"message":"daily organization date"}),
     );
@@ -3685,7 +3710,7 @@ fn valid_hud_metadata(metadata: &HudProcessMetadata, runtime_dir: &Path, now: u6
         && metadata.version == mission_center_runtime::HUD_RUNTIME_VERSION
         && valid_hud_url(&metadata.url, metadata.port)
         && valid_hud_fingerprint(&metadata.workspace_fingerprint)
-        && valid_hud_fingerprint(&metadata.hud_asset_fingerprint)
+        && metadata.hud_asset_fingerprint == embedded_hud_fingerprint()
         && !metadata.session_nonce.is_empty()
         && metadata.session_nonce.len() <= 128
         && metadata.pid > 0
@@ -3992,7 +4017,7 @@ fn hud_serve_run(root: PathBuf, args: &[String]) -> Result<String, String> {
         .transpose()?;
     let state = unavailable_runtime_state();
     let assets = frozen_hud_assets(&state)?;
-    let config = HudServerConfig::new(root)
+    let config = HudServerConfig::new(root.clone())
         .with_port(port.unwrap_or(0))
         .with_nonce(nonce)
         .with_frozen_assets(assets);
@@ -4008,6 +4033,7 @@ fn hud_serve_run(root: PathBuf, args: &[String]) -> Result<String, String> {
         hud_asset_fingerprint: outcome.hud_asset_fingerprint.clone(),
         session_nonce: outcome.server.session_nonce().to_owned(),
     };
+    hud_tasks::start(root, outcome.server.clone());
     let ready_bytes = serde_json::to_vec(&ready)
         .map_err(|_| "schema_error: HUD startup receipt 序列化失敗".to_owned())?;
     write_hud_bytes(&ready_path, &ready_bytes)?;
@@ -4790,7 +4816,7 @@ fn hud_run(mode: &str, root: PathBuf, args: &[String]) -> Result<String, String>
     }
     let state = hud_state(args)?;
     let assets = frozen_hud_assets(&state)?;
-    let mut config = HudServerConfig::new(root)
+    let mut config = HudServerConfig::new(root.clone())
         .with_port(port.unwrap_or(0))
         .with_state(state)
         .with_frozen_assets(assets);
@@ -4805,6 +4831,7 @@ fn hud_run(mode: &str, root: PathBuf, args: &[String]) -> Result<String, String>
     let outcome = launcher
         .launch(config, args.iter().any(|value| value == "--open"))
         .map_err(|error| error.to_string())?;
+    hud_tasks::start(root, outcome.server.clone());
     let reused = matches!(
         outcome.status,
         LaunchStatus::Reused | LaunchStatus::Cooldown
@@ -5228,13 +5255,7 @@ fn run(command: &str, root: PathBuf, args: &[String]) -> Result<String, String> 
             ))
         }
         "status" => {
-            let mut values = String::new();
-            for (index, task) in tasks.iter().enumerate() {
-                if index > 0 {
-                    values.push(',');
-                }
-                values.push_str(&task_json(task));
-            }
+            let (values, tasks_included, tasks_truncated) = bounded_status_tasks(&tasks);
             let date = date_arg(args).unwrap_or_else(today_local);
             if !valid_date(&date) {
                 return Err("--date must use YYYY-MM-DD".to_owned());
@@ -5267,7 +5288,7 @@ fn run(command: &str, root: PathBuf, args: &[String]) -> Result<String, String> 
                 && marker_fingerprint(&brief) == Some(fingerprint.as_str())
                 && marker_fingerprint(&working) == Some(task_fp.as_str());
             let daily = ws
-                .read_path_text(&mission.join("daily-log.md"), DAILY_LOG_MAX_BYTES)
+                .read_path_text(&mission.join("daily-log.md"), DAILY_LOG_RECOVERY_MAX_BYTES)
                 .map_err(|e| e.to_string())?
                 .unwrap_or_default();
             let date_fresh = organized_date(&daily).as_deref() == Some(date.as_str());
@@ -5295,10 +5316,15 @@ fn run(command: &str, root: PathBuf, args: &[String]) -> Result<String, String> 
                 .map(|task| task.id.clone())
                 .collect();
             let blocked = task_ids(&tasks, Some(TaskStatus::Blocked), None);
+            let (active_json, active_truncated) = bounded_status_ids(&active);
+            let (blocked_json, blocked_truncated) = bounded_status_ids(&blocked);
+            let (focus_json, focus_truncated) = bounded_status_ids(&focus_ids);
             let body = format!(
-                "{{\"taskCount\":{},\"tasks\":[{}],\"date\":\"{}\",\"sourceFresh\":{},\"dateFresh\":{},\"stale\":{},\"staleReasons\":[{}],\"missing\":{},\"fingerprint\":\"{}\",\"workingSetTasks\":{},\"focusTasks\":{},\"workingSetCount\":{},\"activeTasks\":{},\"blockedTasks\":{},\"briefBytes\":{}}}",
+                "{{\"taskCount\":{},\"tasks\":[{}],\"tasksIncluded\":{},\"tasksTruncated\":{},\"date\":\"{}\",\"sourceFresh\":{},\"dateFresh\":{},\"stale\":{},\"staleReasons\":[{}],\"missing\":{},\"fingerprint\":\"{}\",\"workingSetTasks\":{},\"focusTasks\":{},\"workingSetCount\":{},\"activeTasks\":{},\"blockedTasks\":{},\"activeTasksTruncated\":{},\"focusTasksTruncated\":{},\"blockedTasksTruncated\":{},\"briefBytes\":{}}}",
                 tasks.len(),
                 values,
+                tasks_included,
+                tasks_truncated,
                 date,
                 source_fresh,
                 date_fresh,
@@ -5311,10 +5337,13 @@ fn run(command: &str, root: PathBuf, args: &[String]) -> Result<String, String> 
                 ids_json(&missing),
                 fingerprint,
                 ids_json(&work),
-                ids_json(&focus_ids),
+                focus_json,
                 work.len(),
-                ids_json(&active),
-                ids_json(&blocked),
+                active_json,
+                blocked_json,
+                active_truncated,
+                focus_truncated,
+                blocked_truncated,
                 brief.len()
             );
             Ok(envelope(
@@ -6122,6 +6151,28 @@ mod hook_route_tests {
         std::fs::write(&path, br#"{"instanceKey":"legacy-python"}"#).expect("write");
         assert!(read_hud_metadata(&path).expect("read").is_none());
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn hud_metadata_rejects_a_healthy_but_old_embedded_asset_bundle() {
+        let root = std::env::temp_dir();
+        let mut metadata = HudProcessMetadata {
+            schema_version: SCHEMA.to_owned(),
+            version: mission_center_runtime::HUD_RUNTIME_VERSION.to_owned(),
+            pid: 1,
+            port: 12345,
+            url: "http://127.0.0.1:12345/".to_owned(),
+            workspace_fingerprint: "a".repeat(64),
+            hud_asset_fingerprint: embedded_hud_fingerprint(),
+            session_nonce: "test-session".to_owned(),
+            control_file: root.join("test.control").to_string_lossy().into_owned(),
+            last_launch_at: 1,
+            last_session_id: None,
+            last_turn_id: None,
+        };
+        assert!(valid_hud_metadata(&metadata, &root, 1));
+        metadata.hud_asset_fingerprint = "0".repeat(64);
+        assert!(!valid_hud_metadata(&metadata, &root, 1));
     }
 }
 

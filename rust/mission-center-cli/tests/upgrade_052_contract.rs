@@ -1,3 +1,4 @@
+use mission_center_core::sha256_digest;
 use serde_json::Value;
 use std::{
     fs,
@@ -11,6 +12,7 @@ static WORKSPACE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const FIXTURE_DATE: &str = "2026-09-12";
 const RESUME_MAX_BYTES: usize = 16 * 1024;
 const RESUME_MAX_VALUE_NODES: usize = 10_000;
+const DAILY_LOG_REGRESSION_BYTES: usize = 240 * 1024;
 const TASK_HEADER: &str = concat!(
     "# Tasks\n\n",
     "| ID | Title | Type | Parent | Priority | Status | Owner | Depends on | ",
@@ -315,6 +317,138 @@ fn resume_returns_actual_context_with_one_shared_utf8_budget() {
         fs::read(mission.join("tasks.md")).expect("read tasks after resume"),
         tasks_before,
         "resume must remain read-only"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn status_and_resume_accept_bounded_daily_log_above_128_kib() {
+    let root = workspace();
+    initialize(&root, "daily-log-bound-init");
+    let mission = root.join("MissionCenter");
+    let mut daily_log = format!("# Daily Log\n\n## {FIXTURE_DATE}\n\n");
+    let target = DAILY_LOG_REGRESSION_BYTES - 48;
+    while daily_log.len() < target {
+        daily_log.push_str("- bounded regression entry 🦀\n");
+    }
+    daily_log.push_str(&format!("- Last organized: {FIXTURE_DATE}\n"));
+    assert!(daily_log.len() > 128 * 1024);
+    let daily_log_path = mission.join("daily-log.md");
+    fs::write(&daily_log_path, &daily_log).expect("write bounded daily log");
+    sync(&root, "daily-log-bound-sync");
+    let archive_digest = sha256_digest(daily_log.as_bytes());
+    let archive = mission
+        .join("daily-log-archive")
+        .join(format!("{archive_digest}.md"));
+    let archive_before = fs::read(&archive).expect("read archive");
+    let active_before = fs::read(&daily_log_path).expect("read active daily log");
+    assert_eq!(archive_before, daily_log.as_bytes());
+    assert!(
+        fs::metadata(&daily_log_path)
+            .expect("active metadata")
+            .len()
+            <= 128 * 1024
+    );
+
+    let (status_output, status_payload) = run(&root, &["status", "--date", FIXTURE_DATE]);
+    assert!(
+        status_output.status.success(),
+        "status failed: {status_payload}"
+    );
+    assert!(status_payload.get("errorCode").is_none());
+
+    let (resume_output, resume_payload) = run(&root, &["resume", "--date", FIXTURE_DATE]);
+    assert!(
+        resume_output.status.success(),
+        "resume failed: {resume_payload}"
+    );
+    assert_eq!(resume_payload["status"], "ok");
+    assert!(resume_payload["data"].is_object());
+    assert_eq!(
+        fs::read(&daily_log_path).expect("read active daily log"),
+        active_before
+    );
+    assert_eq!(
+        fs::read(&archive).expect("read archive after read-only commands"),
+        archive_before
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn status_and_resume_read_oversized_daily_log_before_next_sync_without_writing() {
+    let root = workspace();
+    initialize(&root, "daily-log-recovery-init");
+    let mission = root.join("MissionCenter");
+    let mut daily_log = format!("# Daily Log\n\n## {FIXTURE_DATE}\n\n");
+    while daily_log.len() < 240 * 1024 {
+        daily_log.push_str("- externally appended recovery entry 🦀\n");
+    }
+    daily_log.push_str(&format!("- Last organized: {FIXTURE_DATE}\n"));
+    let daily_log_path = mission.join("daily-log.md");
+    fs::write(&daily_log_path, &daily_log).expect("write oversized daily log");
+    let before = fs::read(&daily_log_path).expect("read oversized daily log");
+
+    let (status_output, status_payload) = run(&root, &["status", "--date", FIXTURE_DATE]);
+    assert!(status_output.stdout.len() <= 512 * 1024);
+    assert!(status_payload.get("errorCode").is_none());
+    let (resume_output, resume_payload) = run(&root, &["resume", "--date", FIXTURE_DATE]);
+    assert!(
+        resume_output.status.success(),
+        "resume failed: {resume_payload}"
+    );
+    assert_eq!(resume_payload["status"], "ok");
+    assert_eq!(
+        fs::read(&daily_log_path).expect("read daily log after reads"),
+        before
+    );
+
+    sync(&root, "daily-log-recovery-sync");
+    assert!(
+        fs::metadata(&daily_log_path)
+            .expect("active daily log")
+            .len()
+            <= 128 * 1024
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn oversized_tasks_remain_canonical_while_status_output_is_explicitly_bounded() {
+    let root = workspace();
+    initialize(&root, "large-tasks-init");
+    let mission = root.join("MissionCenter");
+    let mut tasks = TASK_HEADER.to_owned();
+    for index in 0..7_000 {
+        tasks.push_str(&format!(
+            "| MC-{index:04} | Long task {index} with retained notes | Task | | P1 | Ready | Codex | | Continue | local test | 1 | | {} |\n",
+            "retained canonical task note ".repeat(4)
+        ));
+    }
+    assert!(tasks.len() > 256 * 1024);
+    let tasks_path = mission.join("tasks.md");
+    fs::write(&tasks_path, &tasks).expect("write large canonical tasks");
+
+    let tasks_before = fs::read(&tasks_path).expect("read large canonical tasks");
+    let (status_output, status_payload) = run(&root, &["status", "--date", FIXTURE_DATE]);
+    assert!(status_output.stdout.len() <= 512 * 1024);
+    assert!(status_payload.get("errorCode").is_none());
+    assert_eq!(status_payload["data"]["taskCount"], 7_000);
+    assert_eq!(status_payload["data"]["tasksTruncated"], true);
+
+    let (resume_output, resume_payload) = run(&root, &["resume", "--date", FIXTURE_DATE]);
+    assert!(
+        resume_output.status.success(),
+        "resume failed: {resume_payload}"
+    );
+    assert_eq!(resume_payload["status"], "ok");
+    assert!(resume_output.stdout.len() <= 512 * 1024);
+
+    sync(&root, "large-tasks-sync");
+    assert_eq!(
+        fs::read(&tasks_path).expect("read tasks after sync"),
+        tasks_before
     );
     let _ = fs::remove_dir_all(root);
 }

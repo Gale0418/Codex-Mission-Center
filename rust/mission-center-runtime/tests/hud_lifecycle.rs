@@ -41,6 +41,10 @@ fn test_config(workspace: &Path) -> HudServerConfig {
     }
 }
 
+fn valid_task_state() -> &'static [u8] {
+    br#"{"status":"In Progress","goal":"bounded task snapshot","progress":42,"active":[],"blocked":[],"agents":[],"taskCounts":{"visible":0,"total":0,"hidden":0}}"#
+}
+
 fn test_config_with_large_optional_asset(workspace: &Path) -> HudServerConfig {
     let config = test_config(workspace);
     #[cfg(windows)]
@@ -98,6 +102,47 @@ fn frozen_bundle_constructor_enforces_allowlist_and_is_usable() {
                 .starts_with("HTTP/1.1 200")
         );
     }
+    launcher.shutdown_all().unwrap();
+    let _ = fs::remove_dir_all(workspace);
+}
+
+#[test]
+fn task_state_snapshot_updates_visual_state_without_changing_runtime_state() {
+    let workspace = temp_workspace("task-state-update");
+    let launcher = HudLauncher::new();
+    let result = launcher.launch(test_config(&workspace), false).unwrap();
+    let runtime_before = request(&result.server, "/mission-center-runtime/runtime-state.json");
+    let visual_before = request(&result.server, "/mission-center-assets/visual-state.json");
+
+    result.server.set_task_state(valid_task_state()).unwrap();
+
+    let visual_after = request(&result.server, "/mission-center-assets/visual-state.json");
+    assert_ne!(visual_before, visual_after);
+    assert!(visual_after.contains("bounded task snapshot"));
+    assert_eq!(
+        runtime_before,
+        request(&result.server, "/mission-center-runtime/runtime-state.json")
+    );
+    launcher.shutdown_all().unwrap();
+    let _ = fs::remove_dir_all(workspace);
+}
+
+#[test]
+fn invalid_task_state_keeps_last_valid_snapshot() {
+    let workspace = temp_workspace("task-state-invalid");
+    let launcher = HudLauncher::new();
+    let result = launcher.launch(test_config(&workspace), false).unwrap();
+    result.server.set_task_state(valid_task_state()).unwrap();
+    let before = request(&result.server, "/mission-center-assets/visual-state.json");
+
+    assert_eq!(
+        result.server.set_task_state(b"not-json").unwrap_err().code,
+        ErrorCode::InvalidJson
+    );
+    assert_eq!(
+        before,
+        request(&result.server, "/mission-center-assets/visual-state.json")
+    );
     launcher.shutdown_all().unwrap();
     let _ = fs::remove_dir_all(workspace);
 }

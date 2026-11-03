@@ -24,9 +24,10 @@ pub const MISSION_DIRECTORY: &str = "MissionCenter";
 pub const TASKS_FILE: &str = "tasks.md";
 pub const SNAPSHOT_FILE: &str = "snapshot.md";
 pub const PROJECT_MAX_BYTES: u64 = 64 * 1024;
-pub const TASKS_MAX_BYTES: u64 = 256 * 1024;
 pub const GUARDRAILS_MAX_BYTES: u64 = 64 * 1024;
 pub const DAILY_LOG_MAX_BYTES: u64 = 128 * 1024;
+pub const DAILY_LOG_ROLLOVER_TARGET_BYTES: u64 = 112 * 1024;
+pub const DAILY_LOG_RECOVERY_MAX_BYTES: u64 = 8 * 1024 * 1024;
 pub const SNAPSHOT_MAX_BYTES: u64 = 64 * 1024;
 pub const COMPLETION_PASSPORT_MAX_BYTES: u64 = 256 * 1024;
 const MAX_RECENT_ATTEMPTS: usize = 5;
@@ -197,12 +198,12 @@ impl MissionWorkspace {
         self.mission_dir().join(SNAPSHOT_FILE)
     }
     pub fn read_tasks(&self) -> Result<(String, Vec<Task>), WorkspaceError> {
-        let text = read_bounded_text(&self.tasks_path(), TASKS_MAX_BYTES)?;
+        let text = read_unbounded_text(&self.tasks_path())?;
         let tasks = parse_tasks_markdown(&text)?;
         Ok((text, tasks))
     }
     pub fn task_digest(&self) -> Result<String, WorkspaceError> {
-        let text = read_bounded(&self.tasks_path(), TASKS_MAX_BYTES)?;
+        let text = read_unbounded(&self.tasks_path())?;
         Ok(sha256_digest(&canonicalize_hash_bytes(&text)))
     }
 
@@ -259,13 +260,15 @@ impl MissionWorkspace {
     }
     pub fn fingerprint(&self) -> Result<String, WorkspaceError> {
         let project = read_optional(self.mission_dir().join("project.md"), PROJECT_MAX_BYTES)?;
-        let tasks = read_optional(self.tasks_path(), TASKS_MAX_BYTES)?;
+        let tasks = read_optional_unbounded(self.tasks_path())?;
         let guardrails = read_optional(
             self.mission_dir().join("guardrails.md"),
             GUARDRAILS_MAX_BYTES,
         )?;
-        let daily_log =
-            read_optional(self.mission_dir().join("daily-log.md"), DAILY_LOG_MAX_BYTES)?;
+        let daily_log = read_optional(
+            self.mission_dir().join("daily-log.md"),
+            DAILY_LOG_RECOVERY_MAX_BYTES,
+        )?;
         Ok(mission_center_core::workspace_fingerprint(&[
             ("project.md", project.as_deref()),
             ("tasks.md", tasks.as_deref()),
@@ -284,8 +287,7 @@ impl MissionWorkspace {
     }
 
     fn canonical_snapshot_facts(&self, tasks: &[Task]) -> Result<SnapshotFacts, WorkspaceError> {
-        let task_bytes =
-            canonicalize_hash_bytes(&read_bounded(&self.tasks_path(), TASKS_MAX_BYTES)?);
+        let task_bytes = canonicalize_hash_bytes(&read_unbounded(&self.tasks_path())?);
         let project_bytes =
             read_optional(self.mission_dir().join("project.md"), PROJECT_MAX_BYTES)?
                 .map(|bytes| canonicalize_hash_bytes(&bytes));
@@ -362,12 +364,14 @@ impl MissionWorkspace {
             self.tasks_path(),
             self.mission_dir().join("progress.md"),
         ] {
-            let limit = if path.file_name().is_some_and(|name| name == "project.md") {
-                PROJECT_MAX_BYTES
+            let text = if path.file_name().is_some_and(|name| name == "project.md") {
+                read_bounded_text(&path, PROJECT_MAX_BYTES)
+            } else if path.file_name().is_some_and(|name| name == "tasks.md") {
+                read_unbounded_text(&path)
             } else {
-                TASKS_MAX_BYTES
+                read_bounded_text(&path, PROJECT_MAX_BYTES)
             };
-            if let Ok(text) = read_bounded_text(&path, limit)
+            if let Ok(text) = text
                 && ["# 專案", "# 進度", "# 任務", "- 目標:", "- 目標："]
                     .iter()
                     .any(|marker| text.contains(marker))
@@ -398,11 +402,11 @@ impl MissionWorkspace {
 
 const MANAGED_SUMMARY_MARKER: &str = "<!-- mission-center-managed-summary v=1 -->";
 
-fn init_limit(name: &str) -> u64 {
-    if name == TASKS_FILE {
-        TASKS_MAX_BYTES
-    } else {
-        PROJECT_MAX_BYTES
+fn init_limit(name: &str) -> Option<u64> {
+    match name {
+        TASKS_FILE => None,
+        "daily-log.md" => Some(DAILY_LOG_RECOVERY_MAX_BYTES),
+        _ => Some(PROJECT_MAX_BYTES),
     }
 }
 
@@ -628,6 +632,22 @@ fn sync_date(timestamp: &str) -> Result<&str, WorkspaceError> {
     })
 }
 
+const DAILY_LOG_ARCHIVE_DIRECTORY: &str = "daily-log-archive";
+
+#[derive(Debug)]
+struct DailyLogArchivePlan {
+    path: PathBuf,
+    source: Vec<u8>,
+    digest: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DailyLogSection {
+    start: usize,
+    end: usize,
+    heading_end: usize,
+}
+
 fn organize_daily_log(
     existing: Option<&[u8]>,
     language: WorkspaceLanguage,
@@ -644,28 +664,7 @@ fn organize_daily_log(
             path: PathBuf::from("MissionCenter/daily-log.md"),
         })?
         .unwrap_or_else(|| format!("{title}\n\n{preferred_marker} 1970-01-01\n"));
-    let markers = [
-        "- 最後整理：",
-        "- 最後整理:",
-        "- Last organized:",
-        "- Last organized：",
-    ];
-    let marker = text
-        .split_inclusive('\n')
-        .scan(0usize, |offset, line| {
-            let line_start = *offset;
-            *offset += line.len();
-            Some((line_start, line))
-        })
-        .find_map(|(line_start, line)| {
-            let content = line.trim_start_matches([' ', '\t']);
-            let indentation = line.len() - content.len();
-            markers.iter().find_map(|candidate| {
-                content
-                    .starts_with(candidate)
-                    .then_some((*candidate, line_start + indentation))
-            })
-        });
+    let marker = daily_log_marker_position(&text);
     if let Some((marker, position)) = marker {
         let line_start = text[..position].rfind('\n').map_or(0, |index| index + 1);
         let line_end = text[position..]
@@ -684,18 +683,16 @@ fn organize_daily_log(
             line_end
         };
         let indentation = &text[line_start..position];
-        return bounded_daily_log(
-            format!(
-                "{}{}{} {}{}{}",
-                &text[..line_start],
-                indentation,
-                marker,
-                date,
-                newline,
-                &text[suffix_start..]
-            )
-            .into_bytes(),
-        );
+        return Ok(format!(
+            "{}{}{} {}{}{}",
+            &text[..line_start],
+            indentation,
+            marker,
+            date,
+            newline,
+            &text[suffix_start..]
+        )
+        .into_bytes());
     }
 
     let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
@@ -707,17 +704,505 @@ fn organize_daily_log(
             _ => "\n\n",
         }
     };
-    bounded_daily_log(format!("{text}{separator}{preferred_marker} {date}{newline}").into_bytes())
+    Ok(format!("{text}{separator}{preferred_marker} {date}{newline}").into_bytes())
 }
 
-fn bounded_daily_log(bytes: Vec<u8>) -> Result<Vec<u8>, WorkspaceError> {
-    if bytes.len() as u64 > DAILY_LOG_MAX_BYTES {
+fn daily_log_marker_date(line: &str) -> Option<String> {
+    // Exact marker syntax is reserved metadata; near-matches remain user text.
+    let line = line
+        .trim_end_matches(['\r', '\n'])
+        .trim_start_matches([' ', '\t']);
+    [
+        "- 最後整理：",
+        "- 最後整理:",
+        "- Last organized:",
+        "- Last organized：",
+    ]
+    .iter()
+    .find_map(|marker| {
+        let value = line.strip_prefix(marker)?.trim();
+        valid_daily_log_date(value).then(|| value.to_owned())
+    })
+}
+
+fn daily_log_marker_position(text: &str) -> Option<(&'static str, usize)> {
+    let markers = [
+        "- 最後整理：",
+        "- 最後整理:",
+        "- Last organized:",
+        "- Last organized：",
+    ];
+    let mut first_date_section = None;
+    let mut latest_date_section = None;
+    for (line_start, line_end) in daily_log_line_spans(text) {
+        let line = text[line_start..line_end]
+            .trim_end_matches(['\r', '\n'])
+            .trim();
+        if let Some(date) = line.strip_prefix("## ").map(str::trim)
+            && valid_daily_log_date(date)
+        {
+            first_date_section.get_or_insert(line_start);
+            latest_date_section = Some(line_start);
+        }
+    }
+    text.split_inclusive('\n')
+        .scan(0usize, |offset, line| {
+            let line_start = *offset;
+            *offset += line.len();
+            Some((line_start, line))
+        })
+        .find_map(|(line_start, line)| {
+            let content = line.trim_start_matches([' ', '\t']);
+            let indentation = line.len() - content.len();
+            let allowed_region = match (first_date_section, latest_date_section) {
+                (Some(first), Some(latest)) => line_start < first || line_start >= latest,
+                _ => true,
+            };
+            if !allowed_region {
+                return None;
+            }
+            markers.iter().find_map(|candidate| {
+                let value = content.strip_prefix(candidate)?.trim();
+                valid_daily_log_date(value).then_some((*candidate, line_start + indentation))
+            })
+        })
+}
+
+/// Return the single reserved organized-date marker used by all read-only
+/// status/resume/reconcile consumers.
+pub fn daily_log_organized_date(text: &str) -> Option<String> {
+    let (_, position) = daily_log_marker_position(text)?;
+    let line_start = text[..position].rfind('\n').map_or(0, |index| index + 1);
+    let line_end = text[position..]
+        .find('\n')
+        .map_or(text.len(), |index| position + index);
+    daily_log_marker_date(&text[line_start..line_end])
+}
+
+fn daily_log_line_spans(text: &str) -> impl Iterator<Item = (usize, usize)> + '_ {
+    text.split_inclusive('\n').scan(0usize, |offset, line| {
+        let start = *offset;
+        *offset += line.len();
+        Some((start, *offset))
+    })
+}
+
+fn valid_daily_log_date(value: &str) -> bool {
+    value.len() == 10
+        && value.as_bytes()[4] == b'-'
+        && value.as_bytes()[7] == b'-'
+        && value
+            .bytes()
+            .enumerate()
+            .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
+}
+
+fn daily_log_sections(text: &str) -> Result<Vec<DailyLogSection>, WorkspaceError> {
+    let mut sections = Vec::new();
+    for (start, end) in daily_log_line_spans(text) {
+        let line = text[start..end].trim_end_matches(['\r', '\n']).trim();
+        if let Some(date) = line.strip_prefix("## ") {
+            if !valid_daily_log_date(date.trim()) {
+                return Err(WorkspaceError::ClaimRejected(
+                    "daily-log rollover found an invalid date heading".to_owned(),
+                ));
+            }
+            sections.push(DailyLogSection {
+                start,
+                end: text.len(),
+                heading_end: end,
+            });
+        } else if line.starts_with("## ") {
+            return Err(WorkspaceError::ClaimRejected(
+                "daily-log rollover found an unsupported heading".to_owned(),
+            ));
+        }
+    }
+    for index in 0..sections.len().saturating_sub(1) {
+        sections[index].end = sections[index + 1].start;
+    }
+    Ok(sections)
+}
+
+fn daily_log_entry_ranges(text: &str, section: DailyLogSection) -> Vec<(usize, usize)> {
+    let mut entries = Vec::new();
+    for (start, end) in daily_log_line_spans(&text[section.heading_end..section.end]) {
+        let start = start + section.heading_end;
+        let end = end + section.heading_end;
+        let line = text[start..end].trim_end_matches(['\r', '\n']);
+        if line.starts_with("- ") {
+            if let Some((_, previous_end)) = entries.last_mut() {
+                *previous_end = start;
+            }
+            entries.push((start, end));
+        }
+    }
+    entries
+}
+
+fn daily_log_marker_line(line: &str) -> bool {
+    daily_log_marker_date(line).is_some()
+}
+
+fn daily_log_marker(language: WorkspaceLanguage, date: &str, newline: &str) -> String {
+    let marker = match language {
+        WorkspaceLanguage::English => "- Last organized:",
+        WorkspaceLanguage::TraditionalChinese => "- 最後整理：",
+    };
+    format!("{marker} {date}{newline}")
+}
+
+fn daily_log_archive_pointer(digest: &str, bytes: usize, newline: &str) -> String {
+    format!(
+        "<!-- mission-center daily-log-archive schema=1 path=MissionCenter/{DAILY_LOG_ARCHIVE_DIRECTORY}/{digest}.md sha256={digest} bytes={bytes} -->{newline}"
+    )
+}
+
+fn archive_collision_io_error() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "daily-log archive digest collision",
+    )
+}
+
+fn verify_daily_log_archive(path: &Path, source: &[u8]) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "daily-log archive final path is not a regular file",
+        ));
+    }
+    let existing = match read_bounded(path, source.len() as u64) {
+        Ok(bytes) => bytes,
+        Err(WorkspaceError::TooLarge { .. }) => return Err(archive_collision_io_error()),
+        Err(error) => return Err(io::Error::other(error.to_string())),
+    };
+    if existing == source {
+        Ok(())
+    } else {
+        Err(archive_collision_io_error())
+    }
+}
+
+fn map_archive_io_error(error: io::Error) -> WorkspaceError {
+    if error.kind() == io::ErrorKind::AlreadyExists {
+        WorkspaceError::Conflict("daily-log archive digest collision".to_owned())
+    } else {
+        WorkspaceError::Io(error)
+    }
+}
+
+fn hard_link_unsupported(error: &io::Error) -> bool {
+    error.kind() == io::ErrorKind::Unsupported
+        // macOS SMBFS reports POSIX ENOTSUP as errno 45.
+        || error.raw_os_error() == Some(45)
+        // Windows filesystems may report ERROR_NOT_SUPPORTED instead.
+        || error.raw_os_error() == Some(50)
+}
+
+fn daily_log_archive_intent_path(plan: &DailyLogArchivePlan) -> io::Result<PathBuf> {
+    plan.path
+        .parent()
+        .map(|parent| parent.join(format!(".{}.intent", plan.digest)))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "archive has no parent"))
+}
+
+fn daily_log_archive_intent(plan: &DailyLogArchivePlan) -> Vec<u8> {
+    format!(
+        "schema=1\nsha256={}\nbytes={}\n",
+        plan.digest,
+        plan.source.len()
+    )
+    .into_bytes()
+}
+
+fn ensure_daily_log_archive_intent(
+    plan: &DailyLogArchivePlan,
+    parent: &Path,
+) -> io::Result<PathBuf> {
+    let path = daily_log_archive_intent_path(plan)?;
+    let expected = daily_log_archive_intent(plan);
+    install_exclusive_bytes_recover_prefix(&path, parent, &expected)?;
+    Ok(path)
+}
+
+fn remove_daily_log_archive_intent(path: &Path, parent: &Path) -> io::Result<()> {
+    fs::remove_file(path)?;
+    sync_directory_portable(parent)
+}
+
+/// Install an already-fsynced archive without hard links.
+///
+/// `create_new` gives us no-clobber semantics on filesystems such as macOS
+/// SMBFS where hard links are unsupported. It cannot make the final copy
+/// itself atomic, so an interrupted copy is resumed only when the existing
+/// bytes are an exact prefix of the expected content. Unknown bytes fail
+/// closed and are never overwritten. The active daily log is only changed
+/// after this function succeeds, leaving the original source as the recovery
+/// copy when a write or fsync fails.
+fn install_exclusive_bytes_recover_prefix(
+    path: &Path,
+    parent: &Path,
+    expected: &[u8],
+) -> io::Result<()> {
+    match OpenOptions::new().write(true).create_new(true).open(path) {
+        Ok(mut file) => {
+            file.write_all(expected)?;
+            file.flush()?;
+            sync_all_portable(&file)?;
+            sync_directory_portable(parent)?;
+            verify_daily_log_archive(path, expected).map_err(|error| {
+                if error.kind() == io::ErrorKind::AlreadyExists {
+                    archive_collision_io_error()
+                } else {
+                    io::Error::other(error.to_string())
+                }
+            })
+        }
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            let actual = match read_bounded(path, expected.len() as u64) {
+                Ok(bytes) => bytes,
+                Err(WorkspaceError::TooLarge { .. }) => {
+                    return Err(archive_collision_io_error());
+                }
+                Err(error) => return Err(io::Error::other(error.to_string())),
+            };
+            if actual == expected {
+                return Ok(());
+            }
+            if !expected.starts_with(&actual) {
+                return Err(archive_collision_io_error());
+            }
+            let mut file = OpenOptions::new().append(true).open(path)?;
+            file.write_all(&expected[actual.len()..])?;
+            file.flush()?;
+            sync_all_portable(&file)?;
+            sync_directory_portable(parent)?;
+            verify_daily_log_archive(path, expected).map_err(|error| {
+                if error.kind() == io::ErrorKind::AlreadyExists {
+                    archive_collision_io_error()
+                } else {
+                    io::Error::other(error.to_string())
+                }
+            })
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn install_daily_log_archive_without_hard_link(
+    plan: &DailyLogArchivePlan,
+    parent: &Path,
+) -> io::Result<()> {
+    let intent = ensure_daily_log_archive_intent(plan, parent)?;
+    install_exclusive_bytes_recover_prefix(&plan.path, parent, &plan.source)?;
+    remove_daily_log_archive_intent(&intent, parent)
+}
+
+fn prepare_daily_log(
+    root: &Path,
+    source: Option<Vec<u8>>,
+    organized: Vec<u8>,
+    language: WorkspaceLanguage,
+    date: &str,
+) -> Result<(Vec<u8>, Option<DailyLogArchivePlan>), WorkspaceError> {
+    let needs_archive = source
+        .as_ref()
+        .is_some_and(|bytes| bytes.len() as u64 > DAILY_LOG_MAX_BYTES)
+        || organized.len() as u64 > DAILY_LOG_MAX_BYTES;
+    if !needs_archive {
+        return Ok((organized, None));
+    }
+    let source = source.ok_or_else(|| WorkspaceError::TooLarge {
+        path: PathBuf::from("MissionCenter/daily-log.md"),
+        limit: DAILY_LOG_MAX_BYTES,
+    })?;
+    let organized_text = String::from_utf8(organized).map_err(|_| WorkspaceError::InvalidUtf8 {
+        path: PathBuf::from("MissionCenter/daily-log.md"),
+    })?;
+    let sections = daily_log_sections(&organized_text)?;
+    let Some(first_section) = sections.first().copied() else {
+        return Err(WorkspaceError::ClaimRejected(
+            "daily-log rollover requires at least one valid date section".to_owned(),
+        ));
+    };
+    let prefix = &organized_text[..first_section.start];
+    if !prefix
+        .lines()
+        .any(|line| line.trim_start().starts_with("# "))
+    {
+        return Err(WorkspaceError::ClaimRejected(
+            "daily-log rollover requires a markdown title".to_owned(),
+        ));
+    }
+    let digest = mission_center_core::sha256_digest(&source);
+    let newline = if organized_text.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let pointer = daily_log_archive_pointer(&digest, source.len(), newline);
+    let mut base = prefix.to_owned();
+    if !base.is_empty() && !base.ends_with('\n') {
+        base.push_str(newline);
+    }
+    base.push_str(&pointer);
+    let marker = daily_log_marker(language, date, newline);
+    let rollover_target = DAILY_LOG_ROLLOVER_TARGET_BYTES as usize;
+
+    let mut kept = Vec::new();
+    let mut used = base.len() + marker.len();
+    for section in sections.iter().rev().copied() {
+        let section_bytes = &organized_text.as_bytes()[section.start..section.end];
+        if used + section_bytes.len() <= rollover_target {
+            kept.push((section.start, section.end));
+            used += section_bytes.len();
+            continue;
+        }
+        if kept.is_empty() {
+            let entries = daily_log_entry_ranges(&organized_text, section);
+            let heading_len = section.heading_end - section.start;
+            if used + heading_len > rollover_target {
+                return Err(WorkspaceError::TooLarge {
+                    path: PathBuf::from("MissionCenter/daily-log.md"),
+                    limit: DAILY_LOG_ROLLOVER_TARGET_BYTES,
+                });
+            }
+            let available = rollover_target - used - heading_len;
+            let mut suffix_start = section.end;
+            for (entry_start, _) in entries.iter().rev().copied() {
+                if section.end - entry_start <= available {
+                    suffix_start = entry_start;
+                } else {
+                    break;
+                }
+            }
+            kept.push((section.start, section.heading_end));
+            if suffix_start < section.end {
+                kept.push((suffix_start, section.end));
+            }
+        }
+        break;
+    }
+    kept.sort_unstable_by_key(|(start, _)| *start);
+    let base_len = base.len();
+    let mut active = base.into_bytes();
+    for (start, end) in kept {
+        active.extend_from_slice(&organized_text.as_bytes()[start..end]);
+    }
+    let text = String::from_utf8(active).map_err(|_| WorkspaceError::InvalidUtf8 {
+        path: PathBuf::from("MissionCenter/daily-log.md"),
+    })?;
+    let (head, tail) = text.split_at(base_len);
+    let mut output = String::with_capacity(text.len() + marker.len());
+    for (start, end) in daily_log_line_spans(head) {
+        if !daily_log_marker_line(&head[start..end]) {
+            output.push_str(&head[start..end]);
+        }
+    }
+    output.push_str(&marker);
+    for (start, end) in daily_log_line_spans(tail) {
+        if !daily_log_marker_line(&tail[start..end]) {
+            output.push_str(&tail[start..end]);
+        }
+    }
+    active = output.into_bytes();
+    if active.len() as u64 > DAILY_LOG_ROLLOVER_TARGET_BYTES {
         return Err(WorkspaceError::TooLarge {
             path: PathBuf::from("MissionCenter/daily-log.md"),
-            limit: DAILY_LOG_MAX_BYTES,
+            limit: DAILY_LOG_ROLLOVER_TARGET_BYTES,
         });
     }
-    Ok(bytes)
+    Ok((
+        active,
+        Some(DailyLogArchivePlan {
+            path: root
+                .join(MISSION_DIRECTORY)
+                .join(DAILY_LOG_ARCHIVE_DIRECTORY)
+                .join(format!("{digest}.md")),
+            source,
+            digest,
+        }),
+    ))
+}
+
+fn ensure_daily_log_archive(plan: &DailyLogArchivePlan) -> Result<(), WorkspaceError> {
+    if let Ok(metadata) = fs::symlink_metadata(&plan.path) {
+        if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+            return Err(WorkspaceError::UnsafePath {
+                path: plan.path.clone(),
+            });
+        }
+        match verify_daily_log_archive(&plan.path, &plan.source) {
+            Ok(()) => {
+                let intent = daily_log_archive_intent_path(plan).map_err(WorkspaceError::Io)?;
+                if fs::symlink_metadata(&intent).is_ok() {
+                    let parent = plan
+                        .path
+                        .parent()
+                        .ok_or_else(|| WorkspaceError::UnsafePath {
+                            path: plan.path.clone(),
+                        })?;
+                    ensure_daily_log_archive_intent(plan, parent).map_err(map_archive_io_error)?;
+                    remove_daily_log_archive_intent(&intent, parent)
+                        .map_err(map_archive_io_error)?;
+                }
+                return Ok(());
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                let intent = daily_log_archive_intent_path(plan).map_err(WorkspaceError::Io)?;
+                if fs::symlink_metadata(&intent).is_err() {
+                    return Err(map_archive_io_error(error));
+                }
+                let parent = plan
+                    .path
+                    .parent()
+                    .ok_or_else(|| WorkspaceError::UnsafePath {
+                        path: plan.path.clone(),
+                    })?;
+                install_daily_log_archive_without_hard_link(plan, parent)
+                    .map_err(map_archive_io_error)?;
+                return Ok(());
+            }
+            Err(error) => return Err(map_archive_io_error(error)),
+        }
+    }
+    if let Some(parent) = plan.path.parent() {
+        ensure_directory(parent)?;
+    }
+    let parent = plan
+        .path
+        .parent()
+        .ok_or_else(|| WorkspaceError::UnsafePath {
+            path: plan.path.clone(),
+        })?;
+    let temporary = parent.join(format!(".{}.tmp-{}", plan.digest, unique_nonce()));
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        file.write_all(&plan.source)?;
+        file.flush()?;
+        sync_all_portable(&file)?;
+        sync_directory_portable(parent)?;
+        match fs::hard_link(&temporary, &plan.path) {
+            Ok(()) => {
+                sync_directory_portable(parent)?;
+                Ok(())
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                verify_daily_log_archive(&plan.path, &plan.source)
+            }
+            Err(error) if hard_link_unsupported(&error) => {
+                install_daily_log_archive_without_hard_link(plan, parent)
+            }
+            Err(error) => Err(error),
+        }
+    })();
+    let _ = fs::remove_file(&temporary);
+    result.map_err(map_archive_io_error)
 }
 
 fn compute_progress(tasks: &[Task]) -> (u32, String, Vec<String>, Vec<String>) {
@@ -927,7 +1412,10 @@ impl MissionWorkspace {
         let mut writes = Vec::new();
         for (name, content) in files {
             let path = self.mission_dir().join(name);
-            let existing = read_optional(path.clone(), init_limit(name))?;
+            let existing = match init_limit(name) {
+                Some(limit) => read_optional(path.clone(), limit)?,
+                None => read_optional_unbounded(path.clone())?,
+            };
             // tasks.md is the sole lifecycle source.  Even an explicit
             // scaffold force must never replace an existing canonical task
             // table with a template.
@@ -1074,8 +1562,17 @@ impl MissionWorkspace {
             self.mission_dir().join("guardrails.md"),
             GUARDRAILS_MAX_BYTES,
         )?;
-        let existing_daily_log = read_optional(daily_log_path.clone(), DAILY_LOG_MAX_BYTES)?;
-        let daily_log_bytes = organize_daily_log(existing_daily_log.as_deref(), language, date)?;
+        let existing_daily_log =
+            read_optional(daily_log_path.clone(), DAILY_LOG_RECOVERY_MAX_BYTES)?;
+        let organized_daily_log =
+            organize_daily_log(existing_daily_log.as_deref(), language, date)?;
+        let (daily_log_bytes, archive_plan) = prepare_daily_log(
+            &self.root,
+            existing_daily_log.clone(),
+            organized_daily_log,
+            language,
+            date,
+        )?;
         let daily_log_write = (existing_daily_log.as_deref() != Some(daily_log_bytes.as_slice()))
             .then_some(daily_log_bytes.clone());
         let workspace_fingerprint = mission_center_core::workspace_fingerprint(&[
@@ -1196,12 +1693,42 @@ impl MissionWorkspace {
                 planned.extend_from_slice(b"<missing>");
             }
         }
+        if let Some(plan) = archive_plan.as_ref() {
+            planned.push(0);
+            planned.extend_from_slice(b"daily-log-archive");
+            planned.push(0);
+            planned.extend_from_slice(plan.digest.as_bytes());
+            planned.push(0);
+            planned.extend_from_slice(&canonicalize_hash_bytes(&plan.source));
+        }
         let digest = sha256_digest(&planned);
         let result = (|| {
             if self.begin_operation_locked(operation_id, &digest, timestamp)?
                 == OperationOutcome::Replay
             {
                 return Ok(WriteOutcome::Unchanged);
+            }
+            let current_daily_log =
+                read_optional(daily_log_path.clone(), DAILY_LOG_RECOVERY_MAX_BYTES)?;
+            if current_daily_log != existing_daily_log {
+                let _ = self.abort_operation_locked(operation_id, &digest, timestamp);
+                return Err(WorkspaceError::Conflict(
+                    "daily-log changed during sync planning".to_owned(),
+                ));
+            }
+            if let Some(plan) = archive_plan.as_ref()
+                && let Err(error) = ensure_daily_log_archive(plan)
+            {
+                let _ = self.abort_operation_locked(operation_id, &digest, timestamp);
+                return Err(error);
+            }
+            let current_daily_log =
+                read_optional(daily_log_path.clone(), DAILY_LOG_RECOVERY_MAX_BYTES)?;
+            if current_daily_log != existing_daily_log {
+                let _ = self.abort_operation_locked(operation_id, &digest, timestamp);
+                return Err(WorkspaceError::Conflict(
+                    "daily-log changed before atomic sync".to_owned(),
+                ));
             }
             let mut changed = false;
             let writes = [
@@ -1274,12 +1801,12 @@ impl MissionWorkspace {
     }
 
     fn detect_language(&self) -> Result<WorkspaceLanguage, WorkspaceError> {
-        for (path, limit) in [
-            (self.mission_dir().join("project.md"), PROJECT_MAX_BYTES),
-            (self.mission_dir().join("progress.md"), PROJECT_MAX_BYTES),
-            (self.tasks_path(), TASKS_MAX_BYTES),
+        for text in [
+            read_bounded_text(&self.mission_dir().join("project.md"), PROJECT_MAX_BYTES),
+            read_bounded_text(&self.mission_dir().join("progress.md"), PROJECT_MAX_BYTES),
+            read_unbounded_text(&self.tasks_path()),
         ] {
-            if let Ok(text) = read_bounded_text(&path, limit)
+            if let Ok(text) = text
                 && ["# 專案", "# 進度", "# 任務", "- 目標:", "- 目標："]
                     .iter()
                     .any(|marker| text.contains(marker))
@@ -1693,8 +2220,53 @@ fn read_bounded(path: &Path, limit: u64) -> Result<Vec<u8>, WorkspaceError> {
     }
     Ok(bytes)
 }
+
+fn read_unbounded(path: &Path) -> Result<Vec<u8>, WorkspaceError> {
+    ensure_no_reparse(path)?;
+    let mut file = File::open(path).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            WorkspaceError::NotFound {
+                path: path.to_path_buf(),
+            }
+        } else {
+            WorkspaceError::Io(error)
+        }
+    })?;
+    let length = file.metadata()?.len();
+    let capacity = usize::try_from(length).map_err(|_| {
+        WorkspaceError::Io(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("file is too large for this platform: {}", path.display()),
+        ))
+    })?;
+    let mut bytes = Vec::new();
+    bytes.try_reserve(capacity).map_err(|_| {
+        WorkspaceError::Io(io::Error::new(
+            io::ErrorKind::Other,
+            format!("unable to allocate memory for {}", path.display()),
+        ))
+    })?;
+    file.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn read_unbounded_text(path: &Path) -> Result<String, WorkspaceError> {
+    let bytes = read_unbounded(path)?;
+    String::from_utf8(bytes).map_err(|_| WorkspaceError::InvalidUtf8 {
+        path: path.to_path_buf(),
+    })
+}
+
 fn read_optional(path: PathBuf, limit: u64) -> Result<Option<Vec<u8>>, WorkspaceError> {
     match read_bounded(&path, limit) {
+        Ok(value) => Ok(Some(value)),
+        Err(WorkspaceError::NotFound { .. }) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+fn read_optional_unbounded(path: PathBuf) -> Result<Option<Vec<u8>>, WorkspaceError> {
+    match read_unbounded(&path) {
         Ok(value) => Ok(Some(value)),
         Err(WorkspaceError::NotFound { .. }) => Ok(None),
         Err(error) => Err(error),
@@ -2111,8 +2683,8 @@ impl MissionWorkspace {
                 ensure_no_reparse(target)?;
                 let existing_bytes = fs::metadata(target)?.len();
                 let replacement_bytes = bytes.len() as u64;
-                if existing_bytes == replacement_bytes && existing_bytes <= TASKS_MAX_BYTES {
-                    let old = read_bounded(target, existing_bytes.max(INTERNAL_MAX_BYTES))?;
+                if existing_bytes == replacement_bytes {
+                    let old = read_unbounded(target)?;
                     if old == bytes {
                         return Ok(WriteOutcome::Unchanged);
                     }
@@ -2593,7 +3165,7 @@ impl MissionWorkspace {
         validate_timestamp(timestamp)?;
         let lock = self.acquire_writer_lock(&format!("op:{operation_id}"))?;
         let result = (|| {
-            let source = read_bounded(&self.tasks_path(), TASKS_MAX_BYTES)?;
+            let source = read_unbounded(&self.tasks_path())?;
             let digest = sha256_digest(&canonicalize_hash_bytes(&source));
             if self.begin_operation_locked(operation_id, &digest, timestamp)?
                 == OperationOutcome::Replay
@@ -2658,7 +3230,7 @@ impl MissionWorkspace {
         }
         let lock = self.acquire_writer_lock(&format!("op:{operation_id}"))?;
         let result = (|| {
-            let source = read_bounded(&self.tasks_path(), TASKS_MAX_BYTES)?;
+            let source = read_unbounded(&self.tasks_path())?;
             let text =
                 String::from_utf8(source.clone()).map_err(|_| WorkspaceError::InvalidUtf8 {
                     path: self.tasks_path(),
@@ -3473,7 +4045,7 @@ impl MissionWorkspace {
             validate_timestamp(value)?;
         }
         let project = read_bounded(&self.mission_dir().join("project.md"), PROJECT_MAX_BYTES)?;
-        let task_source = read_bounded(&self.tasks_path(), TASKS_MAX_BYTES)?;
+        let task_source = read_unbounded(&self.tasks_path())?;
         let task_text =
             String::from_utf8(task_source.clone()).map_err(|_| WorkspaceError::InvalidUtf8 {
                 path: self.tasks_path(),
@@ -3619,7 +4191,7 @@ impl MissionWorkspace {
             let old_manifest = read_optional(manifest_path.clone(), INTERNAL_MAX_BYTES)?;
             let current_project =
                 read_bounded(&self.mission_dir().join("project.md"), PROJECT_MAX_BYTES)?;
-            let current_tasks = read_bounded(&self.tasks_path(), TASKS_MAX_BYTES)?;
+            let current_tasks = read_unbounded(&self.tasks_path())?;
             let current_source = project_map_source_fingerprint(
                 &canonicalize_hash_bytes(&current_project),
                 &canonicalize_hash_bytes(&current_tasks),
@@ -3633,7 +4205,7 @@ impl MissionWorkspace {
                 atomic_write_scoped(&html_path, &output_dir, html.as_bytes())?;
                 let after_project =
                     read_bounded(&self.mission_dir().join("project.md"), PROJECT_MAX_BYTES)?;
-                let after_tasks = read_bounded(&self.tasks_path(), TASKS_MAX_BYTES)?;
+                let after_tasks = read_unbounded(&self.tasks_path())?;
                 let after_source = project_map_source_fingerprint(
                     &canonicalize_hash_bytes(&after_project),
                     &canonicalize_hash_bytes(&after_tasks),
@@ -3668,7 +4240,7 @@ impl MissionWorkspace {
 
     pub fn verify_project_map(&self) -> Result<(), WorkspaceError> {
         let project = read_bounded(&self.mission_dir().join("project.md"), PROJECT_MAX_BYTES)?;
-        let tasks = read_bounded(&self.tasks_path(), TASKS_MAX_BYTES)?;
+        let tasks = read_unbounded(&self.tasks_path())?;
         let fingerprint = project_map_source_fingerprint(
             &canonicalize_hash_bytes(&project),
             &canonicalize_hash_bytes(&tasks),
@@ -4318,16 +4890,19 @@ fn line_ending(line: &str) -> &str {
 }
 
 fn normalize_markdown_tasks(text: &str) -> Result<String, WorkspaceError> {
-    let mut lines: Vec<String> = text.lines().map(ToOwned::to_owned).collect();
+    let mut lines: Vec<String> = text.split_inclusive('\n').map(ToOwned::to_owned).collect();
+    if lines.is_empty() {
+        lines.push(text.to_owned());
+    }
     let start = lines
         .iter()
-        .position(|line| line.starts_with('|'))
+        .position(|line| strip_line_ending(line).starts_with('|'))
         .ok_or(WorkspaceError::Core(CoreError::MissingTable))?;
     if start + 2 > lines.len() {
         return Err(WorkspaceError::Core(CoreError::MissingTable));
     }
-    let headers = split_cells(&lines[start])?;
-    let separator = split_cells(&lines[start + 1])?;
+    let headers = split_cells(strip_line_ending(&lines[start]))?;
+    let separator = split_cells(strip_line_ending(&lines[start + 1]))?;
     if headers.len() != separator.len() {
         return Err(WorkspaceError::Core(CoreError::InvalidHeader));
     }
@@ -4340,10 +4915,12 @@ fn normalize_markdown_tasks(text: &str) -> Result<String, WorkspaceError> {
     let indexes: Vec<Option<&str>> = headers.iter().map(|header| canonical(header)).collect();
     let mut changed = false;
     for line in lines.iter_mut().skip(start + 2) {
-        if !line.starts_with('|') {
+        let content = strip_line_ending(line);
+        if !content.starts_with('|') {
             break;
         }
-        let cells = split_cells(line)?;
+        let ending = line_ending(line);
+        let cells = split_cells(content)?;
         if cells.len() != headers.len() {
             continue;
         }
@@ -4359,7 +4936,7 @@ fn normalize_markdown_tasks(text: &str) -> Result<String, WorkspaceError> {
         }
         if cells != before {
             *line = format!(
-                "| {} |",
+                "| {} |{ending}",
                 cells
                     .iter()
                     .map(|cell| escape_md_cell(cell))
@@ -4369,10 +4946,7 @@ fn normalize_markdown_tasks(text: &str) -> Result<String, WorkspaceError> {
             changed = true;
         }
     }
-    let mut result = lines.join("\n");
-    if text.ends_with('\n') {
-        result.push('\n');
-    }
+    let result = lines.concat();
     if changed {
         Ok(result)
     } else {
@@ -4505,6 +5079,9 @@ fn create_exclusive_file(path: &Path, bytes: &[u8]) -> Result<(), WorkspaceError
         file.write_all(bytes)?;
         file.flush()?;
         sync_all_portable(&file)?;
+        if let Some(parent) = path.parent() {
+            sync_directory_portable(parent)?;
+        }
         Ok::<(), io::Error>(())
     })() {
         let _ = fs::remove_file(path);
@@ -4517,6 +5094,21 @@ fn sync_all_portable(file: &File) -> io::Result<()> {
     match file.sync_all() {
         Err(error) if is_unsupported_sync_error(&error) => Ok(()),
         result => result,
+    }
+}
+
+fn sync_directory_portable(path: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        // Standard Rust cannot open a directory handle for FlushFileBuffers on
+        // Windows. File contents are still fsynced; the active source remains
+        // unchanged until the archive operation succeeds.
+        let _ = path;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        sync_all_portable(&File::open(path)?)
     }
 }
 
@@ -5486,6 +6078,24 @@ mod tests {
     }
 
     #[test]
+    fn init_reads_existing_daily_log_with_recovery_cap() {
+        let root = test_temp_root("init-daily-recovery");
+        fs::create_dir_all(root.join(MISSION_DIRECTORY)).unwrap();
+        let path = root.join(MISSION_DIRECTORY).join("daily-log.md");
+        let mut original = b"# Daily Log\n\n## 2026-08-29\n\n- ".to_vec();
+        original.extend(std::iter::repeat_n(b'x', 70 * 1024));
+        original.extend_from_slice(b"\n");
+        fs::write(&path, &original).unwrap();
+        let workspace = MissionWorkspace::new(&root);
+
+        workspace
+            .init("init-daily-recovery", "2026-08-29T00:00:00Z", "en", false)
+            .unwrap();
+        assert_eq!(fs::read(path).unwrap(), original);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn init_force_preserves_existing_canonical_tasks() {
         let fixture = fixture();
         let before = fs::read(fixture.workspace.tasks_path()).unwrap();
@@ -5814,22 +6424,376 @@ mod tests {
     }
 
     #[test]
-    fn sync_rejects_post_transform_daily_log_overflow_without_overwriting() {
+    fn daily_log_ignores_non_date_marker_text_and_preserves_it() {
+        let fixture = fixture();
+        let path = fixture.workspace.mission_dir().join("daily-log.md");
+        let original = "# Daily Log\n\n- Last organized: 使用者記事\n";
+        fs::write(&path, original).unwrap();
+
+        fixture
+            .workspace
+            .sync("sync-daily-marker-note", "2026-08-29T08:00:00Z")
+            .unwrap();
+        let updated = fs::read_to_string(path).unwrap();
+        assert!(updated.contains("- Last organized: 使用者記事"));
+        assert!(updated.contains("- Last organized: 2026-08-29"));
+    }
+
+    #[test]
+    fn sync_rolls_oversized_daily_log_into_immutable_archive() {
+        let fixture = fixture();
+        let path = fixture.workspace.mission_dir().join("daily-log.md");
+        let mut original = String::from("# Daily Log\n\n");
+        original.push_str("- Last organized: 2026-10-25\n\n");
+        original.push_str("## 2026-10-26\n\n");
+        original.push_str(&format!("- old {}\n", "x".repeat(20_000)));
+        original.push_str("## 2026-10-31\n\n");
+        original.push_str(&format!("- middle {}\n", "y".repeat(20_000)));
+        original.push_str("## 2026-11-01\n\n");
+        for index in 0..150 {
+            original.push_str(&format!("- newest-{index} {}\n", "z".repeat(900)));
+        }
+        original.push_str("- Last organized: 2026-11-01\n");
+        let original = original.into_bytes();
+        assert!(original.len() > DAILY_LOG_MAX_BYTES as usize);
+        fs::write(&path, &original).unwrap();
+
+        assert_eq!(
+            fixture
+                .workspace
+                .sync("sync-daily-overflow", "2026-11-02T08:00:00Z")
+                .unwrap(),
+            WriteOutcome::Changed
+        );
+        let digest = mission_center_core::sha256_digest(&original);
+        let archive = fixture
+            .workspace
+            .mission_dir()
+            .join(DAILY_LOG_ARCHIVE_DIRECTORY)
+            .join(format!("{digest}.md"));
+        assert_eq!(fs::read(&archive).unwrap(), original);
+        let active = fs::read(&path).unwrap();
+        assert!(active.len() <= DAILY_LOG_MAX_BYTES as usize);
+        let active_text = String::from_utf8(active).unwrap();
+        assert!(active_text.contains("## 2026-11-01"));
+        assert!(active_text.contains("newest-149"));
+        assert!(active_text.contains(&format!("sha256={digest}")));
+        assert!(active_text.contains("- Last organized: 2026-11-02"));
+        assert_eq!(
+            active_text
+                .lines()
+                .filter(|line| line.trim_start().starts_with("- Last organized:"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            daily_log_organized_date(&active_text).as_deref(),
+            Some("2026-11-02")
+        );
+    }
+
+    #[test]
+    fn sync_preserves_bounded_daily_log_without_archiving_non_marker_content() {
+        let fixture = fixture();
+        let path = fixture.workspace.mission_dir().join("daily-log.md");
+        let original = "# Daily Log\n\n## 2026-11-01\n\n- keep this exact event\n- keep emoji 🦀\n- Last organized: 2026-11-01\n";
+        fs::write(&path, original).unwrap();
+
+        fixture
+            .workspace
+            .sync("sync-daily-bounded", "2026-11-02T08:00:00Z")
+            .unwrap();
+        assert!(
+            !fixture
+                .workspace
+                .mission_dir()
+                .join(DAILY_LOG_ARCHIVE_DIRECTORY)
+                .exists()
+        );
+        let updated = fs::read_to_string(path).unwrap();
+        assert_eq!(
+            updated,
+            original.replace(
+                "- Last organized: 2026-11-01",
+                "- Last organized: 2026-11-02"
+            )
+        );
+    }
+
+    #[test]
+    fn sync_rollover_preserves_utf8_and_crlf_bytes_in_archive_and_active() {
+        let fixture = fixture();
+        let path = fixture.workspace.mission_dir().join("daily-log.md");
+        let mut original = String::from("# 每日紀錄\r\n\r\n## 2026-11-01\r\n\r\n");
+        for index in 0..180 {
+            original.push_str(&format!("- 事件 {index} 🦀 東京\r\n"));
+            original.push_str(&"資料 ".repeat(110));
+            original.push_str("\r\n");
+        }
+        original.push_str("- 最後整理： 2026-11-01\r\n");
+        let original = original.into_bytes();
+        assert!(original.len() > DAILY_LOG_MAX_BYTES as usize);
+        fs::write(&path, &original).unwrap();
+
+        fixture
+            .workspace
+            .sync("sync-daily-crlf", "2026-11-02T08:00:00Z")
+            .unwrap();
+        let digest = mission_center_core::sha256_digest(&original);
+        let archive = fixture
+            .workspace
+            .mission_dir()
+            .join(DAILY_LOG_ARCHIVE_DIRECTORY)
+            .join(format!("{digest}.md"));
+        assert_eq!(fs::read(&archive).unwrap(), original);
+        let active = fs::read(&path).unwrap();
+        assert!(active.windows(2).any(|pair| pair == b"\r\n"));
+        assert!(String::from_utf8(active).unwrap().contains("🦀"));
+    }
+
+    #[test]
+    fn sync_rollover_retries_same_archive_without_rewriting_it() {
+        let fixture = fixture();
+        let path = fixture.workspace.mission_dir().join("daily-log.md");
+        let mut original = String::from("# Daily Log\n\n## 2026-11-01\n\n");
+        original.push_str(&"- repeated event ".repeat(12_000));
+        original.push('\n');
+        let original = original.into_bytes();
+        fs::write(&path, &original).unwrap();
+        fixture
+            .workspace
+            .sync("sync-daily-retry-1", "2026-11-02T08:00:00Z")
+            .unwrap();
+        let digest = mission_center_core::sha256_digest(&original);
+        let archive = fixture
+            .workspace
+            .mission_dir()
+            .join(DAILY_LOG_ARCHIVE_DIRECTORY)
+            .join(format!("{digest}.md"));
+        let archive_before = fs::read(&archive).unwrap();
+        fs::write(&path, &original).unwrap();
+        fixture
+            .workspace
+            .sync("sync-daily-retry-2", "2026-11-02T08:00:00Z")
+            .unwrap();
+        assert_eq!(fs::read(&archive).unwrap(), archive_before);
+        assert!(fs::read(&path).unwrap().len() <= DAILY_LOG_MAX_BYTES as usize);
+    }
+
+    #[test]
+    fn rollover_leaves_headroom_for_followup_append_without_rearchiving() {
+        let fixture = fixture();
+        let path = fixture.workspace.mission_dir().join("daily-log.md");
+        let mut original = String::from("# Daily Log\n\n## 2026-11-01\n\n");
+        for index in 0..240 {
+            original.push_str(&format!("- event-{index} {}\n", "x".repeat(700)));
+        }
+        original.push_str("- Last organized: 2026-11-01\n");
+        let original = original.into_bytes();
+        assert!(original.len() > DAILY_LOG_MAX_BYTES as usize);
+        fs::write(&path, &original).unwrap();
+
+        fixture
+            .workspace
+            .sync("sync-daily-headroom-1", "2026-11-02T08:00:00Z")
+            .unwrap();
+        let digest = mission_center_core::sha256_digest(&original);
+        let archive = fixture
+            .workspace
+            .mission_dir()
+            .join(DAILY_LOG_ARCHIVE_DIRECTORY)
+            .join(format!("{digest}.md"));
+        let archive_before = fs::read(&archive).unwrap();
+        let active_before = fs::read(&path).unwrap();
+        assert!(active_before.len() <= DAILY_LOG_ROLLOVER_TARGET_BYTES as usize);
+        assert!(
+            active_before.len() + 256 > DAILY_LOG_ROLLOVER_TARGET_BYTES as usize
+                || active_before.len() > DAILY_LOG_ROLLOVER_TARGET_BYTES as usize - 4096
+        );
+
+        let mut append = OpenOptions::new().append(true).open(&path).unwrap();
+        append
+            .write_all(b"- follow-up event after rollover\n")
+            .unwrap();
+        drop(append);
+        fixture
+            .workspace
+            .sync("sync-daily-headroom-2", "2026-11-02T08:01:00Z")
+            .unwrap();
+        assert_eq!(fs::read(&archive).unwrap(), archive_before);
+        assert!(fs::read(&path).unwrap().len() <= DAILY_LOG_MAX_BYTES as usize);
+        let archive_files = fs::read_dir(
+            fixture
+                .workspace
+                .mission_dir()
+                .join(DAILY_LOG_ARCHIVE_DIRECTORY),
+        )
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("md"))
+        .count();
+        assert_eq!(archive_files, 1);
+    }
+
+    #[test]
+    fn sync_rollover_archive_collision_preserves_original_log() {
+        let fixture = fixture();
+        let path = fixture.workspace.mission_dir().join("daily-log.md");
+        let original = format!(
+            "# Daily Log\n\n## 2026-11-01\n\n- {}\n",
+            "x".repeat(DAILY_LOG_MAX_BYTES as usize)
+        )
+        .into_bytes();
+        fs::write(&path, &original).unwrap();
+        let digest = mission_center_core::sha256_digest(&original);
+        let archive_dir = fixture
+            .workspace
+            .mission_dir()
+            .join(DAILY_LOG_ARCHIVE_DIRECTORY);
+        fs::create_dir_all(&archive_dir).unwrap();
+        fs::write(archive_dir.join(format!("{digest}.md")), b"collision").unwrap();
+
+        let error = fixture
+            .workspace
+            .sync("sync-daily-collision", "2026-11-02T08:00:00Z")
+            .unwrap_err();
+        assert!(
+            matches!(error, WorkspaceError::Conflict(message) if message.contains("collision"))
+        );
+        assert_eq!(fs::read(path).unwrap(), original);
+    }
+
+    #[test]
+    fn sync_rollover_archive_write_error_preserves_original_log() {
+        let fixture = fixture();
+        let path = fixture.workspace.mission_dir().join("daily-log.md");
+        let original = format!(
+            "# Daily Log\n\n## 2026-11-01\n\n- {}\n",
+            "x".repeat(DAILY_LOG_MAX_BYTES as usize)
+        )
+        .into_bytes();
+        fs::write(&path, &original).unwrap();
+        fs::write(
+            fixture
+                .workspace
+                .mission_dir()
+                .join(DAILY_LOG_ARCHIVE_DIRECTORY),
+            b"archive directory collision",
+        )
+        .unwrap();
+
+        assert!(
+            fixture
+                .workspace
+                .sync("sync-daily-archive-error", "2026-11-02T08:00:00Z")
+                .is_err()
+        );
+        assert_eq!(fs::read(path).unwrap(), original);
+    }
+
+    #[test]
+    fn smb_archive_fallback_is_exclusive_and_fail_closed_on_collision() {
+        let root = test_temp_root("smb-archive-fallback");
+        fs::create_dir_all(&root).unwrap();
+        let source = b"complete archive source on a filesystem without hard links".to_vec();
+        let digest = mission_center_core::sha256_digest(&source);
+        let plan = DailyLogArchivePlan {
+            path: root.join(format!("{digest}.md")),
+            source: source.clone(),
+            digest,
+        };
+
+        install_daily_log_archive_without_hard_link(&plan, &root).unwrap();
+        assert_eq!(fs::read(&plan.path).unwrap(), source);
+        install_daily_log_archive_without_hard_link(&plan, &root).unwrap();
+
+        let collision = DailyLogArchivePlan {
+            path: plan.path.clone(),
+            source: b"different content must never overwrite the archive".to_vec(),
+            digest: plan.digest.clone(),
+        };
+        let error = install_daily_log_archive_without_hard_link(&collision, &root).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&plan.path).unwrap(), source);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn smb_archive_fallback_recovers_exact_prefix_after_interrupted_copy() {
+        let root = test_temp_root("smb-archive-recovery");
+        fs::create_dir_all(&root).unwrap();
+        let source = b"complete archive source recovered after an interrupted copy".to_vec();
+        let digest = mission_center_core::sha256_digest(&source);
+        let plan = DailyLogArchivePlan {
+            path: root.join(format!("{digest}.md")),
+            source: source.clone(),
+            digest,
+        };
+        let intent = ensure_daily_log_archive_intent(&plan, &root).unwrap();
+        fs::write(&plan.path, &source[..17]).unwrap();
+
+        install_daily_log_archive_without_hard_link(&plan, &root).unwrap();
+        assert_eq!(fs::read(&plan.path).unwrap(), source);
+        assert!(!intent.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn archive_intent_recovers_partial_metadata_and_cleans_stale_exact_archive() {
+        let root = test_temp_root("smb-archive-intent-recovery");
+        fs::create_dir_all(&root).unwrap();
+        let source = b"complete archive source with durable intent metadata".to_vec();
+        let digest = mission_center_core::sha256_digest(&source);
+        let plan = DailyLogArchivePlan {
+            path: root.join(format!("{digest}.md")),
+            source,
+            digest,
+        };
+        let intent = daily_log_archive_intent_path(&plan).unwrap();
+        let expected_intent = daily_log_archive_intent(&plan);
+        fs::write(&intent, &expected_intent[..9]).unwrap();
+        ensure_daily_log_archive_intent(&plan, &root).unwrap();
+        assert_eq!(fs::read(&intent).unwrap(), expected_intent);
+
+        fs::write(&plan.path, &plan.source).unwrap();
+        ensure_daily_log_archive(&plan).unwrap();
+        assert!(!intent.exists());
+        assert_eq!(fs::read(&plan.path).unwrap(), plan.source);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn unknown_archive_prefix_fails_closed_without_appending() {
+        let root = test_temp_root("smb-archive-unknown-prefix");
+        fs::create_dir_all(&root).unwrap();
+        let source = b"complete archive source that must not be guessed".to_vec();
+        let digest = mission_center_core::sha256_digest(&source);
+        let plan = DailyLogArchivePlan {
+            path: root.join(format!("{digest}.md")),
+            source,
+            digest,
+        };
+        let partial = plan.source[..13].to_vec();
+        fs::write(&plan.path, &partial).unwrap();
+
+        let error = ensure_daily_log_archive(&plan).unwrap_err();
+        assert!(
+            matches!(error, WorkspaceError::Conflict(message) if message.contains("collision"))
+        );
+        assert_eq!(fs::read(&plan.path).unwrap(), partial);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fingerprint_accepts_daily_log_at_limit_without_writing() {
         let fixture = fixture();
         let path = fixture.workspace.mission_dir().join("daily-log.md");
         let mut original = "# 每日紀錄\n".as_bytes().to_vec();
         original.resize(DAILY_LOG_MAX_BYTES as usize, b'x');
         fs::write(&path, &original).unwrap();
 
-        let error = fixture
-            .workspace
-            .sync("sync-daily-overflow", "2026-08-29T08:00:00+08:00")
-            .unwrap_err();
+        fixture.workspace.fingerprint().unwrap();
 
-        assert!(matches!(
-            error,
-            WorkspaceError::TooLarge { limit, .. } if limit == DAILY_LOG_MAX_BYTES
-        ));
         assert_eq!(fs::read(path).unwrap(), original);
     }
 
@@ -5990,7 +6954,7 @@ mod tests {
         let fixture = fixture();
         let workspace = &fixture.workspace;
         let target = workspace.mission_dir().join("large-atomic.txt");
-        let original = vec![b'a'; TASKS_MAX_BYTES as usize + 128];
+        let original = vec![b'a'; 256 * 1024 + 128];
         let replacement = vec![b'b'; INTERNAL_MAX_BYTES as usize + 64];
         fs::write(&target, &original).expect("write large original");
         assert_eq!(
@@ -6005,7 +6969,7 @@ mod tests {
         let fixture = fixture();
         let workspace = &fixture.workspace;
         let target = workspace.mission_dir().join("oversized-atomic.txt");
-        let original = vec![b'a'; TASKS_MAX_BYTES as usize + 128];
+        let original = vec![b'a'; 256 * 1024 + 128];
         let replacement = vec![b'b'; original.len()];
         fs::write(&target, &original).expect("write oversized original");
         assert_eq!(
@@ -6133,6 +7097,37 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn normalize_preserves_large_crlf_tasks_and_appendix() {
+        let fixture = fixture();
+        let workspace = &fixture.workspace;
+        let task_path = workspace.tasks_path();
+        let mut source = String::from(
+            "| ID | Title | Priority | Status | Labels |\r\n| --- | --- | --- | --- | --- |\r\n",
+        );
+        for index in 0..7_000 {
+            source.push_str(&format!(
+                "| MC-{index} | task-{index} | high | doing | Alpha; alpha |\r\n"
+            ));
+        }
+        source.push_str("\r\n## Appendix\r\n| Keep | exact |\r\n");
+        assert!(source.len() > 256 * 1024);
+        fs::write(&task_path, source.as_bytes()).unwrap();
+
+        assert_eq!(
+            workspace
+                .normalize_tasks("normalize-large-crlf", "2026-08-29T00:00:00Z")
+                .unwrap(),
+            WriteOutcome::Changed
+        );
+        let normalized = fs::read_to_string(task_path).unwrap();
+        assert!(normalized.len() > 256 * 1024);
+        assert!(normalized.contains("| P1 | In Progress | alpha |\r\n"));
+        assert!(normalized.contains("\r\n## Appendix\r\n| Keep | exact |\r\n"));
+        assert!(!normalized.replace("\r\n", "").contains('\n'));
+        assert_eq!(normalized.matches("| MC-").count(), 7_000);
     }
 
     #[test]
