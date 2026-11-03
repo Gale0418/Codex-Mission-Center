@@ -16,6 +16,6 @@ Evidence envelopes are optional, versioned records under `output/mission-center-
 - `recordedAt`: timezone-aware ISO-8601 timestamp.
 - `supersedes`: optional prior envelope ID on a new `current` envelope. The prior envelope must be marked `superseded` and have the same task/check.
 
-Envelope JSON files are limited to 64 KiB; referenced scope and artifact files share the existing 8 MiB aggregate budget. Missing historical envelopes are summarized by count and remain `unknown`. This evidence budget does not change normal task-table reads.
+Envelope JSON files are limited to 64 KiB; referenced scope and artifact files share the existing 8 MiB aggregate budget. Tasks without a current evidence envelope are summarized by count and remain `unknown`. This evidence budget does not change normal task-table reads.
 
 Malformed envelopes are `corrupt`; a digest mismatch is `stale`; duplicate current task/check records or invalid supersession relationships are `conflict`. Existing tasks without an envelope remain a migration `unknown` warning and do not invalidate the v0.4 workspace. Once an envelope is present and linked to a task, these failures block Doctor.

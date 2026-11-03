@@ -980,6 +980,16 @@ fn reconcile_keeps_envelope_json_limit_for_large_scope_files() {
 
     let (_output, payload) = run(&root, &["reconcile", "--date", FIXTURE_DATE]);
     assert_eq!(check_status(&payload, "evidence_envelope"), Some("corrupt"));
+    let message = payload["data"]["checks"]
+        .as_array()
+        .and_then(|checks| {
+            checks
+                .iter()
+                .find(|check| check["name"] == "evidence_envelope")
+        })
+        .and_then(|check| check["message"].as_str())
+        .expect("evidence limit message");
+    assert!(message.contains("file exceeds bounded read limit (65536 bytes)"));
     let _ = fs::remove_dir_all(root);
 }
 
